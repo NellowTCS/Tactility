@@ -44,6 +44,10 @@ if (DEFINED ENV{ESP_IDF_VERSION})
         set(EXCLUDE_COMPONENTS "LilygoTdeck")
         set(EXCLUDE_COMPONENTS "M5stackCoreS3")
         set(EXCLUDE_COMPONENTS "UnPhone")
+
+        # changes for CYD-2432S022C
+        list(APPEND EXTRA_COMPONENT_DIRS "${CMAKE_SOURCE_DIR}/Boards/CYD-2432S022C")
+
     endif()
 
     # ESP32-S3 target should exclude ESP32 boards
