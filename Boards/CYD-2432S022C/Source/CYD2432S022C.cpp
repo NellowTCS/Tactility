@@ -5,6 +5,7 @@
 
 #include <Tactility/lvgl/LvglSync.h>
 #include <PwmBacklight.h>
+#include <vector>
 
 #define CYD_SPI_TRANSFER_SIZE_LIMIT (TWODOTFOUR_LCD_DRAW_BUFFER_SIZE * LV_COLOR_DEPTH / 8)
 
@@ -16,7 +17,7 @@
 // I2C Configuration for Touchscreen (CST816S)
 #define TOUCH_I2C_SDA_GPIO_NUM CONFIG_CST816S_I2C_CONFIG_SDA_IO_NUM
 #define TOUCH_I2C_SCL_GPIO_NUM CONFIG_CST816S_I2C_CONFIG_SCL_IO_NUM
-#define TOUCH_I2C_CLK_SPEED CONFIG_CST816S_I2C_CONFIG_MASTER_CLK_SPEED
+#define TOUCH_I2C_CLK_SPEED    CONFIG_CST816S_I2C_CONFIG_MASTER_CLK_SPEED
 
 bool initBoot() {
     return driver::pwmbacklight::init(TWODOTFOUR_LCD_PIN_BACKLIGHT);
@@ -27,7 +28,7 @@ const tt::hal::Configuration cyd_2432S022c_config = {
     .createDisplay = createDisplay,
     .sdcard = createYellowSdCard(),
     .power = nullptr,
-    .i2c = {
+    .i2c = std::vector<tt::hal::i2c::Configuration>{
         tt::hal::i2c::Configuration {
             .name = "First",
             .port = I2C_NUM_0,
@@ -63,7 +64,7 @@ const tt::hal::Configuration cyd_2432S022c_config = {
             }
         }
     },
-    .spi = {
+    .spi = std::vector<tt::hal::spi::Configuration>{
         tt::hal::spi::Configuration {
             .device = SPI2_HOST,
             .dma = SPI_DMA_CH_AUTO,
