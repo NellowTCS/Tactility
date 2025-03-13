@@ -1,4 +1,3 @@
-#include "sdkconfig.h"
 #include "CYD2432S022C.h"
 #include "hal/YellowDisplay.h"
 #include "hal/YellowDisplayConstants.h"
@@ -16,9 +15,9 @@
 #define LVGL_USE_USER_DATA_ENABLED CONFIG_LV_USE_USER_DATA
 
 // I2C Configuration for Touchscreen (CST816S)
-#define TOUCH_I2C_SDA_GPIO_NUM TOUCH_I2C_SDA_GPIO_NUM
-#define TOUCH_I2C_SCL_GPIO_NUM TOUCH_I2C_SCL_GPIO_NUM
-#define TOUCH_I2C_CLK_SPEED    TOUCH_I2C_CLK_SPEED
+#define TOUCH_I2C_SDA_GPIO_NUM CONFIG_CST816S_I2C_CONFIG_SDA_IO_NUM
+#define TOUCH_I2C_SCL_GPIO_NUM CONFIG_CST816S_I2C_CONFIG_SCL_IO_NUM
+#define TOUCH_I2C_CLK_SPEED    CONFIG_CST816S_I2C_CONFIG_MASTER_CLK_SPEED
 
 bool initBoot() {
     return driver::pwmbacklight::init(TWODOTFOUR_LCD_PIN_BACKLIGHT);
