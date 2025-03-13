@@ -1,6 +1,7 @@
 #include "YellowDisplay.h"
 #include "Cst816Touch.h"
 #include "YellowDisplayConstants.h"
+#include "sdkconfig.h"
 
 #include <St7789Display.h>
 #include <PwmBacklight.h>
