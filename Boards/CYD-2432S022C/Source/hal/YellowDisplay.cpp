@@ -21,23 +21,16 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
 
     auto touch = createTouch();
 
-    // Replace Ili934xDisplay with St7789Display for I80 parallel interface
+    // Use only the parameters not already set in SDK config
     auto configuration = std::make_unique<St7789Display::Configuration>(
-        CONFIG_LCD_I80_BUS_SUPPORT,
-        CONFIG_LCD_I80_BUS_WIDTH,
-        CONFIG_LCD_I80_BUS_CONFIG_CLK_SRC,
-        CONFIG_LCD_I80_BUS_CONFIG_DC,
-        CONFIG_LCD_I80_BUS_CONFIG_WR,
-        CONFIG_LCD_I80_BUS_CONFIG_DATA_GPIO_D8, // Adjust these GPIOs as necessary
-        CONFIG_LCD_I80_BUS_CONFIG_DATA_GPIO_D9,
-        CONFIG_LCD_I80_BUS_CONFIG_DATA_GPIO_D10,
-        CONFIG_LCD_I80_BUS_CONFIG_DATA_GPIO_D11,
-        CONFIG_LCD_I80_BUS_CONFIG_DATA_GPIO_D12,
-        CONFIG_LCD_I80_BUS_CONFIG_DATA_GPIO_D13,
-        CONFIG_LCD_I80_BUS_CONFIG_DATA_GPIO_D14,
-        CONFIG_LCD_I80_BUS_CONFIG_DATA_GPIO_D15,
-        CONFIG_LCD_I80_BUS_CONFIG_BUS_WIDTH,
-        touch
+        CONFIG_LCD_I80_BUS_SUPPORT,              // Should be passed if relevant
+        CONFIG_LCD_I80_BUS_WIDTH,                // Bus width
+        CONFIG_LCD_I80_BUS_CONFIG_CLK_SRC,       // Clock source
+        CONFIG_LCD_I80_BUS_CONFIG_DC,            // Data/Command pin
+        CONFIG_LCD_I80_BUS_CONFIG_WR,            // Write pin
+        CONFIG_LCD_I80_BUS_CONFIG_CS_GPIO_NUM,   // Chip Select GPIO (ensure this is correct)
+        CONFIG_LCD_I80_BUS_CONFIG_BUS_WIDTH,     // Bus width (likely same as `CONFIG_LCD_I80_BUS_WIDTH`)
+        touch                                    // Touch device (created separately)
     );
 
     configuration->mirrorX = true;
@@ -45,3 +38,4 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
 
     return std::make_shared<St7789Display>(std::move(configuration));
 }
+
