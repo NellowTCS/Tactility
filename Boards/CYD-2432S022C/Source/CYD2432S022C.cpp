@@ -107,7 +107,7 @@ static std::vector<tt::hal::spi::Configuration> make_spi_configurations() {
     return configs;
 }
 
-const tt::hal::Configuration cyd_2432S022c_config = {
+const tt::hal::Configuration cyd_2432S022C_config = {
     .initBoot = initBoot,
     .createDisplay = createDisplay,
     .sdcard = createYellowSdCard(),
