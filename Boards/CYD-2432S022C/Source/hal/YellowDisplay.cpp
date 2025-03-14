@@ -28,7 +28,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         CONFIG_LCD_I80_BUS_CONFIG_CLK_SRC,       // Clock source
         CONFIG_LCD_I80_BUS_CONFIG_DC,            // Data/Command pin
         CONFIG_LCD_I80_BUS_CONFIG_WR,            // Write pin
-        CONFIG_LCD_I80_BUS_CONFIG_CS_GPIO_NUM,   // Chip Select GPIO (ensure this is correct)
+        CONFIG_LCD_I80_BUS_CONFIG_DATA_GPIO_D9,   // Chip Select GPIO (ensure this is correct)
         CONFIG_LCD_I80_BUS_CONFIG_BUS_WIDTH,     // Bus width (likely same as `CONFIG_LCD_I80_BUS_WIDTH`)
         touch                                    // Touch device (created separately)
     );
