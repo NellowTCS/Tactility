@@ -18,19 +18,17 @@ static std::shared_ptr<tt::hal::touch::TouchDevice> createTouch() {
 }
 
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
-
     auto touch = createTouch();
 
-    // Use only the parameters not already set in SDK config
+    // Ensure parameters match the constructor
     auto configuration = std::make_unique<St7789Display::Configuration>(
-        CONFIG_LCD_I80_BUS_SUPPORT,              // Should be passed if relevant
-        CONFIG_LCD_I80_BUS_WIDTH,                // Bus width
-        CONFIG_LCD_I80_BUS_CONFIG_CLK_SRC,       // Clock source
-        CONFIG_LCD_I80_BUS_CONFIG_DC,            // Data/Command pin
-        CONFIG_LCD_I80_BUS_CONFIG_WR,            // Write pin
-        CONFIG_LCD_I80_BUS_CONFIG_DATA_GPIO_D9,   // Chip Select GPIO (ensure this is correct)
-        CONFIG_LCD_I80_BUS_CONFIG_BUS_WIDTH,     // Bus width (likely same as `CONFIG_LCD_I80_BUS_WIDTH`)
-        touch                                    // Touch device (created separately)
+        static_cast<esp_lcd_spi_bus_handle_t>(CONFIG_LCD_I80_BUS_SUPPORT),  // Convert if necessary
+        static_cast<gpio_num_t>(CONFIG_LCD_I80_BUS_CONFIG_DC),              // Ensure correct type
+        static_cast<gpio_num_t>(CONFIG_LCD_I80_BUS_CONFIG_WR),              // Ensure correct type
+        CONFIG_LCD_I80_BUS_WIDTH,                                           // Assuming this is unsigned int
+        CONFIG_LCD_I80_BUS_CONFIG_CLK_SRC,                                   // Assuming this is unsigned int
+        touch,                                                              // Shared pointer for touch
+        true, false, false, false, 0                                        // Additional bools and uint32_t
     );
 
     configuration->mirrorX = true;
