@@ -15,7 +15,7 @@ void app_main() {
          * Auto-select a board based on the ./sdkconfig.board.* file
          * that you copied to ./sdkconfig before you opened this project.
          */
-        .hardware = CYD 2432S022C,
+        .hardware = CYD2432S022C,
         .apps = {
             &hello_world_app,
         }
