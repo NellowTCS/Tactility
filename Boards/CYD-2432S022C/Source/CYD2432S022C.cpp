@@ -33,8 +33,7 @@ public:
             .data_gpio_nums = {GPIO_NUM_15, GPIO_NUM_13, GPIO_NUM_12, GPIO_NUM_14, GPIO_NUM_27, GPIO_NUM_25, GPIO_NUM_33, GPIO_NUM_32},
             .bus_width = 8,
             .max_transfer_bytes = 240 * 320 * 2,
-            .psram_trans_align = 64,
-            .sram_trans_align = 4
+            .dma_burst_size = 128
         };
         ESP_ERROR_CHECK(esp_lcd_new_i80_bus(&bus_config, &i80_bus));
 
@@ -42,35 +41,21 @@ public:
             .cs_gpio_num = GPIO_NUM_17,
             .pclk_hz = 12000000,
             .trans_queue_depth = 10,
-            .on_color_trans_done = NULL,
-            .user_ctx = NULL,
-            .lcd_cmd_bits = 8,
-            .lcd_param_bits = 8,
             .dc_levels = {
                 .dc_idle_level = 0,
                 .dc_cmd_level = 1,
                 .dc_dummy_level = 0,
                 .dc_data_level = 0
             },
-            .flags = {
-                .cs_active_high = 0,
-                .reverse_color_bits = 0,
-                .swap_color_bytes = 0,
-                .pclk_active_neg = 0,
-                .pclk_idle_low = 0
-            }
+            .lcd_cmd_bits = 8,
+            .lcd_param_bits = 8
         };
         ESP_ERROR_CHECK(esp_lcd_new_panel_io_i80(i80_bus, &io_config, &io_handle));
 
         esp_lcd_panel_dev_config_t panel_config = {
             .reset_gpio_num = GPIO_NUM_NC,
             .rgb_ele_order = ESP_LCD_COLOR_SPACE_RGB,
-            .bits_per_pixel = 16,
-            .flags = {
-                .reset_active_high = 0
-            },
-            .data_endian = LCD_RGB_DATA_ENDIAN_LITTLE,
-            .vendor_config = NULL
+            .bits_per_pixel = 16
         };
         ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle));
         ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
