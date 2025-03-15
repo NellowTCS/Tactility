@@ -1,6 +1,6 @@
-#include "YellowDisplay.h"
+#include "hal/YellowDisplay.h"
 #include "Cst816Touch.h"
-#include "YellowDisplayConstants.h"
+#include "hal/YellowDisplayConstants.h"
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_vendor.h>
 #include <esp_lcd_panel_ops.h>
