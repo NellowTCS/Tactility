@@ -29,39 +29,43 @@ public:
         // Initialize I80 bus
         esp_lcd_i80_bus_handle_t i80_bus = nullptr;
         esp_lcd_i80_bus_config_t bus_config = {
-            .clk_src = LCD_CLK_SRC_PLL160M,           // Clock source
-            .dc_gpio_num = 16,                        // Data/Command GPIO
-            .wr_gpio_num = 4,                         // Write signal GPIO
+            .clk_src = LCD_CLK_SRC_DEFAULT,      // Clock source
+            .dc_gpio_num = 16,                   // Data/Command GPIO
+            .wr_gpio_num = 4,                    // Write signal GPIO
             .data_gpio_nums = {15, 13, 12, 14, 27, 25, 33, 32}, // 8-bit data lines
-            .bus_width = 8,                           // 8-bit parallel bus
-            .max_transfer_bytes = 240 * 320 * sizeof(lv_color_t), // Buffer size for 240x320 display
-            .psram_trans_align = 64,                  // Alignment for PSRAM
-            .sram_trans_align = 4                     // Alignment for SRAM
+            .bus_width = 8,                      // 8-bit parallel bus
+            .max_transfer_bytes = 240 * 320 * 2, // Buffer size (assuming 16-bit color)
+            .psram_trans_align = 64,             // PSRAM alignment
+            .sram_trans_align = 4                // SRAM alignment
         };
         ESP_ERROR_CHECK(esp_lcd_new_i80_bus(&bus_config, &i80_bus));
 
         // Configure I80 panel I/O
         esp_lcd_panel_io_i80_config_t io_config = {
-            .cs_gpio_num = 17,                        // Chip Select GPIO
-            .pclk_hz = 12000000,                      // Pixel clock frequency (12 MHz)
-            .trans_queue_depth = 10,                  // Transaction queue depth
-            .dc_levels = {0, 1, 0, 0},                // DC signal levels
-            .on_color_trans_done = NULL,              // Callback for transfer completion
-            .user_ctx = NULL,                         // User context for callback
-            .lcd_cmd_bits = 8,                        // Command bit width
-            .lcd_param_bits = 8,                      // Parameter bit width
-            .flags = {0}                              // Additional flags
+            .cs_gpio_num = 17,                   // Chip select GPIO
+            .pclk_hz = 12000000,                 // Pixel clock frequency (12 MHz)
+            .trans_queue_depth = 10,             // Transaction queue depth
+            .dc_levels = {                       // DC signal levels
+                .dc_idle_level = 0,
+                .dc_cmd_level = 1,
+                .dc_dummy_level = 0,
+                .dc_data_level = 0
+            },
+            .on_color_trans_done = NULL,         // Callback (none)
+            .user_ctx = NULL,                    // User context (none)
+            .lcd_cmd_bits = 8,                   // Command bits
+            .lcd_param_bits = 8                  // Parameter bits
+            // .flags defaults to 0 if not specified
         };
         ESP_ERROR_CHECK(esp_lcd_new_panel_io_i80(i80_bus, &io_config, &io_handle));
 
         // Initialize ST7789 panel
         esp_lcd_panel_dev_config_t panel_config = {
-            .reset_gpio_num = GPIO_NUM_NC,  // No reset pin
-            .color_space = ESP_LCD_COLOR_SPACE_RGB,
-            .bits_per_pixel = 16,  // RGB565
-            .data_endian = ESP_LCD_DATA_ENDIAN_BIG,
-            .flags = { .reset_active_high = 0 },
-            .vendor_config = nullptr
+            .reset_gpio_num = -1,                // No reset GPIO
+            .rgb_ele_order = ESP_LCD_COLOR_SPACE_RGB, // Color space
+            .bits_per_pixel = 16,                // 16-bit color depth
+            .vendor_config = NULL                // No vendor-specific config
+            // Note: data_endian is not a field here; handled elsewhere if needed
         };
         ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle));
         ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
@@ -69,30 +73,18 @@ public:
         ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, false));  // Adjust as needed
 
         // LVGL display configuration
-        lvgl_port_display_cfg_t lvgl_cfg = {
-            .io_handle = io_handle,
-            .control_handle = NULL,
-            .panel_handle = panel_handle,
-            .buffer_size = 240 * 320,  // Full screen buffer
-            .double_buffer = false,
-            .trans_size = 0,  // No SRAM transfer buffer
-            .hres = 240,  // Horizontal resolution
-            .vres = 320,  // Vertical resolution
-            .monochrome = false,
-            .rotation = { .swap_xy = false, .mirror_x = false, .mirror_y = false },  // HW mirroring
-#if LVGL_VERSION_MAJOR >= 9
-            .color_format = LV_COLOR_FORMAT_NATIVE,
-#endif
-            .flags = {
-                .buff_dma = 0,
-                .buff_spiram = 0,
-                .sw_rotate = 0,
-#if LVGL_VERSION_MAJOR >= 9
-                .swap_bytes = 0,
-#endif
-                .full_refresh = 1,  // Redraw full screen
-                .direct_mode = 0
-            }
+        lvgl_port_display_cfg_t disp_cfg = {
+            .io_handle = io_handle,              // From esp_lcd_panel_io_init
+            .panel_handle = panel_handle,        // From esp_lcd_new_panel
+            .buffer_size = 240 * 320,            // Single buffer size
+            .double_buffer = false,              // No double buffering
+            .trans_size = 0,                     // Default transfer size
+            .hres = 240,                         // Horizontal resolution
+            .vres = 320,                         // Vertical resolution
+            .monochrome = false,                 // Color display
+            .rotation = {0, 0, 0, 0},            // No rotation
+            .color_format = LV_COLOR_FORMAT_RGB565, // 16-bit RGB565
+            .flags = 0                           // No special flags
         };
         display_handle = lvgl_port_add_disp(&lvgl_cfg);
         if (!display_handle) {
