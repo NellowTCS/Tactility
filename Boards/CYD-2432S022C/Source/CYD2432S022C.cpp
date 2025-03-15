@@ -49,7 +49,17 @@ static std::vector<tt::hal::i2c::Configuration> make_i2c_configurations() {
     return configs;
 }
 
-static std::vector<tt::hal::spi::Configuration> make_spi_configurations() { ... }
+static std::vector<tt::hal::Spi::Configuration> make_spi_configurations() {
+    return {
+        {
+            .mosi = 23,    
+            .miso = 19,
+            .sclk = 18,
+            .cs = 5,
+            .clock_speed_hz = 1000000 // 1 MHz
+        }
+    };
+}
 
 const tt::hal::Configuration cyd_2432s022C_config = {
     .initBoot = initBoot,
