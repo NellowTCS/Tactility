@@ -53,10 +53,10 @@ static std::vector<tt::hal::spi::Configuration> make_spi_configurations() {
     std::vector<tt::hal::spi::Configuration> configs;
 
     tt::hal::spi::Configuration cfg;
-    cfg.mosi = 23;
-    cfg.miso = 19;
-    cfg.sclk = 18;
-    cfg.cs = 5;
+    cfg.mosi_io_num = 23;           // Adjusted to common Tactility naming
+    cfg.miso_io_num = 19;
+    cfg.sclk_io_num = 18;
+    cfg.cs_pin = 5;
     cfg.clock_speed_hz = 1000000;
     configs.push_back(cfg);
 
