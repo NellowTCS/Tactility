@@ -2,22 +2,14 @@
 #include "hal/YellowDisplay.h"
 #include "hal/YellowDisplayConstants.h"
 #include "hal/YellowSdCard.h"
-
 #include <Tactility/lvgl/LvglSync.h>
 #include <PwmBacklight.h>
 #include <vector>
+#include <esp_log.h>
 
-#define CYD_SPI_TRANSFER_SIZE_LIMIT (TWODOTFOUR_LCD_DRAW_BUFFER_SIZE * LV_COLOR_DEPTH / 8)
-
-// LVGL Settings
-#define LVGL_FONT_MONTSERRAT_14_ENABLED CONFIG_LV_FONT_MONTSERRAT_14
-#define LVGL_FONT_MONTSERRAT_18_ENABLED CONFIG_LV_FONT_MONTSERRAT_18
-#define LVGL_USE_USER_DATA_ENABLED CONFIG_LV_USE_USER_DATA
-
-// I2C Configuration for Touchscreen (CST816S)
-#define TOUCH_I2C_SDA_GPIO_NUM CONFIG_CST816S_I2C_CONFIG_SDA_IO_NUM
-#define TOUCH_I2C_SCL_GPIO_NUM CONFIG_CST816S_I2C_CONFIG_SCL_IO_NUM
-#define TOUCH_I2C_CLK_SPEED    CONFIG_CST816S_I2C_CONFIG_MASTER_CLK_SPEED
+#define TOUCH_I2C_SDA_GPIO_NUM GPIO_NUM_22  // From JSON
+#define TOUCH_I2C_SCL_GPIO_NUM GPIO_NUM_21  // From JSON
+#define TOUCH_I2C_CLK_SPEED 400000          // Typical for CST816S
 
 bool initBoot() {
     return driver::pwmbacklight::init(TWODOTFOUR_LCD_PIN_BACKLIGHT);  // GPIO 21
@@ -57,25 +49,9 @@ static std::vector<tt::hal::i2c::Configuration> make_i2c_configurations() {
     return configs;
 }
 
-static std::vector<tt::hal::spi::Configuration> make_spi_configurations() {
-    std::vector<tt::hal::spi::Configuration> configs;
+static std::vector<tt::hal::spi::Configuration> make_spi_configurations() { ... }
 
-    // SPI3 for SD card only
-    tt::hal::spi::Configuration spi_cfg2;
-    spi_cfg2.device = SPI3_HOST;
-    spi_cfg2.dma = SPI_DMA_CH_AUTO;
-    spi_cfg2.config.mosi_io_num = GPIO_NUM_23;
-    spi_cfg2.config.miso_io_num = GPIO_NUM_19;
-    spi_cfg2.config.sclk_io_num = GPIO_NUM_18;
-    spi_cfg2.config.max_transfer_sz = 8192;
-    spi_cfg2.initMode = tt::hal::spi::InitMode::ByTactility;
-    spi_cfg2.isMutable = false;
-    configs.push_back(spi_cfg2);
-
-    return configs;
-}
-
-const tt::hal::Configuration cyd_2432S022C_config = {
+const tt::hal::Configuration cyd_2432s022C_config = {
     .initBoot = initBoot,
     .createDisplay = createDisplay,
     .sdcard = createYellowSdCard(),
