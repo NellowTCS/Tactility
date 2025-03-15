@@ -66,7 +66,7 @@ public:
             .reset_gpio_num = -1,
             .rgb_ele_order = ESP_LCD_COLOR_SPACE_RGB,
             .bits_per_pixel = 16,
-            .data_endian = ESP_LCD_DATA_ENDIAN_LITTLE, // Added for completeness
+            .data_endian = LCD_RGB_DATA_ENDIAN_LITTLE, // Added for completeness
             .flags = {
                 .reset_active_high = 0
             },
