@@ -20,7 +20,7 @@
 #define TOUCH_I2C_CLK_SPEED    CONFIG_CST816S_I2C_CONFIG_MASTER_CLK_SPEED
 
 bool initBoot() {
-    return driver::pwmbacklight::init(TWODOTFOUR_LCD_PIN_BACKLIGHT);
+    return driver::pwmbacklight::init(TWODOTFOUR_LCD_PIN_BACKLIGHT);  // GPIO 21
 }
 
 static std::vector<tt::hal::i2c::Configuration> make_i2c_configurations() {
@@ -60,48 +60,16 @@ static std::vector<tt::hal::i2c::Configuration> make_i2c_configurations() {
 static std::vector<tt::hal::spi::Configuration> make_spi_configurations() {
     std::vector<tt::hal::spi::Configuration> configs;
 
-    tt::hal::spi::Configuration spi_cfg1;
-    spi_cfg1.device = SPI2_HOST;
-    spi_cfg1.dma = SPI_DMA_CH_AUTO;
-    spi_cfg1.config.mosi_io_num = GPIO_NUM_13;
-    spi_cfg1.config.miso_io_num = GPIO_NUM_NC;
-    spi_cfg1.config.sclk_io_num = GPIO_NUM_14;
-    spi_cfg1.config.quadwp_io_num = -1;
-    spi_cfg1.config.quadhd_io_num = -1;
-    spi_cfg1.config.data4_io_num = 0;
-    spi_cfg1.config.data5_io_num = 0;
-    spi_cfg1.config.data6_io_num = 0;
-    spi_cfg1.config.data7_io_num = 0;
-    spi_cfg1.config.data_io_default_level = false;
-    spi_cfg1.config.max_transfer_sz = CYD_SPI_TRANSFER_SIZE_LIMIT;
-    spi_cfg1.config.flags = 0;
-    spi_cfg1.config.isr_cpu_id = ESP_INTR_CPU_AFFINITY_AUTO;
-    spi_cfg1.config.intr_flags = 0;
-    spi_cfg1.initMode = tt::hal::spi::InitMode::ByTactility;
-    spi_cfg1.isMutable = false;
-    spi_cfg1.lock = tt::lvgl::getSyncLock();
-    configs.push_back(spi_cfg1);
-
+    // SPI3 for SD card only
     tt::hal::spi::Configuration spi_cfg2;
     spi_cfg2.device = SPI3_HOST;
     spi_cfg2.dma = SPI_DMA_CH_AUTO;
     spi_cfg2.config.mosi_io_num = GPIO_NUM_23;
     spi_cfg2.config.miso_io_num = GPIO_NUM_19;
     spi_cfg2.config.sclk_io_num = GPIO_NUM_18;
-    spi_cfg2.config.quadwp_io_num = -1;
-    spi_cfg2.config.quadhd_io_num = -1;
-    spi_cfg2.config.data4_io_num = 0;
-    spi_cfg2.config.data5_io_num = 0;
-    spi_cfg2.config.data6_io_num = 0;
-    spi_cfg2.config.data7_io_num = 0;
-    spi_cfg2.config.data_io_default_level = false;
     spi_cfg2.config.max_transfer_sz = 8192;
-    spi_cfg2.config.flags = 0;
-    spi_cfg2.config.isr_cpu_id = ESP_INTR_CPU_AFFINITY_AUTO;
-    spi_cfg2.config.intr_flags = 0;
     spi_cfg2.initMode = tt::hal::spi::InitMode::ByTactility;
     spi_cfg2.isMutable = false;
-    spi_cfg2.lock = nullptr;
     configs.push_back(spi_cfg2);
 
     return configs;
