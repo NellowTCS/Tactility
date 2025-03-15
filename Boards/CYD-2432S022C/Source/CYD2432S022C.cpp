@@ -7,12 +7,12 @@
 #include <vector>
 #include <esp_log.h>
 
-#define TOUCH_I2C_SDA_GPIO_NUM GPIO_NUM_22  // From JSON
-#define TOUCH_I2C_SCL_GPIO_NUM GPIO_NUM_21  // From JSON
-#define TOUCH_I2C_CLK_SPEED 400000          // Typical for CST816S
+#define TOUCH_I2C_SDA_GPIO_NUM GPIO_NUM_22
+#define TOUCH_I2C_SCL_GPIO_NUM GPIO_NUM_21
+#define TOUCH_I2C_CLK_SPEED 400000
 
 bool initBoot() {
-    return driver::pwmbacklight::init(TWODOTFOUR_LCD_PIN_BACKLIGHT);  // GPIO 21
+    return driver::pwmbacklight::init(TWODOTFOUR_LCD_PIN_BACKLIGHT);
 }
 
 static std::vector<tt::hal::i2c::Configuration> make_i2c_configurations() {
@@ -49,16 +49,18 @@ static std::vector<tt::hal::i2c::Configuration> make_i2c_configurations() {
     return configs;
 }
 
-static std::vector<tt::hal::Spi::Configuration> make_spi_configurations() {
-    return {
-        {
-            .mosi = 23,    
-            .miso = 19,
-            .sclk = 18,
-            .cs = 5,
-            .clock_speed_hz = 1000000 // 1 MHz
-        }
-    };
+static std::vector<tt::hal::spi::Configuration> make_spi_configurations() {
+    std::vector<tt::hal::spi::Configuration> configs;
+
+    tt::hal::spi::Configuration cfg;
+    cfg.mosi = 23;
+    cfg.miso = 19;
+    cfg.sclk = 18;
+    cfg.cs = 5;
+    cfg.clock_speed_hz = 1000000;
+    configs.push_back(cfg);
+
+    return configs;
 }
 
 const tt::hal::Configuration cyd_2432s022C_config = {
