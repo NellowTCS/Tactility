@@ -69,7 +69,7 @@ public:
             .flags = {
                 .reset_active_high = 0
             },
-            .data_endian = ESP_LCD_DATA_ENDIAN_LITTLE,
+            .data_endian = LCD_RGB_DATA_ENDIAN_LITTLE,
             .vendor_config = NULL
         };
         ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle));
