@@ -18,14 +18,6 @@ static const st7796_lcd_init_cmd_t st7789_init_cmds_[] = {
 bool St7789I8080Display::start() {
     TT_LOG_I(TAG, "Starting");
 
-    // Calculate buffer size first (same logic as LVGL config)
-    uint32_t buffer_size;
-    if (configuration->bufferSize == 0) {
-        buffer_size = configuration->horizontalResolution * configuration->verticalResolution / 10;
-    } else {
-        buffer_size = configuration->bufferSize;
-    }
-
     // Initialize I8080 bus
     TT_LOG_I(TAG, "Initialize Intel 8080 bus");
     esp_lcd_i80_bus_config_t bus_config = {
