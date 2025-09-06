@@ -18,6 +18,14 @@ static const st7796_lcd_init_cmd_t st7789_init_cmds_[] = {
 bool St7789I8080Display::start() {
     TT_LOG_I(TAG, "Starting");
 
+    // Calculate buffer size first (same logic as LVGL config)
+    uint32_t buffer_size;
+    if (configuration->bufferSize == 0) {
+        buffer_size = configuration->horizontalResolution * configuration->verticalResolution / 10;
+    } else {
+        buffer_size = configuration->bufferSize;
+    }
+
     // Initialize I8080 bus
     TT_LOG_I(TAG, "Initialize Intel 8080 bus");
     esp_lcd_i80_bus_config_t bus_config = {
@@ -26,7 +34,7 @@ bool St7789I8080Display::start() {
         .clk_src = LCD_CLK_SRC_DEFAULT,
         .data_gpio_nums = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
         .bus_width = configuration->busWidth,
-        .max_transfer_bytes = 240 * 8 * 2,  // 3,840 bytes instead of 153,600 (HOW?! How did this work before)
+        .max_transfer_bytes = buffer_size * 2,
     };
     for (int i = 0; i < configuration->busWidth; i++) {
         bus_config.data_gpio_nums[i] = configuration->dataPins[i];
