@@ -1,5 +1,6 @@
 #include "St7789-i8080Display.h"
 #include <Tactility/Log.h>
+#include <Tactility/hal/touch/TouchDevice.h>
 #include <esp_lcd_panel_commands.h>
 #include <esp_lcd_panel_dev.h>
 #include <esp_lcd_st7796.h>
