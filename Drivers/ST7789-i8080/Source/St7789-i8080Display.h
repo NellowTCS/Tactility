@@ -147,6 +147,11 @@ public:
     
     lv_display_t* _Nullable getLvglDisplay() const final { return displayHandle; }
     
+    // LVGL support methods
+    bool supportsLvgl() const override { return true; }
+    bool startLvgl() override;                           // Declaration only
+    bool stopLvgl() override;                            // Declaration only
+
     // Additional utility functions
     uint16_t getWidth() const { return configuration->horizontalResolution; }
     uint16_t getHeight() const { return configuration->verticalResolution; }

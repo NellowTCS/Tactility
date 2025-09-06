@@ -16,9 +16,9 @@ static const st7796_lcd_init_cmd_t st7789_init_cmds_[] = {
 };
 
 bool St7789I8080Display::start() {
-    TT_LOG_I(TAG, "Starting");
+    TT_LOG_I(TAG, "Starting hardware initialization");
 
-    // Initialize LVGL display
+    // Calculate buffer size for max_transfer_bytes
     uint32_t buffer_size;
     if (configuration->bufferSize == 0) {
         buffer_size = configuration->horizontalResolution * configuration->verticalResolution / 10;
@@ -34,7 +34,7 @@ bool St7789I8080Display::start() {
         .clk_src = LCD_CLK_SRC_DEFAULT,
         .data_gpio_nums = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
         .bus_width = configuration->busWidth,
-        .max_transfer_bytes = buffer_size * 2,
+        .max_transfer_bytes = buffer_size * 2,  // Use buffer size, not full screen
     };
     for (int i = 0; i < configuration->busWidth; i++) {
         bus_config.data_gpio_nums[i] = configuration->dataPins[i];
@@ -63,6 +63,7 @@ bool St7789I8080Display::start() {
 
     if (esp_lcd_new_panel_io_i80(i80Bus, &io_config, &ioHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to create panel IO");
+        esp_lcd_del_i80_bus(i80Bus);
         return false;
     }
 
@@ -87,6 +88,8 @@ bool St7789I8080Display::start() {
 
     if (esp_lcd_new_panel_st7796(ioHandle, &panel_config, &panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to create panel");
+        esp_lcd_panel_io_del(ioHandle);
+        esp_lcd_del_i80_bus(i80Bus);
         return false;
     }
 
@@ -132,6 +135,26 @@ bool St7789I8080Display::start() {
         setBacklight(true);
     }
 
+    TT_LOG_I(TAG, "Hardware initialization finished");
+    return true;  // Don't initialize LVGL here
+}
+
+bool St7789I8080Display::startLvgl() {
+    TT_LOG_I(TAG, "Starting LVGL integration");
+    
+    if (displayHandle != nullptr) {
+        TT_LOG_W(TAG, "LVGL already started");
+        return true;
+    }
+
+    // Calculate buffer size
+    uint32_t buffer_size;
+    if (configuration->bufferSize == 0) {
+        buffer_size = configuration->horizontalResolution * configuration->verticalResolution / 10;
+    } else {
+        buffer_size = configuration->bufferSize;
+    }
+
     const lvgl_port_display_cfg_t disp_cfg = {
         .io_handle = ioHandle,
         .panel_handle = panelHandle,
@@ -160,26 +183,55 @@ bool St7789I8080Display::start() {
 
     displayHandle = lvgl_port_add_disp(&disp_cfg);
 
-    TT_LOG_I(TAG, "Finished");
+    // Initialize touch if available
+    auto touch_device = getTouchDevice();
+    if (touch_device != nullptr && touch_device->supportsLvgl()) {
+        touch_device->startLvgl(displayHandle);
+    }
+
+    TT_LOG_I(TAG, "LVGL integration finished");
     return displayHandle != nullptr;
 }
 
-bool St7789I8080Display::stop() {
-    assert(displayHandle != nullptr);
+bool St7789I8080Display::stopLvgl() {
+    TT_LOG_I(TAG, "Stopping LVGL integration");
+    
+    if (displayHandle == nullptr) {
+        return true;  // Already stopped
+    }
+
+    // Stop touch first
+    auto touch_device = getTouchDevice();
+    if (touch_device != nullptr) {
+        touch_device->stopLvgl();
+    }
 
     lvgl_port_remove_disp(displayHandle);
+    displayHandle = nullptr;
+    
+    TT_LOG_I(TAG, "LVGL integration stopped");
+    return true;
+}
 
-    if (esp_lcd_panel_del(panelHandle) != ESP_OK) {
+bool St7789I8080Display::stop() {
+    TT_LOG_I(TAG, "Stopping hardware");
+
+    // Stop LVGL first if it's running
+    if (displayHandle != nullptr) {
+        stopLvgl();
+    }
+
+    if (panelHandle != nullptr && esp_lcd_panel_del(panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to delete panel");
         return false;
     }
 
-    if (esp_lcd_panel_io_del(ioHandle) != ESP_OK) {
+    if (ioHandle != nullptr && esp_lcd_panel_io_del(ioHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to delete panel IO");
         return false;
     }
 
-    if (esp_lcd_del_i80_bus(i80Bus) != ESP_OK) {
+    if (i80Bus != nullptr && esp_lcd_del_i80_bus(i80Bus) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to delete I8080 bus");
         return false;
     }
@@ -188,7 +240,11 @@ bool St7789I8080Display::stop() {
         gpio_set_level(configuration->pin_backlight, !configuration->backlightOnLevel);
     }
 
-    displayHandle = nullptr;
+    panelHandle = nullptr;
+    ioHandle = nullptr;
+    i80Bus = nullptr;
+
+    TT_LOG_I(TAG, "Hardware stopped");
     return true;
 }
 
