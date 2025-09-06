@@ -18,6 +18,14 @@ static const st7796_lcd_init_cmd_t st7789_init_cmds_[] = {
 bool St7789I8080Display::start() {
     TT_LOG_I(TAG, "Starting");
 
+    // Initialize LVGL display
+    uint32_t buffer_size;
+    if (configuration->bufferSize == 0) {
+        buffer_size = configuration->horizontalResolution * configuration->verticalResolution / 10;
+    } else {
+        buffer_size = configuration->bufferSize;
+    }
+
     // Initialize I8080 bus
     TT_LOG_I(TAG, "Initialize Intel 8080 bus");
     esp_lcd_i80_bus_config_t bus_config = {
@@ -122,14 +130,6 @@ bool St7789I8080Display::start() {
             return false;
         }
         setBacklight(true);
-    }
-
-    // Initialize LVGL display
-    uint32_t buffer_size;
-    if (configuration->bufferSize == 0) {
-        buffer_size = configuration->horizontalResolution * configuration->verticalResolution / 10;
-    } else {
-        buffer_size = configuration->bufferSize;
     }
 
     const lvgl_port_display_cfg_t disp_cfg = {
