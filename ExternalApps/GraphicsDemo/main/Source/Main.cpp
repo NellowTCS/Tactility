@@ -5,22 +5,88 @@
 #include <esp_log.h>
 
 #include <tt_app.h>
+#include <tt_app_alertdialog.h>
 #include <tt_lvgl.h>
 
 constexpr auto TAG = "Main";
 
-static void onCreate(AppHandle appHandle, void* data) {
+/**
+ * @brief Locate a display device that supports the native DisplayDriver interface.
+ *
+ * Searches for up to one display device and verifies it supports driver mode.
+ *
+ * @param[out] deviceId Receives the found device's identifier when the function returns true.
+ * @return true if a display was found and supports the DisplayDriver interface.
+ * @return false if no display was found or the found display does not support driver mode.
+ */
+static bool findUsableDisplay(DeviceId& deviceId) {
     uint16_t display_count = 0;
+    if (!tt_hal_device_find(DEVICE_TYPE_DISPLAY, &deviceId, &display_count, 1)) {
+        ESP_LOGE(TAG, "No display device found");
+        return false;
+    }
+
+    if (!tt_hal_display_driver_supported(deviceId)) {
+        ESP_LOGE(TAG, "Display doesn't support driver mode");
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Locate a touch device that supports the TouchDriver interface.
+ *
+ * Attempts to find a touch device and verifies it supports driver mode.
+ *
+ * @param deviceId[out] Set to the found device's ID on success.
+ * @return true if a touch device was found and supports the touch driver interface.
+ * @return false if no touch device was found or the device does not support driver mode.
+ */
+static bool findUsableTouch(DeviceId& deviceId) {
+    uint16_t touch_count = 0;
+    if (!tt_hal_device_find(DEVICE_TYPE_TOUCH, &deviceId, &touch_count, 1)) {
+        ESP_LOGE(TAG, "No touch device found");
+        return false;
+    }
+
+    if (!tt_hal_touch_driver_supported(deviceId)) {
+        ESP_LOGE(TAG, "Touch doesn't support driver mode");
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Application entry: initialize hardware drivers and run the app.
+ *
+ * Initializes and validates a display and touch device, stops LVGL so the
+ * drivers can be acquired, constructs DisplayDriver and TouchDriver, runs
+ * the main application logic via runApplication(), then cleans up and stops
+ * the application.
+ *
+ * If no usable display or touch device is found the function stops the
+ * app and presents a user-facing alert dialog before returning.
+ *
+ * Note: Parameters are provided by the application framework and are not
+ * used by this implementation.
+ *
+ * @param appHandle Framework handle for the launching application (unused).
+ * @param data Opaque framework data pointer (unused).
+ */
+static void onCreate(AppHandle appHandle, void* data) {
     DeviceId display_id;
-    if (!tt_hal_device_find(DEVICE_TYPE_DISPLAY, &display_id, &display_count, 1)) {
-        ESP_LOGI(TAG, "No display device found");
+    if (!findUsableDisplay(display_id)) {
+        tt_app_stop();
+        tt_app_alertdialog_start("Error", "The display doesn't support the required features.", nullptr, 0);
         return;
     }
 
-    uint16_t touch_count = 0;
     DeviceId touch_id;
-    if (!tt_hal_device_find(DEVICE_TYPE_TOUCH, &touch_id, &touch_count, 1)) {
-        ESP_LOGI(TAG, "No touch device found");
+    if (!findUsableTouch(touch_id)) {
+        tt_app_stop();
+        tt_app_alertdialog_start("Error", "The touch driver doesn't support the required features.", nullptr, 0);
         return;
     }
 

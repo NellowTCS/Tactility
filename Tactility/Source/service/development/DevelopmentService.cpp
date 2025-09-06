@@ -205,6 +205,27 @@ esp_err_t DevelopmentService::handleAppRun(httpd_req_t* request) {
     return ESP_OK;
 }
 
+/**
+ * @brief Handles HTTP multipart upload to install an ELF application.
+ *
+ * Parses a multipart/form-data request, expects a part with Content-Disposition
+ * name="elf" and a filename parameter, saves the uploaded bytes to
+ * /data/{filename}, and returns an appropriate HTTP response.
+ *
+ * On success the handler sends an empty 200 response and returns ESP_OK.
+ *
+ * The handler will send HTTP errors and return ESP_FAIL/ESP_ERR on failure:
+ * - 400 Bad Request: missing/invalid multipart boundary or content-disposition,
+ *   or when the uploaded file data is incomplete.
+ * - 500 Internal Server Error: failure writing the file to disk.
+ *
+ * Side effects:
+ * - Writes the uploaded file to the filesystem at /data/{filename}.
+ *
+ * @param request The HTTP request context for the upload (request body and
+ *                response functions are used).
+ * @return esp_err_t ESP_OK on success; ESP_FAIL or an ESP error code on failure.
+ */
 esp_err_t DevelopmentService::handleAppInstall(httpd_req_t* request) {
     std::string boundary;
     if (!network::getMultiPartBoundaryOrSendError(request, boundary)) {
@@ -251,7 +272,7 @@ esp_err_t DevelopmentService::handleAppInstall(httpd_req_t* request) {
     content_left -= content_read;
 
     // Write file
-    auto file_path = std::format("/sdcard/{}", filename_entry->second);
+    auto file_path = std::format("/data/{}", filename_entry->second);
     auto* file = fopen(file_path.c_str(), "wb");
     auto file_bytes_written = fwrite(buffer.get(), 1, file_size, file);
     fclose(file);

@@ -5,19 +5,20 @@
 #include "tt_init.h"
 #endif
 
-// Forward declaration of clock_app from Clock.cpp
-namespace tt::app::clock {
-    extern const AppManifest clock_app;
-}
-
-extern const tt::app::AppManifest tactility_news_app;
-extern const tt::app::AppManifest tactile_web_app;
-extern const tt::app::AppManifest tactiligotchi_app;
 extern const tt::app::AppManifest hello_world_app;
-
 
 extern "C" {
 
+/**
+ * @brief Application entry point that configures and starts the Tactility runtime.
+ *
+ * Initializes a static tt::Configuration (auto-selecting the board via TT_BOARD_HARDWARE)
+ * and starts the runtime by calling tt::run(config). When built for ESP_PLATFORM, it
+ * also performs platform-specific ELF binding initialization required for side-loading.
+ *
+ * The configuration created here uses an empty apps list by default; individual apps
+ * can be added to the config's apps array before running if desired.
+ */
 void app_main() {
     static const tt::Configuration config = {
         /**
@@ -27,10 +28,6 @@ void app_main() {
         .hardware = TT_BOARD_HARDWARE,
         .apps = {
             // &hello_world_app,
-            &tactility_news_app,
-            &tactile_web_app,
-            &tt::app::clock::clock_app,
-            &tactiligotchi_app,
         }
     };
 
