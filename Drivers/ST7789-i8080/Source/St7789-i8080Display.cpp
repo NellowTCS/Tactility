@@ -8,16 +8,26 @@
 
 #define TAG "st7789-i8080"
 
-// Custom initialization sequence
+// ST7789 initialization sequence - follows reference documentation
 static const st7796_lcd_init_cmd_t st7789_init_cmds_[] = {
-    {0x11, nullptr, 0, 120},                 // SLPOUT + 120ms delay
-    {0x3A, (uint8_t[]){0x05}, 1, 0},        // COLMOD - 16 bits per pixel
-    {0x36, (uint8_t[]){0x00}, 1, 0},        // MADCTL
-    {0x29, nullptr, 0, 0},                   // DISPON
+    // Step 2: Exit sleep mode (SLPOUT) - gets display out of power-saving mode
+    {0x11, nullptr, 0, 120},                 // SLPOUT + 120ms delay for stability
+    
+    // Step 3: Set pixel format to 16bpp RGB565 (COLMOD)
+    {0x3A, (uint8_t[]){0x05}, 1, 0},        // COLMOD - 0x05 = 16 bits per pixel (RGB565)
+    
+    // Optional: Memory Access Control (MADCTL) - normal orientation
+    {0x36, (uint8_t[]){0x00}, 1, 0},        // MADCTL - will be modified by ESP-IDF for rotation
+    
+    // Step 5: Turn display on (DISPON)
+    {0x29, nullptr, 0, 0},                   // DISPON - Display On
 };
 
+// Separate inversion command for conditional use (Step 4 from reference)
+static const st7796_lcd_init_cmd_t st7789_invert_cmd_ = {0x21, nullptr, 0, 0}; // INVON
+
 bool St7789I8080Display::start() {
-    TT_LOG_I(TAG, "Starting hardware initialization");
+    TT_LOG_I(TAG, "Starting ST7789 hardware initialization");
 
     // Calculate buffer size for max_transfer_bytes
     uint32_t buffer_size;
@@ -68,52 +78,65 @@ bool St7789I8080Display::start() {
         return false;
     }
 
-    // Initialize panel
-    TT_LOG_I(TAG, "Install ST7796 panel driver");
-    std::vector<st7796_lcd_init_cmd_t> init_cmds(st7789_init_cmds_, st7789_init_cmds_ + sizeof(st7789_init_cmds_) / sizeof(st7796_lcd_init_cmd_t));
+    // Initialize panel with proper ST7789 command sequence
+    TT_LOG_I(TAG, "Install ST7789 panel driver");
+    
+    // Build initialization command sequence
+    std::vector<st7796_lcd_init_cmd_t> init_cmds(st7789_init_cmds_, 
+        st7789_init_cmds_ + sizeof(st7789_init_cmds_) / sizeof(st7796_lcd_init_cmd_t));
+    
+    // Add inversion command if needed (required for IPS displays, optional for TN displays)
     if (configuration->invertColor) {
-        st7796_lcd_init_cmd_t invert_cmd = {0x21, nullptr, 0, 0}; // INVON
-        init_cmds.insert(init_cmds.end() - 1, invert_cmd);
+        // Insert INVON command before DISPON (which is the last command)
+        init_cmds.insert(init_cmds.end() - 1, st7789_invert_cmd_);
+        TT_LOG_I(TAG, "Color inversion enabled for IPS display");
+    } else {
+        TT_LOG_I(TAG, "Color inversion disabled for TN display");
     }
 
     st7796_vendor_config_t vendor_config = {
         .init_cmds = init_cmds.data(),
         .init_cmds_size = static_cast<uint16_t>(init_cmds.size())
     };
+    
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = configuration->pin_rst,
-        .rgb_endian = LCD_RGB_ENDIAN_RGB,
-        .bits_per_pixel = 16,
+        .rgb_endian = LCD_RGB_ENDIAN_RGB,        // RGB565 format
+        .bits_per_pixel = 16,                     // 16bpp as per COLMOD 0x05
         .vendor_config = &vendor_config
     };
 
     if (esp_lcd_new_panel_st7796(ioHandle, &panel_config, &panelHandle) != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to create panel");
+        TT_LOG_E(TAG, "Failed to create ST7789 panel");
         esp_lcd_panel_io_del(ioHandle);
         esp_lcd_del_i80_bus(i80Bus);
         return false;
     }
 
+    // Step 1: Hardware reset (handled automatically by ESP-IDF)
     if (esp_lcd_panel_reset(panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to reset panel");
         return false;
     }
 
+    // Execute initialization sequence (Steps 2-5 from reference)
     if (esp_lcd_panel_init(panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to init panel");
         return false;
     }
 
+    // Apply orientation settings (these modify the MADCTL register)
     if (esp_lcd_panel_swap_xy(panelHandle, configuration->swapXY) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to swap XY");
         return false;
     }
 
     if (esp_lcd_panel_mirror(panelHandle, configuration->mirrorX, configuration->mirrorY) != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to set panel to mirror");
+        TT_LOG_E(TAG, "Failed to set panel mirroring");
         return false;
     }
 
+    // Ensure display is on (redundant but safe)
     if (esp_lcd_panel_disp_on_off(panelHandle, true) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to turn display on");
         return false;
@@ -136,7 +159,7 @@ bool St7789I8080Display::start() {
         setBacklight(true);
     }
 
-    TT_LOG_I(TAG, "Hardware initialization finished");
+    TT_LOG_I(TAG, "ST7789 hardware initialization finished");
     return true;  // Don't initialize LVGL here
 }
 
