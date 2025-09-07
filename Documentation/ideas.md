@@ -2,6 +2,7 @@
 
 ## Higher Priority
 
+- System Info should show the version of Tactility
 - Fix Development service: when no SD card is present, the app fails to install. Consider installing to `/data`
   Note: Change app install to "transfer file" functionality. We can have a proper install when we have app packaging.
   Note: Consider installation path option in interface
@@ -16,6 +17,9 @@
 - Create an "app install paths" settings app to add/remove paths.
   Scan these paths on startup.
   Make the AppList use the scan results.
+- Apps with update timer should check `lvgl::isStarted()`
+- CrowPanel Basic 3.5": check why GraphicsDemo fails
+- CrowPanel Basic 3.5": check why System Info doesn't show storage info
 
 ## Medium Priority
 
