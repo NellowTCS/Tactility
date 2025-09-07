@@ -176,6 +176,10 @@ public:
     bool startLvgl() override;      // Initialize LVGL integration
     bool stopLvgl() override;       // Stop LVGL integration
 
+    // DisplayDevice pure virtual methods that need implementation
+    bool supportsDisplayDriver() const final { return false; }  // This display doesn't use DisplayDriver pattern
+    std::shared_ptr<tt::hal::display::DisplayDriver> _Nullable getDisplayDriver() final { return nullptr; }
+    
     // Additional utility methods
     uint16_t getWidth() const { return configuration->horizontalResolution; }
     uint16_t getHeight() const { return configuration->verticalResolution; }
