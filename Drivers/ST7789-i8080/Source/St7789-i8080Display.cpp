@@ -8,26 +8,71 @@
 
 #define TAG "st7789-i8080"
 
-// ST7789 initialization sequence - follows reference documentation
+// ST7789 initialization sequence based on LovyanGFX reference
 static const st7796_lcd_init_cmd_t st7789_init_cmds_[] = {
-    // Step 2: Exit sleep mode (SLPOUT) - gets display out of power-saving mode
-    {0x11, nullptr, 0, 120},                 // SLPOUT + 120ms delay for stability
+    // Porch control - controls front and back porch periods
+    {0xB2, (uint8_t[]){0x0c, 0x0c, 0x00, 0x33, 0x33}, 5, 0},  // CMD_PORCTRL
     
-    // Step 3: Set pixel format to 16bpp RGB565 (COLMOD)
-    {0x3A, (uint8_t[]){0x05}, 1, 0},        // COLMOD - 0x05 = 16 bits per pixel (RGB565)
+    // Gate control - controls gate driver timing
+    {0xB7, (uint8_t[]){0x35}, 1, 0},                          // CMD_GCTRL
     
-    // Optional: Memory Access Control (MADCTL) - normal orientation
-    {0x36, (uint8_t[]){0x00}, 1, 0},        // MADCTL - will be modified by ESP-IDF for rotation
+    // VCOMS setting - VCOM voltage control
+    {0xBB, (uint8_t[]){0x28}, 1, 0},                          // CMD_VCOMS (JLX240 display datasheet value)
     
-    // Step 5: Turn display on (DISPON)
-    {0x29, nullptr, 0, 0},                   // DISPON - Display On
+    // LCM control
+    {0xC0, (uint8_t[]){0x0C}, 1, 0},                          // CMD_LCMCTRL
+    
+    // VDV and VRH command enable
+    {0xC2, (uint8_t[]){0x01, 0xFF}, 2, 0},                    // CMD_VDVVRHEN
+    
+    // VRH set - voltage VRHS
+    {0xC3, (uint8_t[]){0x10}, 1, 0},                          // CMD_VRHS
+    
+    // VDV setting
+    {0xC4, (uint8_t[]){0x20}, 1, 0},                          // CMD_VDVSET
+    
+    // FR Control 2 - Frame rate control (0x0f = 60Hz)
+    {0xC6, (uint8_t[]){0x0f}, 1, 0},                          // CMD_FRCTR2
+    
+    // Power control 1
+    {0xD0, (uint8_t[]){0xa4, 0xa1}, 2, 0},                    // CMD_PWCTRL1
+    
+    // RAM Control
+    {0xB0, (uint8_t[]){0x00, 0xC0}, 2, 0},                    // CMD_RAMCTRL
+    
+    // Positive voltage gamma control
+    {0xE0, (uint8_t[]){0xd0, 0x00, 0x02, 0x07,                // CMD_PVGAMCTRL
+                        0x0a, 0x28, 0x32, 0x44,
+                        0x42, 0x06, 0x0e, 0x12,
+                        0x14, 0x17}, 14, 0},
+    
+    // Negative voltage gamma control  
+    {0xE1, (uint8_t[]){0xd0, 0x00, 0x02, 0x07,                // CMD_NVGAMCTRL
+                        0x0a, 0x28, 0x31, 0x54,
+                        0x47, 0x0e, 0x1c, 0x17,
+                        0x1b, 0x1e}, 14, 0},
+    
+    // Exit sleep mode (SLPOUT)
+    {0x11, nullptr, 0, 130},                                   // SLPOUT + 130ms delay for stability
+    
+    // Set pixel format to 16bpp RGB565 (COLMOD)
+    {0x3A, (uint8_t[]){0x05}, 1, 0},                          // COLMOD - 0x05 = 16 bits per pixel (RGB565)
+    
+    // Memory Access Control (MADCTL) - normal orientation (will be modified by ESP-IDF for rotation)
+    {0x36, (uint8_t[]){0x00}, 1, 0},                          // MADCTL
+    
+    // Idle mode off
+    {0x38, nullptr, 0, 0},                                     // CMD_IDMOFF
+    
+    // Turn display on (DISPON)
+    {0x29, nullptr, 0, 0},                                     // DISPON - Display On
 };
 
-// Separate inversion command for conditional use (Step 4 from reference)
+// Separate inversion command for conditional use
 static const st7796_lcd_init_cmd_t st7789_invert_cmd_ = {0x21, nullptr, 0, 0}; // INVON
 
 bool St7789I8080Display::start() {
-    TT_LOG_I(TAG, "Starting ST7789 hardware initialization");
+    TT_LOG_I(TAG, "Starting ST7789 hardware initialization with command sequence");
 
     // Calculate buffer size for max_transfer_bytes
     uint32_t buffer_size;
@@ -78,8 +123,8 @@ bool St7789I8080Display::start() {
         return false;
     }
 
-    // Initialize panel with proper ST7789 command sequence
-    TT_LOG_I(TAG, "Install ST7789 panel driver");
+    // Initialize panel with ST7789 command sequence
+    TT_LOG_I(TAG, "Install ST7789 panel driver with initialization");
     
     // Build initialization command sequence
     std::vector<st7796_lcd_init_cmd_t> init_cmds(st7789_init_cmds_, 
@@ -113,13 +158,13 @@ bool St7789I8080Display::start() {
         return false;
     }
 
-    // Step 1: Hardware reset (handled automatically by ESP-IDF)
+    // Hardware reset (handled automatically by ESP-IDF)
     if (esp_lcd_panel_reset(panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to reset panel");
         return false;
     }
 
-    // Execute initialization sequence (Steps 2-5 from reference)
+    // Execute initialization sequence
     if (esp_lcd_panel_init(panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to init panel");
         return false;
@@ -159,7 +204,7 @@ bool St7789I8080Display::start() {
         setBacklight(true);
     }
 
-    TT_LOG_I(TAG, "ST7789 hardware initialization finished");
+    TT_LOG_I(TAG, "ST7789 hardware initialization finished setup");
     return true;  // Don't initialize LVGL here
 }
 
