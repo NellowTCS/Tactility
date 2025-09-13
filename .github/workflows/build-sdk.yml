@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+      - tactilebrowser_sdk
   pull_request:
     types: [opened, synchronize, reopened]
 
