@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+      - lovyan_gfx_wrapper
   pull_request:
     types: [opened, synchronize, reopened]
 

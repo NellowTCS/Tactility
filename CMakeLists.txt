@@ -44,6 +44,7 @@ if (DEFINED ENV{ESP_IDF_VERSION})
         "Libraries/minitar"
         "Libraries/minmea"
         "Libraries/QRCode"
+        "Libraries/LovyanGFX"
     )
 
     set(EXCLUDE_COMPONENTS "Simulator")
@@ -81,6 +82,7 @@ if (NOT DEFINED ENV{ESP_IDF_VERSION})
     add_subdirectory(Libraries/QRCode)
     add_subdirectory(Libraries/minitar)
     add_subdirectory(Libraries/minmea)
+    add_subdirectory(Libraries/LovyanGFX)
     target_compile_definitions(freertos_kernel PUBLIC "projCOVERAGE_TEST=0")
     target_include_directories(freertos_kernel
         PUBLIC Boards/Simulator/Source # for FreeRTOSConfig.h
