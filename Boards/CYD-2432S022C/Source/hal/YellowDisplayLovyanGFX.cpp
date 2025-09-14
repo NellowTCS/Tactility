@@ -13,7 +13,10 @@ bool YellowDisplayLovyanGFX::createPanel(std::shared_ptr<lgfx::Panel_LCD>& outPa
     // Configure panel
     lgfx::Panel_ST7789::config_t panelCfg{};
     
-    // Panel config
+    // Panel config for the ST7789 240x320 display with correct settings
+    // Memory width/height and panel width/height must be set correctly
+    panelCfg.memory_width  = 240;  // Native width of ST7789
+    panelCfg.memory_height = 320;  // Native height of ST7789
     panelCfg.panel_width = CYD_2432S022C_LCD_HORIZONTAL_RESOLUTION;
     panelCfg.panel_height = CYD_2432S022C_LCD_VERTICAL_RESOLUTION;
     panelCfg.offset_x = 0;
@@ -22,15 +25,15 @@ bool YellowDisplayLovyanGFX::createPanel(std::shared_ptr<lgfx::Panel_LCD>& outPa
     panelCfg.dummy_read_pixel = 8;
     panelCfg.dummy_read_bits = 1;
     panelCfg.readable = true;
-    panelCfg.invert = true;  // IPS ST7789
-    panelCfg.rgb_order = false;
-    panelCfg.dlen_16bit = false;
+    panelCfg.invert = true;        // IPS ST7789 requires inversion
+    panelCfg.rgb_order = false;    // RGB color order (false = BGR)
+    panelCfg.dlen_16bit = false;   // 8-bit parallel interface
     panelCfg.bus_shared = true;
     
     // Interface pins (for i80)
     panelCfg.pin_cs = CYD_2432S022C_LCD_PIN_CS;
-    panelCfg.pin_rst = CYD_2432S022C_LCD_PIN_RST;
-    panelCfg.pin_busy = -1;  // Not used
+    panelCfg.pin_rst = CYD_2432S022C_LCD_PIN_RST; 
+    panelCfg.pin_busy = -1;        // Not used
     // Note: pin_rs/DC is set in the bus config
 
     // Create and configure i80 (8-bit parallel) bus
