@@ -38,16 +38,22 @@ bool LovyanGFXDisplay::startLvgl() {
     assert(lvglDisplay == nullptr);
 
     // Create LVGL draw buffer - use a much smaller buffer size for ESP32 memory constraints
-    // Start with just 1 row of display as buffer size (minimum viable size)
+    // Start with just 1 row of with just 1 row of display as buffer size as buffer size (minimum viable size)
     size_t buf_size = panel->width() * 10;  // Just 10 rows worth of pixels
     
     // Log buffer allocation details for debugging
     TT_LOG_I(TAG, "Allocating display buffers: %d bytes each (screen: %dx%d, rows: 10)", 
              buf_size * sizeof(lv_color_t), panel->width(), panel->height());
     
-    // Use MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL for better chance of allocation
+    // Use MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL to ensure allocation in internal memory
+    // We'll attempt only one buffer first to ensure we can allocate it successfully
     void* buf1 = heap_caps_malloc(buf_size * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    void* buf2 = heap_caps_malloc(buf_size * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    void* buf2 = nullptr;
+    
+    // Only try to allocate second buffer if first one succeeded
+    if (buf1) {
+        buf2 = heap_caps_malloc(buf_size * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    }
     
     if (!buf1 || !buf2) {
         // Free any buffer that was successfully allocated
