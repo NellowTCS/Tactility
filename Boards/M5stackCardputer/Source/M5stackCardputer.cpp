@@ -1,53 +1,42 @@
-#include "CYD2432S028R.h"
+#include "M5stackCardputer.h"
+#include "InitBoot.h"
 #include "devices/Display.h"
 #include "devices/SdCard.h"
-#include <Tactility/lvgl/LvglSync.h>
-#include <PwmBacklight.h>
-#include <Tactility/hal/Configuration.h>
+#include "devices/CardputerEncoder.h"
+#include "devices/CardputerKeyboard.h"
 
-// SPI Transfer
-#define CYD_SPI_TRANSFER_SIZE_LIMIT (CYD2432S028R_LCD_DRAW_BUFFER_SIZE * LV_COLOR_DEPTH / 8)
-// Display backlight (PWM)
-#define CYD2432S028R_LCD_PIN_BACKLIGHT GPIO_NUM_21
+#include <lvgl.h>
+#include <Tactility/lvgl/LvglSync.h>
+
+#define SPI_TRANSFER_SIZE_LIMIT (LCD_DRAW_BUFFER_SIZE * LV_COLOR_DEPTH / 8)
 
 using namespace tt::hal;
 
-static bool initBoot() {
-    //Set the RGB Led Pins to output and turn them off
-    ESP_ERROR_CHECK(gpio_set_direction(GPIO_NUM_4, GPIO_MODE_OUTPUT)); //Red
-    ESP_ERROR_CHECK(gpio_set_direction(GPIO_NUM_16, GPIO_MODE_OUTPUT)); //Green
-    ESP_ERROR_CHECK(gpio_set_direction(GPIO_NUM_17, GPIO_MODE_OUTPUT)); //Blue
-
-    //0 on, 1 off... yep it's backwards.
-    ESP_ERROR_CHECK(gpio_set_level(GPIO_NUM_4, 1)); //Red
-    ESP_ERROR_CHECK(gpio_set_level(GPIO_NUM_16, 1)); //Green
-    ESP_ERROR_CHECK(gpio_set_level(GPIO_NUM_17, 1)); //Blue
-
-    return driver::pwmbacklight::init(CYD2432S028R_LCD_PIN_BACKLIGHT);
-}
-
 static DeviceVector createDevices() {
     return {
+        createSdCard(),
         createDisplay(),
-        createSdCard()
+        std::make_shared<CardputerKeyboard>(),
+        std::make_shared<CardputerEncoder>()
     };
 }
 
-const Configuration cyd_2432s028r_config = {
+extern const Configuration m5stack_cardputer = {
     .initBoot = initBoot,
     .createDevices = createDevices,
     .i2c = {
+        // Only available on Cardputer Adv (enabling it breaks the keyboard on a Cardputer v1.1)
         i2c::Configuration {
-            .name = "CN1",
+            .name = "Internal",
             .port = I2C_NUM_0,
-            .initMode = i2c::InitMode::ByTactility,
+            .initMode = i2c::InitMode::Disabled,
             .isMutable = true,
             .config = (i2c_config_t) {
                 .mode = I2C_MODE_MASTER,
-                .sda_io_num = GPIO_NUM_27,
-                .scl_io_num = GPIO_NUM_22,
-                .sda_pullup_en = false,
-                .scl_pullup_en = false,
+                .sda_io_num = GPIO_NUM_8,
+                .scl_io_num = GPIO_NUM_9,
+                .sda_pullup_en = true,
+                .scl_pullup_en = true,
                 .master = {
                     .clk_speed = 400000
                 },
@@ -61,9 +50,9 @@ const Configuration cyd_2432s028r_config = {
             .device = SPI2_HOST,
             .dma = SPI_DMA_CH_AUTO,
             .config = {
-                .mosi_io_num = GPIO_NUM_13,
-                .miso_io_num = GPIO_NUM_12,
-                .sclk_io_num = GPIO_NUM_14,
+                .mosi_io_num = GPIO_NUM_35,
+                .miso_io_num = GPIO_NUM_NC,
+                .sclk_io_num = GPIO_NUM_36,
                 .quadwp_io_num = GPIO_NUM_NC,
                 .quadhd_io_num = GPIO_NUM_NC,
                 .data4_io_num = GPIO_NUM_NC,
@@ -71,7 +60,7 @@ const Configuration cyd_2432s028r_config = {
                 .data6_io_num = GPIO_NUM_NC,
                 .data7_io_num = GPIO_NUM_NC,
                 .data_io_default_level = false,
-                .max_transfer_sz = CYD_SPI_TRANSFER_SIZE_LIMIT,
+                .max_transfer_sz = SPI_TRANSFER_SIZE_LIMIT,
                 .flags = 0,
                 .isr_cpu_id = ESP_INTR_CPU_AFFINITY_AUTO,
                 .intr_flags = 0
@@ -85,9 +74,9 @@ const Configuration cyd_2432s028r_config = {
             .device = SPI3_HOST,
             .dma = SPI_DMA_CH_AUTO,
             .config = {
-                .mosi_io_num = GPIO_NUM_23,
-                .miso_io_num = GPIO_NUM_19,
-                .sclk_io_num = GPIO_NUM_18,
+                .mosi_io_num = GPIO_NUM_14,
+                .miso_io_num = GPIO_NUM_39,
+                .sclk_io_num = GPIO_NUM_40,
                 .quadwp_io_num = GPIO_NUM_NC,
                 .quadhd_io_num = GPIO_NUM_NC,
                 .data4_io_num = GPIO_NUM_NC,
@@ -102,16 +91,16 @@ const Configuration cyd_2432s028r_config = {
             },
             .initMode = spi::InitMode::ByTactility,
             .isMutable = false,
-            .lock = tt::lvgl::getSyncLock() // esp_lvgl_port owns the lock for the display
+            .lock = nullptr
         },
-    },
 
+    },
     .uart {
         uart::Configuration {
-            .name = "P1",
+            .name = "Grove",
             .port = UART_NUM_1,
-            .rxPin = GPIO_NUM_1,
-            .txPin = GPIO_NUM_3,
+            .rxPin = GPIO_NUM_32,
+            .txPin = GPIO_NUM_33,
             .rtsPin = GPIO_NUM_NC,
             .ctsPin = GPIO_NUM_NC,
             .rxBufferSize = 1024,
@@ -129,6 +118,6 @@ const Configuration cyd_2432s028r_config = {
                     .backup_before_sleep = 0,
                 }
             }
-        }
+        },
     }
 };
