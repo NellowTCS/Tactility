@@ -391,6 +391,8 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(lv_textarea_set_text_selection),
     // added for tactile browser
     ESP_ELFSYM_EXPORT(lv_textarea_class),
+    ESP_ELFSYM_EXPORT(lv_textarea_get_class),
+    ESP_ELFSYM_EXPORT(lv_label_get_class),
     // lv_palette
     ESP_ELFSYM_EXPORT(lv_palette_main),
     ESP_ELFSYM_EXPORT(lv_palette_darken),
