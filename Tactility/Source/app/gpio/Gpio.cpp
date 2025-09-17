@@ -1,4 +1,4 @@
-#include "Tactility/service/loader/Loader.h"
+#include <Tactility/service/loader/Loader.h>
 #include <Tactility/Assets.h>
 #include <Tactility/app/gpio/GpioHal.h>
 #include "Tactility/lvgl/Toolbar.h"
@@ -101,34 +101,53 @@ void GpioApp::stopTask() {
 
 // endregion Task
 
+static int getSquareSpacing(hal::UiScale uiScale) {
+    if (uiScale == hal::UiScale::Smallest) {
+        return 0;
+    } else {
+        return 4;
+    }
+}
 
 void GpioApp::onShow(AppContext& app, lv_obj_t* parent) {
+    auto ui_scale = hal::getConfiguration()->uiScale;
+
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+
     auto* toolbar = lvgl::toolbar_create(parent, app);
     lv_obj_align(toolbar, LV_ALIGN_TOP_MID, 0, 0);
 
     // Main content wrapper, enables scrolling content without scrolling the toolbar
-    auto* wrapper = lv_obj_create(parent);
-    lv_obj_set_width(wrapper, LV_PCT(100));
-    lv_obj_set_flex_grow(wrapper, 1);
-    lv_obj_set_style_border_width(wrapper, 0, LV_STATE_DEFAULT);
+    auto* expansion_wrapper = lv_obj_create(parent);
+    lv_obj_set_width(expansion_wrapper, LV_PCT(100));
+    lv_obj_set_flex_grow(expansion_wrapper, 1);
+    lv_obj_set_style_border_width(expansion_wrapper, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(expansion_wrapper, 0, LV_STATE_DEFAULT);
+
+    auto* centering_wrapper = lv_obj_create(expansion_wrapper);
+    lv_obj_set_size(centering_wrapper, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_align(centering_wrapper, LV_ALIGN_CENTER);
+    lv_obj_set_style_border_width(centering_wrapper, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(centering_wrapper, 0, LV_STATE_DEFAULT);
 
     auto* display = lv_obj_get_display(parent);
     auto horizontal_px = lv_display_get_horizontal_resolution(display);
     auto vertical_px = lv_display_get_vertical_resolution(display);
     bool is_landscape_display = horizontal_px > vertical_px;
 
-    int32_t x_spacing = 20;
+    constexpr auto block_width = 16;
+    const auto square_spacing = getSquareSpacing(ui_scale);
+    int32_t x_spacing = block_width + square_spacing;
     uint8_t column = 0;
-    const uint8_t offset_from_left_label = 4;
     const uint8_t column_limit = is_landscape_display ? 10 : 5;
 
-    auto* row_wrapper = createGpioRowWrapper(wrapper);
+    auto* row_wrapper = createGpioRowWrapper(centering_wrapper);
     lv_obj_align(row_wrapper, LV_ALIGN_TOP_MID, 0, 0);
 
     mutex.lock();
     for (int i = GPIO_NUM_MIN; i < GPIO_NUM_MAX; ++i) {
+        constexpr uint8_t offset_from_left_label = 4;
 
         // Add the GPIO number before the first item on a row
         if (column == 0) {
@@ -138,7 +157,7 @@ void GpioApp::onShow(AppContext& app, lv_obj_t* parent) {
 
         // Add a new GPIO status indicator
         auto* status_label = lv_label_create(row_wrapper);
-        lv_obj_set_pos(status_label, (int32_t)((column+1) * x_spacing + offset_from_left_label), 0);
+        lv_obj_set_pos(status_label, (column+1) * x_spacing + offset_from_left_label, 0);
         lv_label_set_text_fmt(status_label, "%s", LV_SYMBOL_STOP);
         lv_obj_set_style_text_color(status_label, lv_color_background_darkest(), LV_STATE_DEFAULT);
         lvPins[i] = status_label;
@@ -152,8 +171,8 @@ void GpioApp::onShow(AppContext& app, lv_obj_t* parent) {
             lv_obj_set_pos(postfix, (column + 1) * x_spacing + offset_from_left_label, 0);
 
             // Add a new row wrapper underneath the last one
-            auto* new_row_wrapper = createGpioRowWrapper(wrapper);
-            lv_obj_align_to(new_row_wrapper, row_wrapper, LV_ALIGN_BOTTOM_LEFT, 0, 4);
+            auto* new_row_wrapper = createGpioRowWrapper(centering_wrapper);
+            lv_obj_align_to(new_row_wrapper, row_wrapper, LV_ALIGN_BOTTOM_LEFT, 0, square_spacing);
             row_wrapper = new_row_wrapper;
 
             column = 0;

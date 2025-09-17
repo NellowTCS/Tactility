@@ -2,6 +2,7 @@
 
 ## Higher Priority
 
+- Show a warning in the web installer when flashing CYD 28R board regarding v1/v2/v3
 - Fix Development service: when no SD card is present, the app fails to install. Consider installing to `/data`
   Note: Change app install to "transfer file" functionality. We can have a proper install when we have app packaging.
   Note: Consider installation path option in interface
@@ -15,12 +16,10 @@
 - CrowPanel Basic 3.5": check why GraphicsDemo fails
 - CrowPanel Basic 3.5": check why System Info doesn't show storage info
 - Update to LVGL v9.3 stable
-- Files app: delete folder recursively
 - Create `app::getSettingsPath()` to get paths to properties files by first trying sd card and then trying `/data`
 
 ## Medium Priority
 
-- Implement `uninstall` action in `tactility.py`
 - Improve EspLcdDisplay to contain all the standard configuration options, and implement a default init function. Add a configuration class.
 - Statusbar icon that shows low/critical memory warnings
 - Make WiFi setup app that starts an access point and hosts a webpage to set up the device.
@@ -29,12 +28,13 @@
 - Try out ILI9342 https://github.com/jbrilha/esp_lcd_ili9342
 - All drivers (e.g. display, touch, etc.) should call stop() in their destructor, or at least assert that they should not be running.
 - Bug: Turn on WiFi (when testing it wasn't connected/connecting - just active). Open chat. Observe crash.
-- Toolbar: when the title doesn't fit, scroll the text instead of splitting it onto a new line (try on Waveshare 1.47")
-- UI: create UI size classification (e.g. "compact" for tiny screens without touch)
 - Bug: Crash handling app cannot be exited with an EncoderDevice. (current work-around is to manually reset the device)
+- I2C app should show error when I2C port is disabled when the scan button was manually pressed
 
 ## Lower Priority
 
+- Rename `filebrowser` to `files` and `FileBrowser.cpp` to `Files.cpp`
+- Implement system suspend that turns off the screen
 - The boot button on some devices can be used as GPIO_NUM_0 at runtime
 - Localize all apps
 - Support hot-plugging SD card (note: this is not possible if they require the CS pin hack)
@@ -53,6 +53,10 @@
 - Show a warning screen if firmware encryption or secure boot are off when saving WiFi credentials.
 - Remove flex_flow from app_container in Gui.cpp
 - Files app: copy/cut/paste actions
+- ElfAppManifest: change name (remove "manifest" as it's confusing), remove icon and title, publish snapshot SDK on CDN
+- `UiScale` implementation for devices like the CYD 2432S032C
+- Bug: CYD 2432S032C screen rotation fails due to touch driver issue
+- Calculator app should show regular text input field on non-touch devices that have a keyboard (Cardputer, T-Lora Pager)
 
 # Nice-to-haves
 
