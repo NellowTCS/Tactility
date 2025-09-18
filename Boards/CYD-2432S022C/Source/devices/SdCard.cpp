@@ -1,12 +1,11 @@
-#include "YellowSDCard.h"
-#include "CYD2432S022CConstants.h"
+#include "SdCard.h"
+#include "Constants.h"
 #include <Tactility/hal/sdcard/SpiSdCardDevice.h>
 #include <esp_log.h>
 
-
 using tt::hal::sdcard::SpiSdCardDevice;
 
-std::shared_ptr<SdCardDevice> createYellowSDCard() {
+std::shared_ptr<SdCardDevice> createSdCard() {
     ESP_LOGI("SDCard", "Heap free before SD card init: %d bytes",
              heap_caps_get_free_size(MALLOC_CAP_DEFAULT));
     auto* configuration = new SpiSdCardDevice::Config(

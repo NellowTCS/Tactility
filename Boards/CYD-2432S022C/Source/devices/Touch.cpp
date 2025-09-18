@@ -1,15 +1,15 @@
-// YellowTouch.cpp
-#include "YellowTouch.h"
-#include "CYD2432S022CConstants.h"
-#include "Cst816Touch.h"
+// Touch.cpp
+#include "Touch.h"
+#include "Constants.h"
+#include <Cst816Touch.h>
 #include "Tactility/settings/DisplaySettings.h"
 #include <esp_log.h>
 #include <memory>
 
-#define TAG "YellowTouch"
+#define TAG "Touch"
 
-std::shared_ptr<tt::hal::touch::TouchDevice> createYellowTouch() {
-    ESP_LOGI(TAG, "Creating YellowTouch");
+std::shared_ptr<tt::hal::touch::TouchDevice> createTouch() {
+    ESP_LOGI(TAG, "Creating Touch");
 
     // Use the new DisplaySettings API
     auto settings = tt::settings::display::loadOrGetDefault();
@@ -34,6 +34,6 @@ std::shared_ptr<tt::hal::touch::TouchDevice> createYellowTouch() {
         return nullptr;
     }
 
-    ESP_LOGI(TAG, "YellowTouch created: %p", touch.get());
+    ESP_LOGI(TAG, "Touch created: %p", touch.get());
     return touch;
 }

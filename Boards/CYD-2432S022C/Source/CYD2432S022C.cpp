@@ -1,7 +1,7 @@
 #include "CYD2432S022C.h"
-#include "hal/YellowDisplay.h"
-#include "hal/YellowSDCard.h"
-#include "hal/CYD2432S022CConstants.h"
+#include "devices/Display.h"
+#include "devices/SdCard.h"
+#include "devices/Constants.h"
 #include <Tactility/lvgl/LvglSync.h>
 #include "esp_log.h"
 #include <PwmBacklight.h>
@@ -16,11 +16,16 @@ static bool initBoot() {
     return true;
 }
 
+static tt::hal::DeviceVector createDevices() {
+    return {
+        createDisplay(),
+        createSdCard()
+    };
+}
+
 const tt::hal::Configuration cyd_2432s022c_config = {
     .initBoot = initBoot,
-    .createDisplay = createDisplay,
-    .sdcard = createYellowSDCard(),
-    .power = nullptr,
+    .createDevices = createDevices,
     .i2c = {
         tt::hal::i2c::Configuration {
             .name = "Touch",

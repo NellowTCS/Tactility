@@ -1,22 +1,12 @@
-#include "YellowDisplay.h"
-#include "YellowTouch.h"
-#include "YellowDisplayLovyanGFX.h"
+#include "Display.h"
+#include "Touch.h"
+#include "CustomLovyanDisplay.h"
 #include <memory>
 #include <Tactility/Log.h>
 #include <Tactility/Lock.h>
 #include <Tactility/MutexLock.h>
 
-#define TAG "YellowDisplay"
-
-// Create touch device
-static std::shared_ptr<tt::hal::touch::TouchDevice> createTouch() {
-    TT_LOG_I(TAG, "Creating touch device");
-    auto touch = createYellowTouch();
-    if (!touch) {
-        TT_LOG_E(TAG, "Failed to create touch device");
-    }
-    return touch;
-}
+#define TAG "Display"
 
 // Create LovyanGFX ST7789 display with touch integration
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
@@ -31,7 +21,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     auto lock = std::make_shared<tt::MutexLock>();
 
     // Create and initialize the display
-    auto display = std::make_shared<YellowDisplayLovyanGFX>(lock);
+    auto display = std::make_shared<CustomLovyanGFXDisplay>(lock);
 
     // Add touch device if available
     if (touch) {

@@ -4,12 +4,12 @@
 #include <memory>
 #include <Tactility/Lock.h>
 
-class YellowDisplayLovyanGFX : public LovyanGFXDisplay {
+class CustomLovyanGFXDisplay : public LovyanGFXDisplay {
 private:
     std::shared_ptr<tt::hal::touch::TouchDevice> touchDevice;
 
 public:
-    explicit YellowDisplayLovyanGFX(std::shared_ptr<tt::Lock> lock) : LovyanGFXDisplay(lock) {}
+    explicit CustomLovyanGFXDisplay(std::shared_ptr<tt::Lock> lock) : LovyanGFXDisplay(lock) {}
 
     // Device interface
     std::string getName() const override { return "CYD-2432S022C Display"; }

@@ -1,12 +1,12 @@
-#include "YellowDisplayLovyanGFX.h"
-#include "CYD2432S022CConstants.h"
+#include "CustomLovyanDisplay.h"
+#include "Constants.h"
 #include <LovyanGFX.hpp>
 #include <Tactility/Log.h>
 #include <memory>
 
-#define TAG "YellowDisplayLovyanGFX"
+#define TAG "CustomLovyanDisplay"
 
-bool YellowDisplayLovyanGFX::createPanel(std::shared_ptr<lgfx::Panel_LCD>& outPanel) {
+bool CustomLovyanGFXDisplay::createPanel(std::shared_ptr<lgfx::Panel_LCD>& outPanel) {
     // Create ST7789 panel
     auto panel = std::make_shared<lgfx::Panel_ST7789>();
     
@@ -14,8 +14,8 @@ bool YellowDisplayLovyanGFX::createPanel(std::shared_ptr<lgfx::Panel_LCD>& outPa
     auto bus = new lgfx::Bus_Parallel8();
     lgfx::Bus_Parallel8::config_t busCfg = {};
     
-    // Configure i80 bus pins
-    busCfg.freq_write = 16000000;  // 16MHz clock rate (based on successful openHASP implementation)
+    // Configure i80 bus pins - using proven working settings from PlatformIO config
+    busCfg.freq_write = CYD_2432S022C_LCD_PCLK_HZ;  // 12MHz clock rate (matches ST7789_IO_I80_CONFIG_PCLK_HZ)
     busCfg.pin_wr = CYD_2432S022C_LCD_PIN_WR;
     busCfg.pin_rd = CYD_2432S022C_LCD_PIN_RD;
     busCfg.pin_rs = CYD_2432S022C_LCD_PIN_DC;  // RS = DC (data/command) pin
@@ -53,10 +53,10 @@ bool YellowDisplayLovyanGFX::createPanel(std::shared_ptr<lgfx::Panel_LCD>& outPa
     panelCfg.dummy_read_pixel = 8;
     panelCfg.dummy_read_bits = 1;
     panelCfg.readable = true;
-    panelCfg.invert = false;       // Changed to false based on openHASP implementation
-    panelCfg.rgb_order = false;    // RGB color order (false = BGR)
+    panelCfg.invert = false;       // Start with false (can be enabled later with DISPLAY_IPS check)
+    panelCfg.rgb_order = true;     // RGB color order (true = RGB, matches ESP_LCD_COLOR_SPACE_RGB)
     panelCfg.dlen_16bit = false;   // 8-bit parallel interface
-    panelCfg.bus_shared = false;   // Changed to false based on openHASP implementation
+    panelCfg.bus_shared = false;   // Dedicated bus for display
     
     // Apply panel configuration
     panel->config(panelCfg);
@@ -71,6 +71,7 @@ bool YellowDisplayLovyanGFX::createPanel(std::shared_ptr<lgfx::Panel_LCD>& outPa
              panelCfg.pin_rst,
              busCfg.pin_rs);
     TT_LOG_I(TAG, "Clock Frequency: %d MHz", busCfg.freq_write / 1000000);
+    TT_LOG_I(TAG, "Color Order: %s", panelCfg.rgb_order ? "RGB" : "BGR");
     TT_LOG_I(TAG, "Invert Color: %s", panelCfg.invert ? "Enabled" : "Disabled");
     TT_LOG_I(TAG, "Bus Shared: %s", panelCfg.bus_shared ? "Yes" : "No");
     TT_LOG_I(TAG, "=================================");
