@@ -81,9 +81,9 @@ private:
     }
 
     void update_time_and_check_sync() {
-        // Use non-blocking lock attempt with shorter timeout to prevent hanging
+        // Use FreeRTOS ticks instead of chrono (50ms = 50 ticks at 1000Hz)
         auto lock = lvgl::getSyncLock()->asScopedLock();
-        if (!lock.lock(std::chrono::milliseconds(50))) {
+        if (!lock.lock(pdMS_TO_TICKS(50))) {
             TT_LOG_W("Clock", "LVGL lock timeout in update_time_and_check_sync - skipping update");
             return; // Skip this update cycle rather than hang
         }
