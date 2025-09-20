@@ -8,6 +8,7 @@
 #include <lvgl.h>
 #include <ctime>
 #include <cmath>
+#include <chrono>
 
 #ifdef ESP_PLATFORM
 #include "Tactility/Timer.h"
@@ -129,21 +130,21 @@ private:
             float second_angle = timeinfo.tm_sec * 6.0f - 90;
 
             if (hour_hand && lv_obj_is_valid(hour_hand)) {
-                static lv_point_t hour_points[2];
+                static lv_point_precise_t hour_points[2];
                 hour_points[0] = {center_x, center_y};
                 hour_points[1] = {center_x + (lv_coord_t)(hour_length * cos(hour_angle * M_PI / 180)), 
                                  center_y + (lv_coord_t)(hour_length * sin(hour_angle * M_PI / 180))};
                 lv_line_set_points(hour_hand, hour_points, 2);
             }
             if (minute_hand && lv_obj_is_valid(minute_hand)) {
-                static lv_point_t minute_points[2];
+                static lv_point_precise_t minute_points[2];
                 minute_points[0] = {center_x, center_y};
                 minute_points[1] = {center_x + (lv_coord_t)(minute_length * cos(minute_angle * M_PI / 180)), 
                                    center_y + (lv_coord_t)(minute_length * sin(minute_angle * M_PI / 180))};
                 lv_line_set_points(minute_hand, minute_points, 2);
             }
             if (second_hand && lv_obj_is_valid(second_hand)) {
-                static lv_point_t second_points[2];
+                static lv_point_precise_t second_points[2];
                 second_points[0] = {center_x, center_y};
                 second_points[1] = {center_x + (lv_coord_t)(second_length * cos(second_angle * M_PI / 180)), 
                                    center_y + (lv_coord_t)(second_length * sin(second_angle * M_PI / 180))};
@@ -333,7 +334,7 @@ private:
 
         // Add subtle background for better readability
         lv_obj_set_style_bg_color(time_label, lv_color_black(), 0);
-        lv_obj_set_style_bg_opa(time_label, LV_OPA_5, 0);
+        lv_obj_set_style_bg_opa(time_label, LV_OPA_10, 0);
         lv_obj_set_style_radius(time_label, is_small ? 4 : 8, 0);
         lv_obj_set_style_pad_all(time_label, is_small ? 6 : 12, 0);
 
