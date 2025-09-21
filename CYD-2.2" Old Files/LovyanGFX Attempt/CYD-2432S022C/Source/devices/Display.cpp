@@ -1,6 +1,6 @@
 #include "Display.h"
 #include "Touch.h"
-#include "CustomEspDisplay.h"
+#include "CustomLovyanDisplay.h"
 #include <memory>
 #include <Tactility/Log.h>
 #include <Tactility/Lock.h>
@@ -8,9 +8,9 @@
 
 #define TAG "Display"
 
-// Create esp_lcd ST7789 display with touch integration
+// Create LovyanGFX ST7789 display with touch integration
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
-    TT_LOG_I(TAG, "Creating ST7789 display");
+    TT_LOG_I(TAG, "Creating LovyanGFX ST7789 display");
 
     auto touch = createTouch();
     if (!touch) {
@@ -21,7 +21,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     auto lock = std::make_shared<tt::MutexLock>();
 
     // Create and initialize the display
-    auto display = std::make_shared<CustomEspDisplay>(lock);
+    auto display = std::make_shared<CustomLovyanGFXDisplay>(lock);
 
     // Add touch device if available
     if (touch) {
@@ -39,6 +39,6 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         TT_LOG_I(TAG, "  Touch Type: %s", touch->getName().c_str());
     }
 
-    TT_LOG_I(TAG, "ST7789 display created successfully");
+    TT_LOG_I(TAG, "LovyanGFX ST7789 display created successfully");
     return display;
 }
