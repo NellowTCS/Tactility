@@ -1,17 +1,17 @@
-#include <Tactility/app/AppManifest.h>  // For AppManifest and app namespace
-#include <Tactility/app/App.h>          // For App and AppContext
-#include <Tactility/PubSub.h>           // For PubSub
-#include <Tactility/Preferences.h>      // For Preferences
-#include <Tactility/lvgl/Toolbar.h>     // For toolbar_create
-#include <Tactility/lvgl/LvglSync.h>    // For LVGL synchronization
-#include <lvgl.h>                       // Core LVGL library
-#include <string>                       // For std::string
+#include <Tactility/app/AppManifest.h>
+#include <Tactility/app/App.h>
+#include <Tactility/PubSub.h>
+#include <Tactility/Preferences.h>
+#include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/lvgl/LvglSync.h>
+#include <lvgl.h>
+#include <string>
 
 #ifdef ESP_PLATFORM
-#include <Tactility/service/wifi/Wifi.h> // For Wi-Fi service
-#include <esp_http_client.h>            // ESP-IDF HTTP client
-#include <esp_wifi.h>                   // ESP-IDF Wi-Fi API
-#include <cJSON.h>                      // JSON parsing
+#include <Tactility/service/wifi/Wifi.h>
+#include <esp_http_client.h>
+#include <esp_wifi.h>
+#include <cJSON.h>
 #endif
 
 using namespace tt::app;
@@ -258,7 +258,7 @@ public:
 };
 
 extern const AppManifest tactility_news_app = {
-    .id = "TactilityNews",
-    .name = "Tactility News",
+    .appId = "TactilityNews",
+    .appName = "Tactility News",
     .createApp = create<TactilityNews>
 };
