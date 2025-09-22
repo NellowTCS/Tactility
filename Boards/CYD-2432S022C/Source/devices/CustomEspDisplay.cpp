@@ -7,27 +7,32 @@
 
 #define TAG "CustomEspDisplay"
 
-// ST7789 Commands for manual initialization
-#define ST7789_CMD_SWRESET 0x01
-#define ST7789_CMD_SLPOUT  0x11
-#define ST7789_CMD_NORON   0x13
-#define ST7789_CMD_MADCTL  0x36
-#define ST7789_CMD_COLMOD  0x3A
-#define ST7789_CMD_PORCTRL 0xB2
-#define ST7789_CMD_GCTRL   0xB7
-#define ST7789_CMD_VCOMS   0xBB
-#define ST7789_CMD_LCMCTRL 0xC0
-#define ST7789_CMD_VDVVRHEN 0xC2
-#define ST7789_CMD_VRHS    0xC3
-#define ST7789_CMD_VDVS    0xC4
-#define ST7789_CMD_FRCTRL2 0xC6
-#define ST7789_CMD_PWCTRL1 0xD0
+// ST7789 Commands (from LovyanGFX Panel_ST7789.hpp)
+#define ST7789_CMD_SWRESET   0x01
+#define ST7789_CMD_SLPOUT    0x11
+#define ST7789_CMD_NORON     0x13
+#define ST7789_CMD_IDMOFF    0x38
+#define ST7789_CMD_MADCTL    0x36
+#define ST7789_CMD_COLMOD    0x3A
+#define ST7789_CMD_RAMCTRL   0xB0
+#define ST7789_CMD_PORCTRL   0xB2
+#define ST7789_CMD_GCTRL     0xB7
+#define ST7789_CMD_VCOMS     0xBB
+#define ST7789_CMD_LCMCTRL   0xC0
+#define ST7789_CMD_VDVVRHEN  0xC2
+#define ST7789_CMD_VRHS      0xC3
+#define ST7789_CMD_VDVSET    0xC4
+#define ST7789_CMD_FRCTR2    0xC6
+#define ST7789_CMD_PWCTRL1   0xD0
 #define ST7789_CMD_PVGAMCTRL 0xE0
 #define ST7789_CMD_NVGAMCTRL 0xE1
-#define ST7789_CMD_DISPON  0x29
+#define ST7789_CMD_DISPON    0x29
+#define ST7789_CMD_CASET     0x2A
+#define ST7789_CMD_RASET     0x2B
+#define ST7789_CMD_RAMWR     0x2C
 
 CustomEspDisplay::CustomEspDisplay(std::shared_ptr<tt::Lock> lock) : lock(lock) {
-    TT_LOG_I(TAG, "Creating ST7789 i80 display driver for ST7789");
+    TT_LOG_I(TAG, "Creating ESP32 native i80 display driver for ST7789");
 }
 
 CustomEspDisplay::~CustomEspDisplay() {
@@ -35,7 +40,7 @@ CustomEspDisplay::~CustomEspDisplay() {
 }
 
 bool CustomEspDisplay::start() {
-    TT_LOG_I(TAG, "Starting ST7789 i80 display");
+    TT_LOG_I(TAG, "Starting ESP32 native i80 display");
     
     if (!initI80Bus()) {
         TT_LOG_E(TAG, "Failed to initialize I80 bus");
@@ -48,12 +53,12 @@ bool CustomEspDisplay::start() {
         return false;
     }
 
-    TT_LOG_I(TAG, "ST7789 i80 display started successfully");
+    TT_LOG_I(TAG, "ESP32 native i80 display started successfully");
     return true;
 }
 
 bool CustomEspDisplay::stop() {
-    TT_LOG_I(TAG, "Stopping ST7789 i80 display");
+    TT_LOG_I(TAG, "Stopping ESP32 native display");
     
     if (lvglDisplay) {
         stopLvgl();
@@ -166,90 +171,106 @@ bool CustomEspDisplay::initPanel() {
 bool CustomEspDisplay::sendST7789InitCommands() {
     esp_err_t ret;
     
-    // Software reset
-    ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_SWRESET, NULL, 0);
-    if (ret != ESP_OK) return false;
-    vTaskDelay(pdMS_TO_TICKS(120));
+    // Based on LovyanGFX Panel_ST7789.hpp initialization sequence
+    TT_LOG_I(TAG, "Sending ST7789 initialization commands (LovyanGFX sequence)");
 
-    // Sleep out
+    // Sleep out - moved to beginning like LovyanGFX does
     ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_SLPOUT, NULL, 0);
-    if (ret != ESP_OK) return false;
-    vTaskDelay(pdMS_TO_TICKS(120));
+    if (ret != ESP_OK) {
+        TT_LOG_E(TAG, "SLPOUT failed: %s", esp_err_to_name(ret));
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(130)); // 130ms delay as per LovyanGFX
 
     // Normal display mode on
     ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_NORON, NULL, 0);
     if (ret != ESP_OK) return false;
 
-    // Memory Data Access Control
-    uint8_t madctl_data = 0x00; // Normal orientation
-    ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_MADCTL, &madctl_data, 1);
-    if (ret != ESP_OK) return false;
-
-    // Interface Pixel Format - RGB565
-    uint8_t colmod_data = 0x55; // 16-bit RGB565
-    ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_COLMOD, &colmod_data, 1);
-    if (ret != ESP_OK) return false;
-
-    // Porch Setting
+    // Porch Setting - exact values from LovyanGFX
     uint8_t porctrl_data[] = {0x0C, 0x0C, 0x00, 0x33, 0x33};
     ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_PORCTRL, porctrl_data, sizeof(porctrl_data));
     if (ret != ESP_OK) return false;
 
-    // Gate Control
+    // Gate Control - LovyanGFX value
     uint8_t gctrl_data = 0x35;
     ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_GCTRL, &gctrl_data, 1);
     if (ret != ESP_OK) return false;
 
-    // VCOM Setting
-    uint8_t vcoms_data = 0x19;
+    // VCOM Setting - LovyanGFX value (0x28 for JLX240 display datasheet)
+    uint8_t vcoms_data = 0x28;
     ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_VCOMS, &vcoms_data, 1);
     if (ret != ESP_OK) return false;
 
-    // LCM Control
-    uint8_t lcmctrl_data = 0x2C;
+    // LCM Control - LovyanGFX value
+    uint8_t lcmctrl_data = 0x0C;
     ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_LCMCTRL, &lcmctrl_data, 1);
     if (ret != ESP_OK) return false;
 
-    // VDV and VRH Command Enable
-    uint8_t vdvvrhen_data = 0x01;
-    ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_VDVVRHEN, &vdvvrhen_data, 1);
+    // VDV and VRH Command Enable - LovyanGFX values
+    uint8_t vdvvrhen_data[] = {0x01, 0xFF};
+    ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_VDVVRHEN, vdvvrhen_data, sizeof(vdvvrhen_data));
     if (ret != ESP_OK) return false;
 
-    // VRH Set
-    uint8_t vrhs_data = 0x12;
+    // VRH Set - LovyanGFX value (voltage VRHS)
+    uint8_t vrhs_data = 0x10;
     ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_VRHS, &vrhs_data, 1);
     if (ret != ESP_OK) return false;
 
-    // VDV Set
-    uint8_t vdvs_data = 0x20;
-    ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_VDVS, &vdvs_data, 1);
+    // VDV Set - LovyanGFX value
+    uint8_t vdvset_data = 0x20;
+    ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_VDVSET, &vdvset_data, 1);
     if (ret != ESP_OK) return false;
 
-    // Frame Rate Control 2
-    uint8_t frctrl2_data = 0x0F;
-    ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_FRCTRL2, &frctrl2_data, 1);
+    // Frame Rate Control 2 - LovyanGFX value (0x0f=60Hz)
+    uint8_t frctr2_data = 0x0F;
+    ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_FRCTR2, &frctr2_data, 1);
     if (ret != ESP_OK) return false;
 
-    // Power Control 1
+    // Power Control 1 - LovyanGFX values
     uint8_t pwctrl1_data[] = {0xA4, 0xA1};
     ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_PWCTRL1, pwctrl1_data, sizeof(pwctrl1_data));
     if (ret != ESP_OK) return false;
 
-    // Positive Voltage Gamma Control
-    uint8_t pvgamctrl_data[] = {0xD0, 0x04, 0x0D, 0x11, 0x13, 0x2B, 0x3F, 0x54, 0x4C, 0x18, 0x0D, 0x0B, 0x1F, 0x23};
+    // RAM Control - LovyanGFX values
+    uint8_t ramctrl_data[] = {0x00, 0xC0};
+    ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_RAMCTRL, ramctrl_data, sizeof(ramctrl_data));
+    if (ret != ESP_OK) return false;
+
+    // Positive Voltage Gamma Control - exact LovyanGFX values
+    uint8_t pvgamctrl_data[] = {
+        0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x32, 0x44,
+        0x42, 0x06, 0x0E, 0x12, 0x14, 0x17
+    };
     ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_PVGAMCTRL, pvgamctrl_data, sizeof(pvgamctrl_data));
     if (ret != ESP_OK) return false;
 
-    // Negative Voltage Gamma Control
-    uint8_t nvgamctrl_data[] = {0xD0, 0x04, 0x0C, 0x11, 0x13, 0x2C, 0x3F, 0x44, 0x51, 0x2F, 0x1F, 0x1F, 0x20, 0x23};
+    // Negative Voltage Gamma Control - exact LovyanGFX values
+    uint8_t nvgamctrl_data[] = {
+        0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x31, 0x54,
+        0x47, 0x0E, 0x1C, 0x17, 0x1B, 0x1E
+    };
     ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_NVGAMCTRL, nvgamctrl_data, sizeof(nvgamctrl_data));
     if (ret != ESP_OK) return false;
 
-    // Display on
+    // Idle Mode OFF - LovyanGFX sequence
+    ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_IDMOFF, NULL, 0);
+    if (ret != ESP_OK) return false;
+
+    // Memory Data Access Control - set orientation (0x00 = normal)
+    uint8_t madctl_data = 0x00;
+    ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_MADCTL, &madctl_data, 1);
+    if (ret != ESP_OK) return false;
+
+    // Interface Pixel Format - RGB565 (16-bit)
+    uint8_t colmod_data = 0x55;
+    ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_COLMOD, &colmod_data, 1);
+    if (ret != ESP_OK) return false;
+
+    // Display on - final step
     ret = esp_lcd_panel_io_tx_param(io_handle, ST7789_CMD_DISPON, NULL, 0);
     if (ret != ESP_OK) return false;
-    vTaskDelay(pdMS_TO_TICKS(120));
 
+    TT_LOG_I(TAG, "ST7789 initialization commands sent successfully");
     return true;
 }
 
@@ -355,23 +376,23 @@ void CustomEspDisplay::lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, 
     int y2 = area->y2;
     
     // Send draw bitmap command manually since we're using custom panel
-    // Set column address
+    // Set column address (CASET)
     uint8_t col_data[] = {
         (x1 >> 8) & 0xFF, x1 & 0xFF,
         (x2 >> 8) & 0xFF, x2 & 0xFF
     };
-    esp_lcd_panel_io_tx_param(display->io_handle, 0x2A, col_data, 4);
+    esp_lcd_panel_io_tx_param(display->io_handle, ST7789_CMD_CASET, col_data, 4);
     
-    // Set page address
+    // Set page address (RASET)
     uint8_t page_data[] = {
         (y1 >> 8) & 0xFF, y1 & 0xFF,
         (y2 >> 8) & 0xFF, y2 & 0xFF
     };
-    esp_lcd_panel_io_tx_param(display->io_handle, 0x2B, page_data, 4);
+    esp_lcd_panel_io_tx_param(display->io_handle, ST7789_CMD_RASET, page_data, 4);
     
-    // Send pixel data
+    // Send pixel data (RAMWR)
     size_t pixel_count = (x2 - x1 + 1) * (y2 - y1 + 1);
-    esp_lcd_panel_io_tx_color(display->io_handle, 0x2C, px_map, pixel_count * 2);
+    esp_lcd_panel_io_tx_color(display->io_handle, ST7789_CMD_RAMWR, px_map, pixel_count * 2);
     
     // Notify LVGL that flush is complete
     lv_display_flush_ready(disp);
