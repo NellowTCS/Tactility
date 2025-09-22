@@ -464,7 +464,7 @@ public:
 };
 
 extern const tt::app::AppManifest tactile_web_app = {
-    .id = "TactileWeb",
-    .name = "TactileWeb",
+    .appId = "TactileWeb",
+    .appName = "TactileWeb",
     .createApp = tt::app::create<TactileWeb>
 };
