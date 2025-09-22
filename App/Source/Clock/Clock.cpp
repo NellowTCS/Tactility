@@ -221,8 +221,8 @@ public:
 };
 
 extern const AppManifest clock_app = {
-    .id = "Clock",
-    .name = "Clock",
+    .appId = "Clock",
+    .appName = "Clock",
     .createApp = create<ClockApp>
 };
 
