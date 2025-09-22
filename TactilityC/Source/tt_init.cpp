@@ -24,6 +24,8 @@
 #include "tt_timer.h"
 #include "tt_wifi.h"
 
+#include <string.h>
+#include <stdlib.h>
 #include <cstring>
 #include <ctype.h>
 #include <private/elf_symbol.h>
@@ -53,6 +55,15 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(__muldf3),
     ESP_ELFSYM_EXPORT(__nedf2),
     ESP_ELFSYM_EXPORT(__divdf3),
+    // <string>
+    ESP_ELFSYM_EXPORT(strlen),
+    ESP_ELFSYM_EXPORT(strncpy),
+    ESP_ELFSYM_EXPORT(strcmp),
+    ESP_ELFSYM_EXPORT(memcpy),
+    ESP_ELFSYM_EXPORT(memcmp),
+    // <stdlib>
+    ESP_ELFSYM_EXPORT(atoi),
+    ESP_ELFSYM_EXPORT(malloc),
     // <cassert>
     ESP_ELFSYM_EXPORT(__assert_func),
     // <cstdio>
@@ -318,8 +329,11 @@ const esp_elfsym elf_symbols[] {
     // lv_obj
     ESP_ELFSYM_EXPORT(lv_color_hex),
     ESP_ELFSYM_EXPORT(lv_color_make),
+    ESP_ELFSYM_EXPORT(lv_color_white),
     ESP_ELFSYM_EXPORT(lv_obj_create),
     ESP_ELFSYM_EXPORT(lv_obj_delete),
+    ESP_ELFSYM_EXPORT(lv_obj_del),
+    ESP_ELFSYM_EXPORT(lv_obj_clean),
     ESP_ELFSYM_EXPORT(lv_obj_add_event_cb),
     ESP_ELFSYM_EXPORT(lv_obj_align),
     ESP_ELFSYM_EXPORT(lv_obj_align_to),
@@ -378,16 +392,19 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_color),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_opa),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_width),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_decor),
     ESP_ELFSYM_EXPORT(lv_obj_set_align),
     ESP_ELFSYM_EXPORT(lv_obj_set_x),
     ESP_ELFSYM_EXPORT(lv_obj_set_y),
     ESP_ELFSYM_EXPORT(lv_obj_set_size),
     ESP_ELFSYM_EXPORT(lv_obj_set_width),
     ESP_ELFSYM_EXPORT(lv_obj_set_height),
+    ESP_ELFSYM_EXPORT(lv_obj_set_scroll_dir),
     ESP_ELFSYM_EXPORT(lv_theme_get_color_primary),
     ESP_ELFSYM_EXPORT(lv_theme_get_color_secondary),
     // lv_button
     ESP_ELFSYM_EXPORT(lv_button_create),
+    ESP_ELFSYM_EXPORT(lv_btn_create),
     // lv_buttonmatrix
     ESP_ELFSYM_EXPORT(lv_buttonmatrix_create),
     ESP_ELFSYM_EXPORT(lv_buttonmatrix_get_button_text),
@@ -455,6 +472,7 @@ const esp_elfsym elf_symbols[] {
     // lv_textarea
     ESP_ELFSYM_EXPORT(lv_textarea_create),
     ESP_ELFSYM_EXPORT(lv_textarea_get_accepted_chars),
+    ESP_ELFSYM_EXPORT(lv_textarea_get_text),
     ESP_ELFSYM_EXPORT(lv_textarea_get_label),
     ESP_ELFSYM_EXPORT(lv_textarea_get_max_length),
     ESP_ELFSYM_EXPORT(lv_textarea_get_one_line),
@@ -467,6 +485,8 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(lv_textarea_set_placeholder_text),
     ESP_ELFSYM_EXPORT(lv_textarea_set_text),
     ESP_ELFSYM_EXPORT(lv_textarea_set_text_selection),
+    // added for tactile browser
+    ESP_ELFSYM_EXPORT(lv_textarea_class),
     // lv_palette
     ESP_ELFSYM_EXPORT(lv_palette_main),
     ESP_ELFSYM_EXPORT(lv_palette_darken),
