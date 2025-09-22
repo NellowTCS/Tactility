@@ -363,7 +363,7 @@ void TamagotchiApp::loadPetData() {
 }
 
 const AppManifest tactiligotchi_app = {
-    .id = "Tactiligotchi",
-    .name = "Tactiligotchi",
+    .appId = "Tactiligotchi",
+    .appName = "Tactiligotchi",
     .createApp = create<TamagotchiApp>
 };
