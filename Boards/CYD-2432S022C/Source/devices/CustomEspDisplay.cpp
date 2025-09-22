@@ -84,8 +84,8 @@ bool CustomEspDisplay::initI80Bus() {
     bus_config.data_gpio_nums[7] = CYD_2432S022C_LCD_PIN_D7;
     bus_config.bus_width = CYD_2432S022C_LCD_BUS_WIDTH;
     bus_config.max_transfer_bytes = LCD_H_RES * DRAW_BUF_HEIGHT * sizeof(uint16_t);
-    bus_config.psram_trans_align = 64;
-    bus_config.sram_trans_align = 4;
+    bus_config.alignment.psram = 64;
+    bus_config.alignment.sram = 4;
 
     esp_err_t ret = esp_lcd_new_i80_bus(&bus_config, &i80_bus);
     if (ret != ESP_OK) {
@@ -378,15 +378,15 @@ void CustomEspDisplay::lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, 
     // Send draw bitmap command manually since we're using custom panel
     // Set column address (CASET)
     uint8_t col_data[] = {
-        (x1 >> 8) & 0xFF, x1 & 0xFF,
-        (x2 >> 8) & 0xFF, x2 & 0xFF
+        (uint8_t)((x1 >> 8) & 0xFF), (uint8_t)(x1 & 0xFF),
+        (uint8_t)((x2 >> 8) & 0xFF), (uint8_t)(x2 & 0xFF)
     };
     esp_lcd_panel_io_tx_param(display->io_handle, ST7789_CMD_CASET, col_data, 4);
     
     // Set page address (RASET)
     uint8_t page_data[] = {
-        (y1 >> 8) & 0xFF, y1 & 0xFF,
-        (y2 >> 8) & 0xFF, y2 & 0xFF
+        (uint8_t)((y1 >> 8) & 0xFF), (uint8_t)(y1 & 0xFF),
+        (uint8_t)((y2 >> 8) & 0xFF), (uint8_t)(y2 & 0xFF)
     };
     esp_lcd_panel_io_tx_param(display->io_handle, ST7789_CMD_RASET, page_data, 4);
     

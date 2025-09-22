@@ -46,7 +46,7 @@ public:
     // DisplayDevice interface
     std::shared_ptr<tt::hal::touch::TouchDevice> getTouchDevice() override { return touchDevice; }
     void setTouchDevice(std::shared_ptr<tt::hal::touch::TouchDevice> device) { touchDevice = device; }
-    std::shared_ptr<tt::Lock> getLock() const override { return lock; }
+    std::shared_ptr<tt::Lock> getLock() const { return lock; }
 
     // Start/stop
     bool start() override;
