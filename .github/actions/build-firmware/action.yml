@@ -14,24 +14,35 @@ runs:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
+
+    - name: 'Remove Libraries/LovyanGFX'
+      shell: bash
+      run: |
+        git rm --cached -r Libraries/LovyanGFX || true
+        rm -rf Libraries/LovyanGFX
+
     - name: 'Board select'
       shell: bash
       run: cp sdkconfig.board.${{ inputs.board_id }} sdkconfig
+
     - name: 'Build'
       uses: espressif/esp-idf-ci-action@v1
       with:
         esp_idf_version: v5.5
         target: ${{ inputs.arch }}
         path: './'
+
     - name: 'Release'
       shell: bash
       run: Buildscripts/release.sh ${{ inputs.board_id }}
+
     - name: 'Upload Artifact: Release'
       uses: actions/upload-artifact@v4
       with:
         name: Tactility-${{ inputs.board_id }}
         path: release/Tactility-${{ inputs.board_id }}
         retention-days: 30
+
     - name: 'Upload Artifact: Release symbols'
       uses: actions/upload-artifact@v4
       with:
