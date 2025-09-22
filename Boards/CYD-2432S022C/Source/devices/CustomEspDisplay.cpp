@@ -84,8 +84,8 @@ bool CustomEspDisplay::initI80Bus() {
     bus_config.data_gpio_nums[7] = CYD_2432S022C_LCD_PIN_D7;
     bus_config.bus_width = CYD_2432S022C_LCD_BUS_WIDTH;
     bus_config.max_transfer_bytes = LCD_H_RES * DRAW_BUF_HEIGHT * sizeof(uint16_t);
-    bus_config.alignment.psram = 64;
-    bus_config.alignment.sram = 4;
+    bus_config.psram_trans_align = 64;
+    bus_config.sram_trans_align = 4;
 
     esp_err_t ret = esp_lcd_new_i80_bus(&bus_config, &i80_bus);
     if (ret != ESP_OK) {
@@ -149,9 +149,9 @@ bool CustomEspDisplay::initPanel() {
         gpio_config(&reset_gpio_config);
         
         // Reset sequence
-        gpio_set_level(panel_config.reset_gpio_num, 0);
+        gpio_set_level((gpio_num_t)panel_config.reset_gpio_num, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
-        gpio_set_level(panel_config.reset_gpio_num, 1);
+        gpio_set_level((gpio_num_t)panel_config.reset_gpio_num, 1);
         vTaskDelay(pdMS_TO_TICKS(120));
     }
 
