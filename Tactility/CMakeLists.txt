@@ -27,8 +27,6 @@ if (DEFINED ENV{ESP_IDF_VERSION})
     )
     if ("${IDF_TARGET}" STREQUAL "esp32s3")
         list(APPEND REQUIRES_LIST esp_tinyusb)
-    else()
-        list(APPEND REQUIRES_LIST LovyanGFX)
     endif ()
 
     idf_component_register(
