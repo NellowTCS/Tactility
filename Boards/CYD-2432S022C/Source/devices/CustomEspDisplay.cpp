@@ -41,15 +41,24 @@ CustomEspDisplay::~CustomEspDisplay() {
 
 bool CustomEspDisplay::start() {
     TT_LOG_I(TAG, "Starting ESP32 native i80 display");
-    
+
+    // 1. Initialize I80 bus
     if (!initI80Bus()) {
         TT_LOG_E(TAG, "Failed to initialize I80 bus");
         return false;
     }
 
+    // 2. Initialize the panel
     if (!initPanel()) {
         TT_LOG_E(TAG, "Failed to initialize panel");
         cleanupResources();
+        return false;
+    }
+
+    // 3. Start LVGL with memory-safe buffer sizing
+    if (!startLvgl()) {
+        TT_LOG_E(TAG, "Failed to start LVGL");
+        stop(); // Clean up everything
         return false;
     }
 
@@ -275,47 +284,32 @@ bool CustomEspDisplay::sendST7789InitCommands() {
 }
 
 bool CustomEspDisplay::startLvgl() {
-    if (lvglDisplay != nullptr) {
-        TT_LOG_W(TAG, "LVGL already started");
-        return true;
-    }
+    if (lvglDisplay) return true;
 
-    // Calculate buffer size
-    size_t buf_size = LCD_H_RES * DRAW_BUF_HEIGHT;
-    size_t buf_bytes = buf_size * sizeof(lv_color_t);
+    const size_t buf_pixel_count = LCD_H_RES * DRAW_BUF_HEIGHT;
+    const size_t buf_bytes = buf_pixel_count * sizeof(lv_color_t);
 
-    TT_LOG_I(TAG, "Allocating LVGL buffers: %d bytes each (%dx%d pixels)", 
-             buf_bytes, LCD_H_RES, DRAW_BUF_HEIGHT);
-
-    // Allocate buffer memory - use DMA capable internal memory
+    // Allocate DMA-capable internal memory
     buf1_memory = heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     buf2_memory = heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
 
     if (!buf1_memory || !buf2_memory) {
         TT_LOG_E(TAG, "Failed to allocate LVGL buffers");
-        if (buf1_memory) { heap_caps_free(buf1_memory); buf1_memory = nullptr; }
-        if (buf2_memory) { heap_caps_free(buf2_memory); buf2_memory = nullptr; }
+        if (buf1_memory) heap_caps_free(buf1_memory);
+        if (buf2_memory) heap_caps_free(buf2_memory);
+        buf1_memory = buf2_memory = nullptr;
         return false;
     }
 
     // Create LVGL draw buffers
-    draw_buf1 = lv_draw_buf_create(LCD_H_RES, DRAW_BUF_HEIGHT, LV_COLOR_FORMAT_RGB565, 0);
-    draw_buf2 = lv_draw_buf_create(LCD_H_RES, DRAW_BUF_HEIGHT, LV_COLOR_FORMAT_RGB565, 0);
+    draw_buf1 = lv_draw_buf_create((lv_color_t*)buf1_memory, buf_pixel_count);
+    draw_buf2 = lv_draw_buf_create((lv_color_t*)buf2_memory, buf_pixel_count);
 
     if (!draw_buf1 || !draw_buf2) {
         TT_LOG_E(TAG, "Failed to create LVGL draw buffers");
-        if (draw_buf1) { lv_draw_buf_destroy(draw_buf1); draw_buf1 = nullptr; }
-        if (draw_buf2) { lv_draw_buf_destroy(draw_buf2); draw_buf2 = nullptr; }
-        heap_caps_free(buf1_memory); buf1_memory = nullptr;
-        heap_caps_free(buf2_memory); buf2_memory = nullptr;
+        stopLvgl();
         return false;
     }
-
-    // Initialize draw buffers with our allocated memory
-    lv_draw_buf_init(draw_buf1, LCD_H_RES, DRAW_BUF_HEIGHT, LV_COLOR_FORMAT_RGB565, 
-                     LCD_H_RES * sizeof(lv_color_t), buf1_memory, buf_bytes);
-    lv_draw_buf_init(draw_buf2, LCD_H_RES, DRAW_BUF_HEIGHT, LV_COLOR_FORMAT_RGB565, 
-                     LCD_H_RES * sizeof(lv_color_t), buf2_memory, buf_bytes);
 
     // Create LVGL display
     lvglDisplay = lv_display_create(LCD_H_RES, LCD_V_RES);
@@ -325,13 +319,12 @@ bool CustomEspDisplay::startLvgl() {
         return false;
     }
 
-    // Configure LVGL display
     lv_display_set_user_data(lvglDisplay, this);
     lv_display_set_draw_buffers(lvglDisplay, draw_buf1, draw_buf2);
     lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
     lv_display_set_flush_cb(lvglDisplay, lvgl_flush_cb);
 
-    TT_LOG_I(TAG, "LVGL started successfully");
+    TT_LOG_I(TAG, "LVGL started successfully with buffer height %d", DRAW_BUF_HEIGHT);
     return true;
 }
 
