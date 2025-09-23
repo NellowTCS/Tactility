@@ -284,26 +284,26 @@ bool CustomEspDisplay::sendST7789InitCommands() {
 }
 
 bool CustomEspDisplay::startLvgl() {
-    if (lvglDisplay) return true;
+    TT_LOG_I(TAG, "Starting LVGL...");
 
-    const size_t buf_pixel_count = LCD_H_RES * DRAW_BUF_HEIGHT;
-    const size_t buf_bytes = buf_pixel_count * sizeof(lv_color_t);
-
-    buf1_memory = heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    buf2_memory = heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-
-    if (!buf1_memory || !buf2_memory) {
-        TT_LOG_E(TAG, "Failed to allocate LVGL buffers");
-        if (buf1_memory) heap_caps_free(buf1_memory);
-        if (buf2_memory) heap_caps_free(buf2_memory);
-        buf1_memory = buf2_memory = nullptr;
+    // Allocate the draw buffer (single buffer, ~43KB at 320x240, 16-bit)
+    size_t buf_bytes = LCD_H_RES * DRAW_BUF_HEIGHT * sizeof(lv_color_t);
+    buf1_memory = heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf1_memory) {
+        TT_LOG_E(TAG, "Failed to allocate draw buffer memory");
         return false;
     }
 
-    // Initialize the draw buffers
-    lv_draw_buf_init(&draw_buf1, (lv_color_t*)buf1_memory, (lv_color_t*)buf2_memory, buf_pixel_count);
+    // Initialize the LVGL draw buffer (struct, not pointer)
+    lv_draw_buf_init(&draw_buf1,
+                     LCD_H_RES,
+                     DRAW_BUF_HEIGHT,
+                     LV_COLOR_FORMAT_RGB565,
+                     0, // auto stride
+                     buf1_memory,
+                     buf_bytes);
 
-    // Create LVGL display
+    // Create the display
     lvglDisplay = lv_display_create(LCD_H_RES, LCD_V_RES);
     if (!lvglDisplay) {
         TT_LOG_E(TAG, "Failed to create LVGL display");
@@ -313,46 +313,33 @@ bool CustomEspDisplay::startLvgl() {
 
     lv_display_set_user_data(lvglDisplay, this);
 
-    // Assign the draw buffer(s)
-    lv_display_set_draw_buffers(lvglDisplay, &draw_buf1, nullptr); // LVGL handles double buffering internally
+    // Assign the draw buffer to the display
+    lv_display_set_draw_buffers(lvglDisplay, &draw_buf1, nullptr);
 
-    lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
-    lv_display_set_flush_cb(lvglDisplay, lvgl_flush_cb);
+    // Register the flush callback
+    lv_display_set_flush_cb(lvglDisplay, CustomEspDisplay::flushCallback);
 
-    TT_LOG_I(TAG, "LVGL started successfully with buffer height %d", DRAW_BUF_HEIGHT);
+    TT_LOG_I(TAG, "LVGL init finished");
     return true;
 }
 
-bool CustomEspDisplay::stopLvgl() {
-    TT_LOG_I(TAG, "Stopping LVGL");
+void CustomEspDisplay::stopLvgl() {
+    TT_LOG_I(TAG, "Stopping LVGL...");
 
     if (lvglDisplay) {
         lv_display_delete(lvglDisplay);
         lvglDisplay = nullptr;
     }
 
-    if (draw_buf1) {
-        lv_draw_buf_destroy(draw_buf1);
-        draw_buf1 = nullptr;
-    }
-
-    if (draw_buf2) {
-        lv_draw_buf_destroy(draw_buf2);
-        draw_buf2 = nullptr;
-    }
-
+    // Free the raw buffer memory (since LVGL doesn’t own it)
     if (buf1_memory) {
         heap_caps_free(buf1_memory);
         buf1_memory = nullptr;
     }
 
-    if (buf2_memory) {
-        heap_caps_free(buf2_memory);
-        buf2_memory = nullptr;
-    }
-
-    return true;
+    TT_LOG_I(TAG, "LVGL stopped");
 }
+
 
 void CustomEspDisplay::lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* display = static_cast<CustomEspDisplay*>(lv_display_get_user_data(disp));

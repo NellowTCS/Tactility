@@ -19,8 +19,8 @@ private:
     
     // LVGL objects
     lv_display_t* lvglDisplay = nullptr;
-    lv_draw_buf_t* draw_buf1 = nullptr;
-    lv_draw_buf_t* draw_buf2 = nullptr;
+    lv_draw_buf_t draw_buf1 = nullptr;
+    lv_draw_buf_t draw_buf2 = nullptr;
     void* buf1_memory = nullptr;
     void* buf2_memory = nullptr;
 
