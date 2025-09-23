@@ -289,7 +289,6 @@ bool CustomEspDisplay::startLvgl() {
     const size_t buf_pixel_count = LCD_H_RES * DRAW_BUF_HEIGHT;
     const size_t buf_bytes = buf_pixel_count * sizeof(lv_color_t);
 
-    // Allocate DMA-capable internal memory
     buf1_memory = heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     buf2_memory = heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
 
@@ -301,15 +300,12 @@ bool CustomEspDisplay::startLvgl() {
         return false;
     }
 
-    // Create LVGL draw buffers
-    draw_buf1 = lv_draw_buf_create((lv_color_t*)buf1_memory, buf_pixel_count);
-    draw_buf2 = lv_draw_buf_create((lv_color_t*)buf2_memory, buf_pixel_count);
+    // Create LVGL draw buffers with new LVGL 9+ API
+    draw_buf1 = lv_draw_buf_create(LCD_H_RES, DRAW_BUF_HEIGHT, LV_COLOR_FORMAT_RGB565, LCD_H_RES);
+    lv_draw_buf_set_buf(draw_buf1, (lv_color_t*)buf1_memory, nullptr, buf_pixel_count);
 
-    if (!draw_buf1 || !draw_buf2) {
-        TT_LOG_E(TAG, "Failed to create LVGL draw buffers");
-        stopLvgl();
-        return false;
-    }
+    draw_buf2 = lv_draw_buf_create(LCD_H_RES, DRAW_BUF_HEIGHT, LV_COLOR_FORMAT_RGB565, LCD_H_RES);
+    lv_draw_buf_set_buf(draw_buf2, (lv_color_t*)buf2_memory, nullptr, buf_pixel_count);
 
     // Create LVGL display
     lvglDisplay = lv_display_create(LCD_H_RES, LCD_V_RES);
