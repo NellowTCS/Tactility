@@ -41,24 +41,15 @@ CustomEspDisplay::~CustomEspDisplay() {
 
 bool CustomEspDisplay::start() {
     TT_LOG_I(TAG, "Starting ESP32 native i80 display");
-
-    // 1. Initialize I80 bus
+    
     if (!initI80Bus()) {
         TT_LOG_E(TAG, "Failed to initialize I80 bus");
         return false;
     }
 
-    // 2. Initialize the panel
     if (!initPanel()) {
         TT_LOG_E(TAG, "Failed to initialize panel");
         cleanupResources();
-        return false;
-    }
-
-    // 3. Start LVGL with memory-safe buffer sizing
-    if (!startLvgl()) {
-        TT_LOG_E(TAG, "Failed to start LVGL");
-        stop(); // Clean up everything
         return false;
     }
 
@@ -137,14 +128,14 @@ bool CustomEspDisplay::initPanel() {
     panel_config.bits_per_pixel = 16;
     
     // Create a custom panel for ST7789 i80
-    panel_handle = (esp_lcd_panel_handle_t)malloc(128);
+    panel_handle = (esp_lcd_panel_handle_t)malloc(sizeof(esp_lcd_panel_t));
     if (!panel_handle) {
         TT_LOG_E(TAG, "Failed to allocate panel handle");
         return false;
     }
 
     // Initialize the panel structure
-    memset(panel_handle, 0, 128);
+    memset(panel_handle, 0, sizeof(esp_lcd_panel_t));
 
     // Perform hardware reset if reset pin is available
     if (panel_config.reset_gpio_num != GPIO_NUM_NC) {
@@ -158,9 +149,9 @@ bool CustomEspDisplay::initPanel() {
         gpio_config(&reset_gpio_config);
         
         // Reset sequence
-        gpio_set_level((gpio_num_t)panel_config.reset_gpio_num, 0);
+        gpio_set_level(panel_config.reset_gpio_num, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
-        gpio_set_level((gpio_num_t)panel_config.reset_gpio_num, 1);
+        gpio_set_level(panel_config.reset_gpio_num, 1);
         vTaskDelay(pdMS_TO_TICKS(120));
     }
 
@@ -284,26 +275,45 @@ bool CustomEspDisplay::sendST7789InitCommands() {
 }
 
 bool CustomEspDisplay::startLvgl() {
-    TT_LOG_I(TAG, "Starting LVGL...");
+    if (lvglDisplay != nullptr) {
+        TT_LOG_W(TAG, "LVGL already started");
+        return true;
+    }
 
-    // Allocate the draw buffer (single buffer, ~43KB at 320x240, 16-bit)
-    size_t buf_bytes = LCD_H_RES * DRAW_BUF_HEIGHT * sizeof(lv_color_t);
+    // Calculate buffer size
+    size_t buf_size = LCD_H_RES * DRAW_BUF_HEIGHT;
+    size_t buf_bytes = buf_size * sizeof(lv_color_t);
+
+    TT_LOG_I(TAG, "Allocating LVGL buffers: %d bytes each (%dx%d pixels)", 
+             buf_bytes, LCD_H_RES, DRAW_BUF_HEIGHT);
+
+    // Allocate buffer memory - try SPIRAM first, fallback to internal
     buf1_memory = heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!buf1_memory) {
-        TT_LOG_E(TAG, "Failed to allocate draw buffer memory");
+        TT_LOG_W(TAG, "SPIRAM allocation failed, trying internal memory");
+        buf1_memory = heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    }
+    
+    buf2_memory = heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf2_memory) {
+        TT_LOG_W(TAG, "SPIRAM allocation failed for buf2, trying internal memory");
+        buf2_memory = heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    }
+
+    if (!buf1_memory || !buf2_memory) {
+        TT_LOG_E(TAG, "Failed to allocate LVGL buffers");
+        if (buf1_memory) { heap_caps_free(buf1_memory); buf1_memory = nullptr; }
+        if (buf2_memory) { heap_caps_free(buf2_memory); buf2_memory = nullptr; }
         return false;
     }
 
-    // Initialize the LVGL draw buffer (struct, not pointer)
-    lv_draw_buf_init(&draw_buf1,
-                     LCD_H_RES,
-                     DRAW_BUF_HEIGHT,
-                     LV_COLOR_FORMAT_RGB565,
-                     0, // auto stride
-                     buf1_memory,
-                     buf_bytes);
+    // Initialize draw buffers with our allocated memory (stack objects)
+    lv_draw_buf_init(&draw_buf1, LCD_H_RES, DRAW_BUF_HEIGHT, LV_COLOR_FORMAT_RGB565, 
+                     LCD_H_RES * sizeof(lv_color_t), buf1_memory, buf_bytes);
+    lv_draw_buf_init(&draw_buf2, LCD_H_RES, DRAW_BUF_HEIGHT, LV_COLOR_FORMAT_RGB565, 
+                     LCD_H_RES * sizeof(lv_color_t), buf2_memory, buf_bytes);
 
-    // Create the display
+    // Create LVGL display
     lvglDisplay = lv_display_create(LCD_H_RES, LCD_V_RES);
     if (!lvglDisplay) {
         TT_LOG_E(TAG, "Failed to create LVGL display");
@@ -311,37 +321,39 @@ bool CustomEspDisplay::startLvgl() {
         return false;
     }
 
+    // Configure LVGL display
     lv_display_set_user_data(lvglDisplay, this);
+    lv_display_set_draw_buffers(lvglDisplay, &draw_buf1, &draw_buf2);
+    lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
+    lv_display_set_flush_cb(lvglDisplay, flushCallback);
 
-    // Assign the draw buffer to the display
-    lv_display_set_draw_buffers(lvglDisplay, &draw_buf1, nullptr);
-
-    // Register the flush callback
-    lv_display_set_flush_cb(lvglDisplay, CustomEspDisplay::flushCallback);
-
-    TT_LOG_I(TAG, "LVGL init finished");
+    TT_LOG_I(TAG, "LVGL started successfully");
     return true;
 }
 
-void CustomEspDisplay::stopLvgl() {
-    TT_LOG_I(TAG, "Stopping LVGL...");
+bool CustomEspDisplay::stopLvgl() {
+    TT_LOG_I(TAG, "Stopping LVGL");
 
     if (lvglDisplay) {
         lv_display_delete(lvglDisplay);
         lvglDisplay = nullptr;
     }
 
-    // Free the raw buffer memory (since LVGL doesn’t own it)
+    // Free the buffer memory (we allocated it directly)
     if (buf1_memory) {
         heap_caps_free(buf1_memory);
         buf1_memory = nullptr;
     }
 
-    TT_LOG_I(TAG, "LVGL stopped");
+    if (buf2_memory) {
+        heap_caps_free(buf2_memory);
+        buf2_memory = nullptr;
+    }
+
+    return true;
 }
 
-
-void CustomEspDisplay::lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
+void CustomEspDisplay::flushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* display = static_cast<CustomEspDisplay*>(lv_display_get_user_data(disp));
     
     // Calculate coordinates and dimensions
@@ -353,15 +365,15 @@ void CustomEspDisplay::lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, 
     // Send draw bitmap command manually since we're using custom panel
     // Set column address (CASET)
     uint8_t col_data[] = {
-        (uint8_t)((x1 >> 8) & 0xFF), (uint8_t)(x1 & 0xFF),
-        (uint8_t)((x2 >> 8) & 0xFF), (uint8_t)(x2 & 0xFF)
+        (x1 >> 8) & 0xFF, x1 & 0xFF,
+        (x2 >> 8) & 0xFF, x2 & 0xFF
     };
     esp_lcd_panel_io_tx_param(display->io_handle, ST7789_CMD_CASET, col_data, 4);
     
     // Set page address (RASET)
     uint8_t page_data[] = {
-        (uint8_t)((y1 >> 8) & 0xFF), (uint8_t)(y1 & 0xFF),
-        (uint8_t)((y2 >> 8) & 0xFF), (uint8_t)(y2 & 0xFF)
+        (y1 >> 8) & 0xFF, y1 & 0xFF,
+        (y2 >> 8) & 0xFF, y2 & 0xFF
     };
     esp_lcd_panel_io_tx_param(display->io_handle, ST7789_CMD_RASET, page_data, 4);
     
