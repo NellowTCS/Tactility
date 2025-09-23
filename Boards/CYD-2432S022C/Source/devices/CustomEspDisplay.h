@@ -19,8 +19,8 @@ private:
     
     // LVGL objects
     lv_display_t* lvglDisplay = nullptr;
-    lv_draw_buf_t draw_buf1 = nullptr;
-    lv_draw_buf_t draw_buf2 = nullptr;
+    lv_draw_buf_t draw_buf1;
+    lv_draw_buf_t draw_buf2;
     void* buf1_memory = nullptr;
     void* buf2_memory = nullptr;
 
@@ -58,11 +58,11 @@ public:
     bool stopLvgl() override;
     lv_display_t* getLvglDisplay() const override { return lvglDisplay; }
 
-    // DisplayDriver integration (optional - can be implemented later)
+    // DisplayDriver integration (will be implemented later)
     bool supportsDisplayDriver() const override { return false; }
     std::shared_ptr<tt::hal::display::DisplayDriver> getDisplayDriver() override { return nullptr; }
 
 private:
     // LVGL flush callback
-    static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
+    static void flushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
 };
