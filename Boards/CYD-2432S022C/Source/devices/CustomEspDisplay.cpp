@@ -300,12 +300,8 @@ bool CustomEspDisplay::startLvgl() {
         return false;
     }
 
-    // Create LVGL draw buffers with new LVGL 9+ API
-    draw_buf1 = lv_draw_buf_create(LCD_H_RES, DRAW_BUF_HEIGHT, LV_COLOR_FORMAT_RGB565, LCD_H_RES);
-    lv_draw_buf_set_buf(draw_buf1, (lv_color_t*)buf1_memory, nullptr, buf_pixel_count);
-
-    draw_buf2 = lv_draw_buf_create(LCD_H_RES, DRAW_BUF_HEIGHT, LV_COLOR_FORMAT_RGB565, LCD_H_RES);
-    lv_draw_buf_set_buf(draw_buf2, (lv_color_t*)buf2_memory, nullptr, buf_pixel_count);
+    draw_buf1 = lv_draw_buf_create((lv_color_t*)buf1_memory, nullptr, buf_pixel_count);
+    draw_buf2 = lv_draw_buf_create((lv_color_t*)buf2_memory, nullptr, buf_pixel_count);
 
     // Create LVGL display
     lvglDisplay = lv_display_create(LCD_H_RES, LCD_V_RES);
