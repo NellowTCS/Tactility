@@ -300,10 +300,10 @@ bool CustomEspDisplay::startLvgl() {
         return false;
     }
 
-    // Correct LVGL 9 draw buffer creation
-    draw_buf1 = lv_draw_buf_create(LCD_H_RES, DRAW_BUF_HEIGHT, LV_COLOR_FORMAT_RGB565, LCD_H_RES);
-    draw_buf2 = lv_draw_buf_create(LCD_H_RES, DRAW_BUF_HEIGHT, LV_COLOR_FORMAT_RGB565, LCD_H_RES);
+    // Initialize the draw buffers
+    lv_draw_buf_init(&draw_buf1, (lv_color_t*)buf1_memory, (lv_color_t*)buf2_memory, buf_pixel_count);
 
+    // Create LVGL display
     lvglDisplay = lv_display_create(LCD_H_RES, LCD_V_RES);
     if (!lvglDisplay) {
         TT_LOG_E(TAG, "Failed to create LVGL display");
@@ -313,11 +313,8 @@ bool CustomEspDisplay::startLvgl() {
 
     lv_display_set_user_data(lvglDisplay, this);
 
-    // Assign memory to LVGL
-    lv_display_set_draw_buffers(lvglDisplay,
-                                draw_buf1, buf1_memory,
-                                draw_buf2, buf2_memory,
-                                buf_pixel_count);
+    // Assign the draw buffer(s)
+    lv_display_set_draw_buffers(lvglDisplay, &draw_buf1, nullptr); // LVGL handles double buffering internally
 
     lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
     lv_display_set_flush_cb(lvglDisplay, lvgl_flush_cb);
