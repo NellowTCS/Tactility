@@ -65,6 +65,8 @@ const esp_elfsym elf_symbols[] {
     // <stdlib>
     ESP_ELFSYM_EXPORT(atoi),
     ESP_ELFSYM_EXPORT(malloc),
+    ESP_ELFSYM_EXPORT(free),
+    ESP_ELFSYM_EXPORT(isspace),
     // <cassert>
     ESP_ELFSYM_EXPORT(__assert_func),
     // <cstdio>
@@ -394,6 +396,7 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_align),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_color),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_font),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_decor),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_letter_space),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_line_space),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_color),
