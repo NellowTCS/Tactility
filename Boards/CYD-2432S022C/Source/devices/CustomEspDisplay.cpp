@@ -149,16 +149,15 @@ bool CustomEspDisplay::initPanel() {
         gpio_config(&reset_gpio_config);
         
         // Reset sequence
-        gpio_set_level(panel_config.reset_gpio_num, 0);
+        gpio_set_level((gpio_num_t)panel_config.reset_gpio_num, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
-        gpio_set_level(panel_config.reset_gpio_num, 1);
+        gpio_set_level((gpio_num_t)panel_config.reset_gpio_num, 1);
         vTaskDelay(pdMS_TO_TICKS(120));
     }
 
     // Send ST7789 initialization commands
     if (!sendST7789InitCommands()) {
         TT_LOG_E(TAG, "Failed to send ST7789 init commands");
-        free(panel_handle);
         panel_handle = nullptr;
         return false;
     }
@@ -365,15 +364,15 @@ void CustomEspDisplay::flushCallback(lv_display_t* disp, const lv_area_t* area, 
     // Send draw bitmap command manually since we're using custom panel
     // Set column address (CASET)
     uint8_t col_data[] = {
-        (x1 >> 8) & 0xFF, x1 & 0xFF,
-        (x2 >> 8) & 0xFF, x2 & 0xFF
+        (uint8_t)((x1 >> 8) & 0xFF), (uint8_t)(x1 & 0xFF),
+        (uint8_t)((x2 >> 8) & 0xFF), (uint8_t)(x2 & 0xFF)
     };
     esp_lcd_panel_io_tx_param(display->io_handle, ST7789_CMD_CASET, col_data, 4);
     
     // Set page address (RASET)
     uint8_t page_data[] = {
-        (y1 >> 8) & 0xFF, y1 & 0xFF,
-        (y2 >> 8) & 0xFF, y2 & 0xFF
+        (uint8_t)((y1 >> 8) & 0xFF), (uint8_t)(y1 & 0xFF),
+        (uint8_t)((y2 >> 8) & 0xFF), (uint8_t)(y2 & 0xFF)
     };
     esp_lcd_panel_io_tx_param(display->io_handle, ST7789_CMD_RASET, page_data, 4);
     
@@ -387,7 +386,7 @@ void CustomEspDisplay::flushCallback(lv_display_t* disp, const lv_area_t* area, 
 
 void CustomEspDisplay::cleanupResources() {
     if (panel_handle) {
-        free(panel_handle);
+        // panel_handle is just a dummy pointer, no need to free
         panel_handle = nullptr;
     }
 
