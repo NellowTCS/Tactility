@@ -127,15 +127,9 @@ bool CustomEspDisplay::initPanel() {
     panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
     panel_config.bits_per_pixel = 16;
     
-    // Create a custom panel for ST7789 i80
-    panel_handle = (esp_lcd_panel_handle_t)malloc(sizeof(esp_lcd_panel_t));
-    if (!panel_handle) {
-        TT_LOG_E(TAG, "Failed to allocate panel handle");
-        return false;
-    }
-
-    // Initialize the panel structure
-    memset(panel_handle, 0, sizeof(esp_lcd_panel_t));
+    // For our custom ST7789 i80 implementation, we don't need a real panel handle
+    // We'll just use a dummy pointer since we handle everything manually
+    panel_handle = (esp_lcd_panel_handle_t)0x1; // Non-null dummy value
 
     // Perform hardware reset if reset pin is available
     if (panel_config.reset_gpio_num != GPIO_NUM_NC) {
