@@ -46,24 +46,6 @@ extern "C" {
 extern void* _Znwj(uint32_t size);
 extern void _ZdlPvj(void* p, uint64_t size);
 
-#include <stdlib.h>
-#include <cstring>
-#include <ctype.h>
-#include <esp_log.h>
-#include <esp_http_client.h>
-#include <cassert>
-#include <getopt.h>
-
-#include <lvgl.h>
-#include <pthread.h>
-#include <setjmp.h>
-
-extern "C" {
-
-// GCC internal new and delete
-extern void* _Znwj(uint32_t size);
-extern void _ZdlPvj(void* p, uint64_t size);
-
 const esp_elfsym elf_symbols[] {
     // GCC internal
     ESP_ELFSYM_EXPORT(_Znwj), // new
