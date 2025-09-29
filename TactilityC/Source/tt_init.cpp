@@ -68,13 +68,7 @@ const esp_elfsym elf_symbols[] {
     // GCC internal
     ESP_ELFSYM_EXPORT(_Znwj), // new
     ESP_ELFSYM_EXPORT(_ZdlPvj), // delete
-    // Soft-float routines
-    ESP_ELFSYM_EXPORT(__adddf3),
-    ESP_ELFSYM_EXPORT(__subdf3),
-    ESP_ELFSYM_EXPORT(__muldf3),
-    ESP_ELFSYM_EXPORT(__nedf2),
-    ESP_ELFSYM_EXPORT(__divdf3),
-    // stdlib
+    // stdlib.h
     ESP_ELFSYM_EXPORT(malloc),
     ESP_ELFSYM_EXPORT(calloc),
     ESP_ELFSYM_EXPORT(realloc),
