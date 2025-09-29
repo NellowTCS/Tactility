@@ -27,7 +27,26 @@
 
 #include <private/elf_symbol.h>
 #include "symbols/gcc_soft_float.h"
+#include <string.h>
+#include <stdlib.h>
+#include <cstring>
+#include <ctype.h>
+#include <esp_log.h>
+#include <esp_http_client.h>
+#include <cassert>
+#include <getopt.h>
 
+#include <lvgl.h>
+#include <pthread.h>
+#include <setjmp.h>
+
+extern "C" {
+
+// GCC internal new and delete
+extern void* _Znwj(uint32_t size);
+extern void _ZdlPvj(void* p, uint64_t size);
+
+#include <stdlib.h>
 #include <cstring>
 #include <ctype.h>
 #include <esp_log.h>
@@ -49,11 +68,18 @@ const esp_elfsym elf_symbols[] {
     // GCC internal
     ESP_ELFSYM_EXPORT(_Znwj), // new
     ESP_ELFSYM_EXPORT(_ZdlPvj), // delete
-    // stdlib.h
+    // Soft-float routines
+    ESP_ELFSYM_EXPORT(__adddf3),
+    ESP_ELFSYM_EXPORT(__subdf3),
+    ESP_ELFSYM_EXPORT(__muldf3),
+    ESP_ELFSYM_EXPORT(__nedf2),
+    ESP_ELFSYM_EXPORT(__divdf3),
+    // stdlib
     ESP_ELFSYM_EXPORT(malloc),
     ESP_ELFSYM_EXPORT(calloc),
     ESP_ELFSYM_EXPORT(realloc),
     ESP_ELFSYM_EXPORT(free),
+    ESP_ELFSYM_EXPORT(atoi),
     // unistd.h
     ESP_ELFSYM_EXPORT(usleep),
     ESP_ELFSYM_EXPORT(sleep),
@@ -74,7 +100,6 @@ const esp_elfsym elf_symbols[] {
     // freertos_tasks_c_additions.h
     ESP_ELFSYM_EXPORT(__getreent),
 #ifdef __HAVE_LOCALE_INFO__
-    // ctype.h
     ESP_ELFSYM_EXPORT(__locale_ctype_ptr),
 #else
     ESP_ELFSYM_EXPORT(_ctype_),
@@ -365,8 +390,11 @@ const esp_elfsym elf_symbols[] {
     // lv_obj
     ESP_ELFSYM_EXPORT(lv_color_hex),
     ESP_ELFSYM_EXPORT(lv_color_make),
+    ESP_ELFSYM_EXPORT(lv_color_white),
     ESP_ELFSYM_EXPORT(lv_obj_create),
     ESP_ELFSYM_EXPORT(lv_obj_delete),
+    ESP_ELFSYM_EXPORT(lv_obj_del),
+    ESP_ELFSYM_EXPORT(lv_obj_clean),
     ESP_ELFSYM_EXPORT(lv_obj_add_event_cb),
     ESP_ELFSYM_EXPORT(lv_obj_align),
     ESP_ELFSYM_EXPORT(lv_obj_align_to),
@@ -420,6 +448,7 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_align),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_color),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_font),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_decor),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_letter_space),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_line_space),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_color),
@@ -431,10 +460,12 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(lv_obj_set_size),
     ESP_ELFSYM_EXPORT(lv_obj_set_width),
     ESP_ELFSYM_EXPORT(lv_obj_set_height),
+    ESP_ELFSYM_EXPORT(lv_obj_set_scroll_dir),
     ESP_ELFSYM_EXPORT(lv_theme_get_color_primary),
     ESP_ELFSYM_EXPORT(lv_theme_get_color_secondary),
     // lv_button
     ESP_ELFSYM_EXPORT(lv_button_create),
+    ESP_ELFSYM_EXPORT(lv_btn_create),
     // lv_buttonmatrix
     ESP_ELFSYM_EXPORT(lv_buttonmatrix_create),
     ESP_ELFSYM_EXPORT(lv_buttonmatrix_get_button_text),
@@ -502,6 +533,7 @@ const esp_elfsym elf_symbols[] {
     // lv_textarea
     ESP_ELFSYM_EXPORT(lv_textarea_create),
     ESP_ELFSYM_EXPORT(lv_textarea_get_accepted_chars),
+    ESP_ELFSYM_EXPORT(lv_textarea_get_text),
     ESP_ELFSYM_EXPORT(lv_textarea_get_label),
     ESP_ELFSYM_EXPORT(lv_textarea_get_max_length),
     ESP_ELFSYM_EXPORT(lv_textarea_get_one_line),
@@ -514,6 +546,8 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(lv_textarea_set_placeholder_text),
     ESP_ELFSYM_EXPORT(lv_textarea_set_text),
     ESP_ELFSYM_EXPORT(lv_textarea_set_text_selection),
+    // added for tactile browser
+    ESP_ELFSYM_EXPORT(lv_textarea_class),
     // lv_palette
     ESP_ELFSYM_EXPORT(lv_palette_main),
     ESP_ELFSYM_EXPORT(lv_palette_darken),
