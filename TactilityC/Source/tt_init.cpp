@@ -25,49 +25,73 @@
 #include "tt_timer.h"
 #include "tt_wifi.h"
 
+#include <private/elf_symbol.h>
+#include "symbols/gcc_soft_float.h"
 #include <string.h>
 #include <stdlib.h>
 #include <cstring>
 #include <ctype.h>
-#include <private/elf_symbol.h>
 #include <esp_log.h>
 #include <esp_http_client.h>
 #include <cassert>
+#include <getopt.h>
 
 #include <lvgl.h>
+#include <pthread.h>
+#include <setjmp.h>
 
 extern "C" {
 
-// Hidden functions work-around
+// GCC internal new and delete
 extern void* _Znwj(uint32_t size);
 extern void _ZdlPvj(void* p, uint64_t size);
-extern double __adddf3(double a, double b);
-extern double __subdf3(double a, double b);
-extern double __muldf3 (double a, double b);
-extern double __divdf3 (double a, double b);
-extern int __nedf2 (double a, double b);
 
 const esp_elfsym elf_symbols[] {
-    // Hidden functions work-around
-    ESP_ELFSYM_EXPORT(_ZdlPvj), // new?
-    ESP_ELFSYM_EXPORT(_Znwj), // delete?
-    ESP_ELFSYM_EXPORT(__adddf3), // Routines for floating point emulation:
-    ESP_ELFSYM_EXPORT(__subdf3), // See https://gcc.gnu.org/onlinedocs/gccint/Soft-float-library-routines.html
-    ESP_ELFSYM_EXPORT(__muldf3),
-    ESP_ELFSYM_EXPORT(__nedf2),
-    ESP_ELFSYM_EXPORT(__divdf3),
-    // <string>
-    ESP_ELFSYM_EXPORT(strlen),
-    ESP_ELFSYM_EXPORT(strncpy),
-    ESP_ELFSYM_EXPORT(strcmp),
-    ESP_ELFSYM_EXPORT(memcpy),
-    ESP_ELFSYM_EXPORT(memcmp),
-    // <stdlib>
-    ESP_ELFSYM_EXPORT(atoi),
+    // GCC internal
+    ESP_ELFSYM_EXPORT(_Znwj), // new
+    ESP_ELFSYM_EXPORT(_ZdlPvj), // delete
+    // stdlib.h
     ESP_ELFSYM_EXPORT(malloc),
-    // <cassert>
+    ESP_ELFSYM_EXPORT(calloc),
+    ESP_ELFSYM_EXPORT(realloc),
+    ESP_ELFSYM_EXPORT(free),
+    ESP_ELFSYM_EXPORT(atoi),
+    // unistd.h
+    ESP_ELFSYM_EXPORT(usleep),
+    ESP_ELFSYM_EXPORT(sleep),
+    ESP_ELFSYM_EXPORT(exit),
+    ESP_ELFSYM_EXPORT(close),
+    // time.h
+    ESP_ELFSYM_EXPORT(clock_gettime),
+    ESP_ELFSYM_EXPORT(strftime),
+    // pthread
+    ESP_ELFSYM_EXPORT(pthread_create),
+    ESP_ELFSYM_EXPORT(pthread_attr_init),
+    ESP_ELFSYM_EXPORT(pthread_attr_setstacksize),
+    ESP_ELFSYM_EXPORT(pthread_detach),
+    ESP_ELFSYM_EXPORT(pthread_join),
+    ESP_ELFSYM_EXPORT(pthread_exit),
+    // sys/errno.h
+    ESP_ELFSYM_EXPORT(__errno),
+    // freertos_tasks_c_additions.h
+    ESP_ELFSYM_EXPORT(__getreent),
+#ifdef __HAVE_LOCALE_INFO__
+    ESP_ELFSYM_EXPORT(__locale_ctype_ptr),
+#else
+    ESP_ELFSYM_EXPORT(_ctype_),
+#endif
+    // getopt.h
+    ESP_ELFSYM_EXPORT(getopt_long),
+    ESP_ELFSYM_EXPORT(optind),
+    ESP_ELFSYM_EXPORT(opterr),
+    ESP_ELFSYM_EXPORT(optarg),
+    ESP_ELFSYM_EXPORT(optopt),
+    // setjmp.h
+    ESP_ELFSYM_EXPORT(longjmp),
+    ESP_ELFSYM_EXPORT(setjmp),
+    // cassert
     ESP_ELFSYM_EXPORT(__assert_func),
-    // <cstdio>
+    // cstdio
     ESP_ELFSYM_EXPORT(fclose),
     ESP_ELFSYM_EXPORT(feof),
     ESP_ELFSYM_EXPORT(ferror),
@@ -101,6 +125,12 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(strcat),
     ESP_ELFSYM_EXPORT(strchr),
     ESP_ELFSYM_EXPORT(strstr),
+    ESP_ELFSYM_EXPORT(strerror),
+    ESP_ELFSYM_EXPORT(strtod),
+    ESP_ELFSYM_EXPORT(strrchr),
+    ESP_ELFSYM_EXPORT(strtol),
+    ESP_ELFSYM_EXPORT(strcspn),
+    ESP_ELFSYM_EXPORT(strncat),
     ESP_ELFSYM_EXPORT(memset),
     ESP_ELFSYM_EXPORT(memcpy),
     ESP_ELFSYM_EXPORT(memcmp),
@@ -394,12 +424,12 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_align),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_color),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_font),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_decor),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_letter_space),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_line_space),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_color),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_opa),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_width),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_decor),
     ESP_ELFSYM_EXPORT(lv_obj_set_align),
     ESP_ELFSYM_EXPORT(lv_obj_set_x),
     ESP_ELFSYM_EXPORT(lv_obj_set_y),
@@ -506,12 +536,47 @@ const esp_elfsym elf_symbols[] {
     // lv_pct
     ESP_ELFSYM_EXPORT(lv_pct),
     ESP_ELFSYM_EXPORT(lv_pct_to_px),
+    // lv_spinbox
+    ESP_ELFSYM_EXPORT(lv_spinbox_create),
+    ESP_ELFSYM_EXPORT(lv_spinbox_decrement),
+    ESP_ELFSYM_EXPORT(lv_spinbox_get_rollover),
+    ESP_ELFSYM_EXPORT(lv_spinbox_get_step),
+    ESP_ELFSYM_EXPORT(lv_spinbox_get_value),
+    ESP_ELFSYM_EXPORT(lv_spinbox_increment),
+    ESP_ELFSYM_EXPORT(lv_spinbox_set_rollover),
+    ESP_ELFSYM_EXPORT(lv_spinbox_set_step),
+    ESP_ELFSYM_EXPORT(lv_spinbox_set_range),
+    ESP_ELFSYM_EXPORT(lv_spinbox_set_digit_format),
+    ESP_ELFSYM_EXPORT(lv_spinbox_set_digit_step_direction),
+    ESP_ELFSYM_EXPORT(lv_spinbox_set_value),
+    ESP_ELFSYM_EXPORT(lv_spinbox_set_cursor_pos),
+    ESP_ELFSYM_EXPORT(lv_spinbox_step_next),
+    ESP_ELFSYM_EXPORT(lv_spinbox_step_prev),
     // delimiter
     ESP_ELFSYM_END
 };
 
+uintptr_t resolve_symbol(const esp_elfsym* source, const char* symbolName) {
+    const esp_elfsym* symbol_iterator = source;
+    while (symbol_iterator->name) {
+        if (!strcmp(symbol_iterator->name, symbolName)) {
+            return reinterpret_cast<uintptr_t>(symbol_iterator->sym);
+        }
+        symbol_iterator++;
+    }
+    return 0;
+}
+
+uintptr_t tt_symbol_resolver(const char* symbolName) {
+    uintptr_t address = resolve_symbol(elf_symbols, symbolName);
+    if (address != 0) {
+        return address;
+    }
+    return resolve_symbol(gcc_soft_float_symbols, symbolName);
+}
+
 void tt_init_tactility_c() {
-    elf_set_custom_symbols(elf_symbols);
+    elf_set_symbol_resolver(tt_symbol_resolver);
 }
 
 }
