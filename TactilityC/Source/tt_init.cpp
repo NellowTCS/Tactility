@@ -27,7 +27,8 @@
 
 #include <private/elf_symbol.h>
 #include "symbols/gcc_soft_float.h"
-
+#include <string.h>
+#include <stdlib.h>
 #include <cstring>
 #include <ctype.h>
 #include <esp_log.h>
@@ -38,7 +39,6 @@
 #include <lvgl.h>
 #include <pthread.h>
 #include <setjmp.h>
-#include <tt_file.h>
 
 extern "C" {
 
@@ -55,9 +55,7 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(calloc),
     ESP_ELFSYM_EXPORT(realloc),
     ESP_ELFSYM_EXPORT(free),
-    ESP_ELFSYM_EXPORT(rand),
-    ESP_ELFSYM_EXPORT(srand),
-    ESP_ELFSYM_EXPORT(rand_r),
+    ESP_ELFSYM_EXPORT(atoi),
     // unistd.h
     ESP_ELFSYM_EXPORT(usleep),
     ESP_ELFSYM_EXPORT(sleep),
@@ -78,7 +76,6 @@ const esp_elfsym elf_symbols[] {
     // freertos_tasks_c_additions.h
     ESP_ELFSYM_EXPORT(__getreent),
 #ifdef __HAVE_LOCALE_INFO__
-    // ctype.h
     ESP_ELFSYM_EXPORT(__locale_ctype_ptr),
 #else
     ESP_ELFSYM_EXPORT(_ctype_),
@@ -120,7 +117,6 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(snprintf),
     ESP_ELFSYM_EXPORT(sprintf),
     ESP_ELFSYM_EXPORT(vsprintf),
-    ESP_ELFSYM_EXPORT(vsnprintf),
     // cstring
     ESP_ELFSYM_EXPORT(strlen),
     ESP_ELFSYM_EXPORT(strcmp),
@@ -230,14 +226,7 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(tt_app_selectiondialog_get_result_index),
     ESP_ELFSYM_EXPORT(tt_app_alertdialog_start),
     ESP_ELFSYM_EXPORT(tt_app_alertdialog_get_result_index),
-    ESP_ELFSYM_EXPORT(tt_app_get_user_data_path),
-    ESP_ELFSYM_EXPORT(tt_app_get_user_data_child_path),
-    ESP_ELFSYM_EXPORT(tt_app_get_assets_path),
-    ESP_ELFSYM_EXPORT(tt_app_get_assets_child_path),
-    ESP_ELFSYM_EXPORT(tt_lock_alloc_for_file),
-    ESP_ELFSYM_EXPORT(tt_lock_acquire),
-    ESP_ELFSYM_EXPORT(tt_lock_release),
-    ESP_ELFSYM_EXPORT(tt_lock_free),
+    ESP_ELFSYM_EXPORT(tt_app_get_data_directory),
     ESP_ELFSYM_EXPORT(tt_bundle_alloc),
     ESP_ELFSYM_EXPORT(tt_bundle_free),
     ESP_ELFSYM_EXPORT(tt_bundle_opt_bool),
@@ -377,8 +366,11 @@ const esp_elfsym elf_symbols[] {
     // lv_obj
     ESP_ELFSYM_EXPORT(lv_color_hex),
     ESP_ELFSYM_EXPORT(lv_color_make),
+    ESP_ELFSYM_EXPORT(lv_color_white),
     ESP_ELFSYM_EXPORT(lv_obj_create),
     ESP_ELFSYM_EXPORT(lv_obj_delete),
+    ESP_ELFSYM_EXPORT(lv_obj_del),
+    ESP_ELFSYM_EXPORT(lv_obj_clean),
     ESP_ELFSYM_EXPORT(lv_obj_add_event_cb),
     ESP_ELFSYM_EXPORT(lv_obj_align),
     ESP_ELFSYM_EXPORT(lv_obj_align_to),
@@ -432,6 +424,7 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_align),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_color),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_font),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_decor),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_letter_space),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_line_space),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_color),
@@ -443,10 +436,12 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(lv_obj_set_size),
     ESP_ELFSYM_EXPORT(lv_obj_set_width),
     ESP_ELFSYM_EXPORT(lv_obj_set_height),
+    ESP_ELFSYM_EXPORT(lv_obj_set_scroll_dir),
     ESP_ELFSYM_EXPORT(lv_theme_get_color_primary),
     ESP_ELFSYM_EXPORT(lv_theme_get_color_secondary),
     // lv_button
     ESP_ELFSYM_EXPORT(lv_button_create),
+    ESP_ELFSYM_EXPORT(lv_btn_create),
     // lv_buttonmatrix
     ESP_ELFSYM_EXPORT(lv_buttonmatrix_create),
     ESP_ELFSYM_EXPORT(lv_buttonmatrix_get_button_text),
@@ -514,6 +509,7 @@ const esp_elfsym elf_symbols[] {
     // lv_textarea
     ESP_ELFSYM_EXPORT(lv_textarea_create),
     ESP_ELFSYM_EXPORT(lv_textarea_get_accepted_chars),
+    ESP_ELFSYM_EXPORT(lv_textarea_get_text),
     ESP_ELFSYM_EXPORT(lv_textarea_get_label),
     ESP_ELFSYM_EXPORT(lv_textarea_get_max_length),
     ESP_ELFSYM_EXPORT(lv_textarea_get_one_line),
@@ -526,6 +522,8 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(lv_textarea_set_placeholder_text),
     ESP_ELFSYM_EXPORT(lv_textarea_set_text),
     ESP_ELFSYM_EXPORT(lv_textarea_set_text_selection),
+    // added for tactile browser
+    ESP_ELFSYM_EXPORT(lv_textarea_class),
     // lv_palette
     ESP_ELFSYM_EXPORT(lv_palette_main),
     ESP_ELFSYM_EXPORT(lv_palette_darken),
