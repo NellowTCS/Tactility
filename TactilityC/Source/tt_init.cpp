@@ -39,6 +39,7 @@
 #include <lvgl.h>
 #include <pthread.h>
 #include <setjmp.h>
+#include <tt_file.h>
 
 extern "C" {
 
@@ -55,6 +56,9 @@ const esp_elfsym elf_symbols[] {
     ESP_ELFSYM_EXPORT(calloc),
     ESP_ELFSYM_EXPORT(realloc),
     ESP_ELFSYM_EXPORT(free),
+    ESP_ELFSYM_EXPORT(rand),
+    ESP_ELFSYM_EXPORT(srand),
+    ESP_ELFSYM_EXPORT(rand_r),
     ESP_ELFSYM_EXPORT(atoi),
     // unistd.h
     ESP_ELFSYM_EXPORT(usleep),
