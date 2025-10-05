@@ -17,6 +17,7 @@
 
 #include <map>
 #include <format>
+#include <Tactility/file/FileLock.h>
 
 #ifdef ESP_PLATFORM
 #include <Tactility/InitEsp.h>
@@ -58,13 +59,11 @@ namespace app {
     namespace alertdialog { extern const AppManifest manifest; }
     namespace applist { extern const AppManifest manifest; }
     namespace boot { extern const AppManifest manifest; }
-    namespace calculator { extern const AppManifest manifest; }
     namespace chat { extern const AppManifest manifest; }
     namespace development { extern const AppManifest manifest; }
     namespace display { extern const AppManifest manifest; }
     namespace files { extern const AppManifest manifest; }
     namespace fileselection { extern const AppManifest manifest; }
-    namespace gpio { extern const AppManifest manifest; }
     namespace gpssettings { extern const AppManifest manifest; }
     namespace i2cscanner { extern const AppManifest manifest; }
     namespace i2csettings { extern const AppManifest manifest; }
@@ -72,7 +71,6 @@ namespace app {
     namespace inputdialog { extern const AppManifest manifest; }
     namespace launcher { extern const AppManifest manifest; }
     namespace localesettings { extern const AppManifest manifest; }
-    namespace log { extern const AppManifest manifest; }
     namespace notes { extern const AppManifest manifest; }
     namespace power { extern const AppManifest manifest; }
     namespace selectiondialog { extern const AppManifest manifest; }
@@ -102,16 +100,13 @@ namespace app {
 static void registerSystemApps() {
     addApp(app::alertdialog::manifest);
     addApp(app::applist::manifest);
-    addApp(app::calculator::manifest);
     addApp(app::display::manifest);
     addApp(app::files::manifest);
     addApp(app::fileselection::manifest);
-    addApp(app::gpio::manifest);
     addApp(app::imageviewer::manifest);
     addApp(app::inputdialog::manifest);
     addApp(app::launcher::manifest);
     addApp(app::localesettings::manifest);
-    addApp(app::log::manifest);
     addApp(app::notes::manifest);
     addApp(app::settings::manifest);
     addApp(app::selectiondialog::manifest);
@@ -190,11 +185,9 @@ static void registerInstalledApps(const std::string& path) {
 static void registerInstalledAppsFromSdCard(const std::shared_ptr<hal::sdcard::SdCardDevice>& sdcard) {
     auto sdcard_root_path = sdcard->getMountPath();
     auto app_path = std::format("{}/app", sdcard_root_path);
-    sdcard->getLock()->lock();
     if (file::isDirectory(app_path)) {
         registerInstalledApps(app_path);
     }
-    sdcard->getLock()->unlock();
 }
 
 static void registerInstalledAppsFromSdCards() {
@@ -271,6 +264,7 @@ void run(const Configuration& config) {
 #ifdef ESP_PLATFORM
     initEsp();
 #endif
+    file::setFindLockFunction(file::findLock);
     settings::initTimeZone();
     hal::init(*config.hardware);
     network::ntp::init();

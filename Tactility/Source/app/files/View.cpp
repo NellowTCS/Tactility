@@ -260,7 +260,7 @@ void View::init(const AppContext& appContext, lv_obj_t* parent) {
     lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
     auto* toolbar = lvgl::toolbar_create(parent, appContext);
-    navigate_up_button = lvgl::toolbar_add_button_action(toolbar, LV_SYMBOL_UP, &onNavigateUpPressedCallback, this);
+    navigate_up_button = lvgl::toolbar_add_image_button_action(toolbar, LV_SYMBOL_UP, &onNavigateUpPressedCallback, this);
 
     auto* wrapper = lv_obj_create(parent);
     lv_obj_set_width(wrapper, LV_PCT(100));
@@ -317,17 +317,18 @@ void View::onResult(LaunchId launchId, Result result, std::unique_ptr<Bundle> bu
     switch (state->getPendingAction()) {
         case State::ActionDelete: {
             if (alertdialog::getResultIndex(*bundle) == 0) {
-                file::withLock<void>(filepath, [&filepath] {
-                    if (file::isDirectory(filepath)) {
-                       if (!file::deleteRecursively(filepath)) {
-                           TT_LOG_W(TAG, "Failed to delete %s", filepath.c_str());
-                       }
-                   } else if (file::isFile(filepath)) {
-                       if (remove(filepath.c_str()) <= 0) {
-                           TT_LOG_W(TAG, "Failed to delete %s", filepath.c_str());
-                       }
-                   }
-                });
+                if (file::isDirectory(filepath)) {
+                    if (!file::deleteRecursively(filepath)) {
+                        TT_LOG_W(TAG, "Failed to delete %s", filepath.c_str());
+                    }
+                } else if (file::isFile(filepath)) {
+                    auto lock = file::getLock(filepath);
+                    lock->lock();
+                    if (remove(filepath.c_str()) <= 0) {
+                        TT_LOG_W(TAG, "Failed to delete %s", filepath.c_str());
+                    }
+                    lock->unlock();
+                }
 
                 state->setEntriesForPath(state->getCurrentPath());
                 update();
@@ -337,14 +338,15 @@ void View::onResult(LaunchId launchId, Result result, std::unique_ptr<Bundle> bu
         case State::ActionRename: {
             auto new_name = inputdialog::getResult(*bundle);
             if (!new_name.empty() && new_name != state->getSelectedChildEntry()) {
-                file::withLock<void>(filepath, [this, &filepath, &new_name] {
-                    std::string rename_to = file::getChildPath(state->getCurrentPath(), new_name);
-                   if (rename(filepath.c_str(), rename_to.c_str())) {
-                       TT_LOG_I(TAG, "Renamed \"%s\" to \"%s\"", filepath.c_str(), rename_to.c_str());
-                   } else {
-                       TT_LOG_E(TAG, "Failed to rename \"%s\" to \"%s\"", filepath.c_str(), rename_to.c_str());
-                   }
-                });
+                auto lock = file::getLock(filepath);
+                lock->lock();
+                std::string rename_to = file::getChildPath(state->getCurrentPath(), new_name);
+                if (rename(filepath.c_str(), rename_to.c_str())) {
+                    TT_LOG_I(TAG, "Renamed \"%s\" to \"%s\"", filepath.c_str(), rename_to.c_str());
+                } else {
+                    TT_LOG_E(TAG, "Failed to rename \"%s\" to \"%s\"", filepath.c_str(), rename_to.c_str());
+                }
+                lock->unlock();
 
                 state->setEntriesForPath(state->getCurrentPath());
                 update();
