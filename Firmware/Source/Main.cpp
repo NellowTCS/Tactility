@@ -5,16 +5,7 @@
 #include "tt_init.h"
 #endif
 
-// Forward declaration of clock_app from Clock.cpp
-namespace tt::app::clock {
-    extern const AppManifest clock_app;
-}
-
-extern const tt::app::AppManifest tactility_news_app;
-extern const tt::app::AppManifest tactile_web_app;
-extern const tt::app::AppManifest tactiligotchi_app;
 extern const tt::app::AppManifest hello_world_app;
-
 
 extern "C" {
 
@@ -24,14 +15,7 @@ void app_main() {
          * Auto-select a board based on the ./sdkconfig.board.* file
          * that you copied to ./sdkconfig before you opened this project.
          */
-        .hardware = TT_BOARD_HARDWARE,
-        .apps = {
-            // &hello_world_app,
-            &tactility_news_app,
-            &tactile_web_app,
-            &tt::app::clock::clock_app,
-            &tactiligotchi_app,
-        }
+        .hardware = TT_BOARD_HARDWARE
     };
 
 #ifdef ESP_PLATFORM
