@@ -5,16 +5,9 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#ifdef __APPLE__
-#include <unistd.h>
-#endif
-
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
+#ifndef ESP_PLATFORM
 #include "LvglTask.h"
 #include <lvgl.h>
-#include <Tactility/Tactility.h>
-#include <Tactility/Log.h>
 
 // Forward declarations for SDL functions and display handle (from LvglTask.cpp)
 extern "C" {
@@ -22,6 +15,16 @@ extern "C" {
     void lv_sdl_window_set_title(lv_disp_t* disp, const char* title);
 }
 extern lv_disp_t* displayHandle;
+#endif
+
+#ifdef __APPLE__
+#include <unistd.h>
+#endif
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <Tactility/Tactility.h>
+#include <Tactility/Log.h>
 
 // Namespace must match the extern declaration in Thread.cpp
 namespace tt {
