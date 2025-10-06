@@ -4,9 +4,9 @@
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/Mutex.h>
 #include <Tactility/Thread.h>
+#include <Tactility/Tactility.h>
 
 #ifdef __EMSCRIPTEN__
-#include <Tactility/Tactility.h>
 #include <Tactility/DispatcherThread.h>
 #endif
 

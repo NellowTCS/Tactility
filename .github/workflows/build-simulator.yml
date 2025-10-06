@@ -30,15 +30,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Emscripten
-        uses: mymindstorm/setup-emsdk@v14
+      - name: "Build"
+        uses: ./.github/actions/build-simulator
         with:
-          version: latest
-      - name: Build WASM
-        run: ./Buildscripts/build-wasm.sh --clean
-      - name: Upload WASM Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Simulator-WASM
-          path: Boards/WebSimulator/
-          retention-days: 30
+          os_name: wasm
+          platform_name: web
+          publish: true
