@@ -14,7 +14,7 @@
 #include <cJSON.h>
 #endif
 
-using namespace tt::app;
+using namespace app;
 
 class TactilityNews : public App {
 private:

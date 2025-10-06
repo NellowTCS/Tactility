@@ -119,11 +119,13 @@ bool GuiService::onStart(TT_UNUSED ServiceContext& service) {
         return false;
     }
 
+#ifndef __EMSCRIPTEN__
     thread = new Thread(
         "gui",
         4096, // Last known minimum was 2800 for launching desktop
         []() { return guiMain(); }
     );
+#endif
 
     const auto loader = findLoaderService();
     assert(loader != nullptr);
@@ -161,8 +163,12 @@ bool GuiService::onStart(TT_UNUSED ServiceContext& service) {
 
     isStarted = true;
 
+#ifndef __EMSCRIPTEN__
     thread->setPriority(THREAD_PRIORITY_SERVICE);
     thread->start();
+#else
+    TT_LOG_I(TAG, "WASM mode: GUI service running without background thread");
+#endif
 
     return true;
 }
@@ -177,10 +183,15 @@ void GuiService::onStop(TT_UNUSED ServiceContext& service) {
     appToRender = nullptr;
     isStarted = false;
 
+#ifndef __EMSCRIPTEN__
     ThreadId thread_id = thread->getId();
     Thread::setFlags(thread_id, GUI_THREAD_FLAG_EXIT);
     thread->join();
     delete thread;
+    thread = nullptr;
+#else
+    thread = nullptr;
+#endif
 
     unlock();
 
@@ -190,8 +201,17 @@ void GuiService::onStop(TT_UNUSED ServiceContext& service) {
 }
 
 void GuiService::requestDraw() {
+#ifdef __EMSCRIPTEN__
+    tt::getMainDispatcher().dispatch([this]() {
+        if (!isStarted) {
+            return;
+        }
+        redraw();
+    });
+#else
     ThreadId thread_id = thread->getId();
     Thread::setFlags(thread_id, GUI_THREAD_FLAG_DRAW);
+#endif
 }
 
 void GuiService::showApp(std::shared_ptr<app::AppInstance> app) {

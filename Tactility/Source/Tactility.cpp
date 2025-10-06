@@ -52,15 +52,6 @@ namespace service {
 
 // endregion
 
-// region Internal apps (for testing)
-
-extern const tt::app::AppManifest clock_app;
-extern const tt::app::AppManifest tactile_web_app;
-extern const tt::app::AppManifest tactiligotchi_app;
-extern const tt::app::AppManifest tactility_news_app;
-
-// endregion
-
 // region Default apps
 
 namespace app {
@@ -107,12 +98,7 @@ namespace app {
 
 // List of all apps excluding Boot app (as Boot app calls this function indirectly)
 static void registerInternalApps() {
-    // Internal apps for testing
-    addApp(clock_app);
-    addApp(tactile_web_app);
-    addApp(tactiligotchi_app);
-    addApp(tactility_news_app);
-
+    
     addApp(app::alertdialog::manifest);
     addApp(app::applist::manifest);
     addApp(app::display::manifest);
@@ -273,9 +259,14 @@ void run(const Configuration& config) {
     app::start(app::boot::manifest.appId);
 
     TT_LOG_I(TAG, "Main dispatcher ready");
+#ifdef __EMSCRIPTEN__
+    // For WASM, don't block here - the main loop will call our tick function
+    TT_LOG_I(TAG, "WASM: returning from run(), main loop will handle dispatching");
+#else
     while (true) {
         mainDispatcher.consume();
     }
+#endif
 }
 
 const Configuration* _Nullable getConfiguration() {

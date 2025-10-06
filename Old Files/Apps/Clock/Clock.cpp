@@ -1,8 +1,8 @@
 #define LV_USE_PRIVATE_API 1
 
+#include <Tactility/app/App.h>
 #include <Tactility/app/AppManifest.h>
 #include <Tactility/app/AppContext.h>
-#include <Tactility/lvgl/Toolbar.h>
 #include <Tactility/settings/Time.h>
 #include <Tactility/Preferences.h>
 #include <lvgl.h>
@@ -15,6 +15,10 @@
 #include "Tactility/lvgl/LvglSync.h"
 #include "esp_sntp.h"
 #endif
+
+#include <Tactility/lvgl/Toolbar.h>
+
+using namespace tt::app;
 
 namespace tt::app::clock {
 
@@ -32,15 +36,20 @@ private:
     lv_obj_t* hour_hand;
     lv_obj_t* minute_hand;
     lv_obj_t* second_hand;
+    lv_timer_t* update_timer = nullptr;
     lv_obj_t* wifi_label;
     lv_obj_t* wifi_button;
     lv_obj_t* toggle_btn;
+    lv_obj_t* date_label;
 #ifdef ESP_PLATFORM
     std::unique_ptr<Timer> timer; // Only declare timer for ESP
     bool last_sync_status; // Track previous sync status to detect changes
 #endif
     bool is_analog;
     AppContext* context;
+    float current_hour_angle = -90;
+    float current_minute_angle = -90;
+    float current_second_angle = -90;
 
 #ifdef ESP_PLATFORM
     static void timer_callback(std::shared_ptr<void> appWrapper) {
@@ -152,7 +161,7 @@ private:
             }
         } else if (!is_analog && time_label && lv_obj_is_valid(time_label)) {
             char time_str[16];
-            if (settings::isTimeFormat24Hour()) {
+            if (tt::settings::isTimeFormat24Hour()) {
                 strftime(time_str, sizeof(time_str), "%H:%M:%S", &timeinfo);
             } else {
                 strftime(time_str, sizeof(time_str), "%I:%M:%S %p", &timeinfo);
@@ -168,11 +177,55 @@ private:
     void update_time_and_check_sync() {
         // No-op for simulator; static message handled in redraw_clock
     }
+#endif
 
     void update_time_display() {
-        // No-op for simulator; static message handled in redraw_clock
+        time_t now;
+        struct tm timeinfo;
+        ::time(&now);
+        localtime_r(&now, &timeinfo);
+
+        if (is_analog && clock_face && lv_obj_is_valid(clock_face)) {
+            lv_coord_t clock_size = lv_obj_get_width(clock_face);
+            lv_coord_t center_x = clock_size / 2;
+            lv_coord_t center_y = clock_size / 2;
+            
+            // Scale hand lengths based on clock size
+            lv_coord_t hour_length = clock_size * 0.25;
+            lv_coord_t minute_length = clock_size * 0.35;
+            lv_coord_t second_length = clock_size * 0.4;
+
+            float target_hour_angle = (timeinfo.tm_hour % 12 + timeinfo.tm_min / 60.0f) * 30.0f - 90;
+            float target_minute_angle = timeinfo.tm_min * 6.0f - 90;
+            float target_second_angle = timeinfo.tm_sec * 6.0f - 90;
+
+            if (hour_hand && lv_obj_is_valid(hour_hand)) {
+                animate_hand(hour_hand, current_hour_angle, target_hour_angle);
+                current_hour_angle = target_hour_angle;
+            }
+            if (minute_hand && lv_obj_is_valid(minute_hand)) {
+                animate_hand(minute_hand, current_minute_angle, target_minute_angle);
+                current_minute_angle = target_minute_angle;
+            }
+            if (second_hand && lv_obj_is_valid(second_hand)) {
+                animate_hand(second_hand, current_second_angle, target_second_angle);
+                current_second_angle = target_second_angle;
+            }
+            if (date_label && lv_obj_is_valid(date_label)) {
+                char date_str[16];
+                strftime(date_str, sizeof(date_str), "%m/%d", &timeinfo);
+                lv_label_set_text(date_label, date_str);
+            }
+        } else if (!is_analog && time_label && lv_obj_is_valid(time_label)) {
+            char time_str[16];
+            if (tt::settings::isTimeFormat24Hour()) {
+                strftime(time_str, sizeof(time_str), "%H:%M:%S", &timeinfo);
+            } else {
+                strftime(time_str, sizeof(time_str), "%I:%M:%S %p", &timeinfo);
+            }
+            lv_label_set_text(time_label, time_str);
+        }
     }
-#endif
 
     void update_toggle_button_visibility() {
 #ifdef ESP_PLATFORM
@@ -188,6 +241,18 @@ private:
                 lv_obj_add_flag(toggle_btn, LV_OBJ_FLAG_HIDDEN);
             }
         }
+    }
+
+    void animate_hand(lv_obj_t* hand, float from_angle, float to_angle) {
+        lv_anim_t anim;
+        lv_anim_init(&anim);
+        lv_anim_set_var(&anim, hand);
+        lv_anim_set_time(&anim, 1000);
+        lv_anim_set_values(&anim, (int16_t)(from_angle * 10), (int16_t)(to_angle * 10));
+        lv_anim_set_exec_cb(&anim, [](void* var, int32_t v) {
+            lv_obj_set_style_transform_angle((lv_obj_t*)var, v, LV_PART_MAIN);
+        });
+        lv_anim_start(&anim);
     }
 
     void get_display_metrics(lv_coord_t* width, lv_coord_t* height, bool* is_small) {
@@ -289,18 +354,35 @@ private:
         }
 
         // Create clock hands
-        hour_hand = lv_line_create(clock_face);
-        minute_hand = lv_line_create(clock_face);
-        second_hand = lv_line_create(clock_face);
+        lv_coord_t hour_length = clock_size * 0.25;
+        lv_coord_t minute_length = clock_size * 0.35;
+        lv_coord_t second_length = clock_size * 0.4;
+        lv_coord_t center_x = clock_size / 2;
+        lv_coord_t center_y = clock_size / 2;
 
-        lv_obj_set_style_line_width(hour_hand, is_small ? 3 : 5, 0);
-        lv_obj_set_style_line_width(minute_hand, is_small ? 2 : 3, 0);
-        lv_obj_set_style_line_width(second_hand, 1, 0);
-        lv_obj_set_style_line_color(hour_hand, lv_color_black(), 0);
-        lv_obj_set_style_line_color(minute_hand, lv_color_black(), 0);
-        lv_obj_set_style_line_color(second_hand, lv_color_hex(0xFF0000), 0); // Red color
-        lv_obj_set_style_line_rounded(hour_hand, true, 0);
-        lv_obj_set_style_line_rounded(minute_hand, true, 0);
+        hour_hand = lv_obj_create(clock_face);
+        lv_obj_set_size(hour_hand, hour_length, is_small ? 3 : 5);
+        lv_obj_set_pos(hour_hand, center_x - hour_length / 2, center_y - (is_small ? 1 : 2));
+        lv_obj_set_style_bg_color(hour_hand, lv_color_black(), 0);
+        lv_obj_set_style_border_width(hour_hand, 0, 0);
+        lv_obj_set_style_transform_pivot_x(hour_hand, hour_length / 2, 0);
+        lv_obj_set_style_transform_pivot_y(hour_hand, (is_small ? 1 : 2), 0);
+
+        minute_hand = lv_obj_create(clock_face);
+        lv_obj_set_size(minute_hand, minute_length, is_small ? 2 : 3);
+        lv_obj_set_pos(minute_hand, center_x - minute_length / 2, center_y - (is_small ? 1 : 1));
+        lv_obj_set_style_bg_color(minute_hand, lv_color_black(), 0);
+        lv_obj_set_style_border_width(minute_hand, 0, 0);
+        lv_obj_set_style_transform_pivot_x(minute_hand, minute_length / 2, 0);
+        lv_obj_set_style_transform_pivot_y(minute_hand, (is_small ? 1 : 1), 0);
+
+        second_hand = lv_obj_create(clock_face);
+        lv_obj_set_size(second_hand, second_length, 1);
+        lv_obj_set_pos(second_hand, center_x - second_length / 2, center_y);
+        lv_obj_set_style_bg_color(second_hand, lv_color_hex(0xFF0000), 0);
+        lv_obj_set_style_border_width(second_hand, 0, 0);
+        lv_obj_set_style_transform_pivot_x(second_hand, second_length / 2, 0);
+        lv_obj_set_style_transform_pivot_y(second_hand, 0, 0);
 
         // Center dot
         lv_obj_t* center = lv_obj_create(clock_face);
@@ -310,7 +392,24 @@ private:
         lv_obj_set_style_bg_color(center, lv_color_black(), 0);
         lv_obj_set_style_border_width(center, 0, 0);
 
-        update_time_display();
+        // Date label
+        date_label = lv_label_create(clock_face);
+        lv_obj_align(date_label, LV_ALIGN_BOTTOM_MID, 0, -10);
+        lv_obj_set_style_text_font(date_label, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(date_label, lv_color_hex(0x888888), 0);
+        time_t now;
+        struct tm timeinfo;
+        ::time(&now);
+        localtime_r(&now, &timeinfo);
+        float initial_hour_angle = (timeinfo.tm_hour % 12 + timeinfo.tm_min / 60.0f) * 30.0f - 90;
+        float initial_minute_angle = timeinfo.tm_min * 6.0f - 90;
+        float initial_second_angle = timeinfo.tm_sec * 6.0f - 90;
+        lv_obj_set_style_transform_angle(hour_hand, (int16_t)(initial_hour_angle * 10), LV_PART_MAIN);
+        lv_obj_set_style_transform_angle(minute_hand, (int16_t)(initial_minute_angle * 10), LV_PART_MAIN);
+        lv_obj_set_style_transform_angle(second_hand, (int16_t)(initial_second_angle * 10), LV_PART_MAIN);
+        current_hour_angle = initial_hour_angle;
+        current_minute_angle = initial_minute_angle;
+        current_second_angle = initial_second_angle;
     }
 
     void create_digital_clock() {
@@ -377,6 +476,7 @@ private:
         clock_face = hour_hand = minute_hand = second_hand = nullptr;
         wifi_label = nullptr;
         wifi_button = nullptr;
+        date_label = nullptr;
 
         // Update toggle button visibility
         update_toggle_button_visibility();
@@ -390,11 +490,11 @@ private:
             create_digital_clock();
         }
 #else
-        // Simulator: show static message
-        time_label = lv_label_create(clock_container);
-        lv_label_set_text(time_label, "Clock not supported in simulator");
-        lv_obj_align(time_label, LV_ALIGN_CENTER, 0, 0);
-        lv_obj_set_style_text_align(time_label, LV_TEXT_ALIGN_CENTER, 0);
+        if (is_analog) {
+            create_analog_clock();
+        } else {
+            create_digital_clock();
+        }
 #endif
     }
 
@@ -444,6 +544,12 @@ public:
         timer->start(1000);
         TT_LOG_I("Clock", "Timer started in onShow");
 #endif
+#ifndef ESP_PLATFORM
+        update_timer = lv_timer_create([](lv_timer_t* timer) {
+            ClockApp* app = static_cast<ClockApp*>(lv_timer_get_user_data(timer));
+            app->update_time_display();
+        }, 1000, this);
+#endif
     }
 
     void onHide(AppContext& app_context) override {
@@ -462,11 +568,18 @@ public:
         toggle_btn = nullptr;
         clock_container = nullptr;
         toolbar = nullptr;
+        date_label = nullptr;
+#endif
+#ifndef ESP_PLATFORM
+        if (update_timer) {
+            lv_timer_del(update_timer);
+            update_timer = nullptr;
+        }
 #endif
     }
 };
 
-extern const AppManifest clock_app = {
+AppManifest clock_app = {
     .appId = "Clock",
     .appName = "Clock",
     .createApp = create<ClockApp>

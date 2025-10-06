@@ -9,7 +9,7 @@
 #include <Tactility/app/AppContext.h>
 #include <Tactility/lvgl/Toolbar.h>
 
-using namespace tt::app;
+using namespace app;
 using namespace tt::lvgl;
 
 #define PET_COLOR_HAPPY    lv_color_hex(0x00FF00)

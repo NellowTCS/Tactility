@@ -20,7 +20,7 @@
 
 
 
-class TactileWeb : public tt::app::App {
+class TactileWeb : public app::App {
 private:
     // UI Components
     lv_obj_t* toolbar = nullptr;
@@ -466,5 +466,5 @@ public:
 extern const tt::app::AppManifest tactile_web_app = {
     .appId = "TactileWeb",
     .appName = "TactileWeb",
-    .createApp = tt::app::create<TactileWeb>
+    .createApp = app::create<TactileWeb>
 };

@@ -73,15 +73,24 @@ class NotesApp final : public App {
     }
 
     void resetFileContent() {
-        lv_textarea_set_text(uiNoteText, "");
-        filePath = "";
-        saveBuffer = "";
-        lv_label_set_text(uiCurrentFileName, "Untitled");
+        filePath.clear();
+        saveBuffer.clear();
+        if (uiNoteText != nullptr) {
+            lv_textarea_set_text(uiNoteText, "");
+        }
+        if (uiCurrentFileName != nullptr) {
+            lv_label_set_text(uiCurrentFileName, "Untitled");
+        }
     }
 
 #pragma region Open_Events_Functions
 
     void openFile(const std::string& path) {
+        filePath = path;
+        if (uiNoteText == nullptr || uiCurrentFileName == nullptr) {
+            TT_LOG_I(TAG, "Deferring openFile until UI is ready: %s", path.c_str());
+            return;
+        }
         // We might be reading from the SD card, which could share a SPI bus with other devices (display)
         file::withLock<void>(path, [this, path] {
             auto data = file::readString(path);
@@ -92,6 +101,8 @@ class NotesApp final : public App {
                lv_label_set_text(uiCurrentFileName, path.c_str());
                filePath = path;
                TT_LOG_I(TAG, "Loaded from %s", path.c_str());
+            } else {
+                TT_LOG_E(TAG, "Failed to read %s", path.c_str());
             }
         });
     }
@@ -183,6 +194,13 @@ class NotesApp final : public App {
         if (!filePath.empty()) {
             openFile(filePath);
         }
+    }
+
+    void onHide(AppContext& appContext) override {
+        (void)appContext;
+        uiCurrentFileName = nullptr;
+        uiDropDownMenu = nullptr;
+        uiNoteText = nullptr;
     }
 
     void onResult(AppContext& appContext, LaunchId launchId, Result result, std::unique_ptr<Bundle> resultData) override {
