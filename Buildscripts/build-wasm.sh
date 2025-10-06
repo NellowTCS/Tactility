@@ -27,12 +27,30 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "Setting up Emscripten environment..."
 
-if [ ! -f /workspaces/emsdk/emsdk_env.sh ]; then
-    echo "Error: Emscripten SDK not found at /workspaces/emsdk/emsdk_env.sh"
-    echo "Please ensure it is installed and the path is correct."
+# Try to find emsdk_env.sh in common locations
+EMSDK_ENV_SH=""
+
+# Check environment variable first
+if [ -n "$EMSDK" ] && [ -f "$EMSDK/emsdk_env.sh" ]; then
+    EMSDK_ENV_SH="$EMSDK/emsdk_env.sh"
+elif [ -f "/workspaces/emsdk/emsdk_env.sh" ]; then
+    EMSDK_ENV_SH="/workspaces/emsdk/emsdk_env.sh"
+elif [ -f "$HOME/emsdk/emsdk_env.sh" ]; then
+    EMSDK_ENV_SH="$HOME/emsdk/emsdk_env.sh"
+elif [ -f "/opt/emsdk/emsdk_env.sh" ]; then
+    EMSDK_ENV_SH="/opt/emsdk/emsdk_env.sh"
+else
+    EMSDK_ENV_SH="$(command -v emsdk_env.sh 2>/dev/null || true)"
+fi
+
+if [ -z "$EMSDK_ENV_SH" ] || [ ! -f "$EMSDK_ENV_SH" ]; then
+    echo "Error: Could not find emsdk_env.sh. Please ensure Emscripten SDK is installed and emsdk_env.sh is available in your PATH or a standard location."
     exit 1
 fi
-source /workspaces/emsdk/emsdk_env.sh
+
+echo "Using Emscripten environment: $EMSDK_ENV_SH"
+# shellcheck source=/dev/null
+source "$EMSDK_ENV_SH"
 
 cd "$PROJECT_ROOT"
 # Ensure build directory exists
