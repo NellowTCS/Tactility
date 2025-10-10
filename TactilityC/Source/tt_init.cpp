@@ -29,23 +29,23 @@
 #include "symbols/esp_event.h"
 #include "symbols/esp_http_client.h"
 #include "symbols/gcc_soft_float.h"
-#include <string.h>
-#include <stdlib.h>
 #include "symbols/pthread.h"
 #include "symbols/stl.h"
 #include "symbols/cplusplus.h"
 
 #include <cstring>
-#include <cstdio>
 #include <ctype.h>
-#include <esp_log.h>
 #include <cassert>
-#include <esp_random.h>
 #include <getopt.h>
-#include <time.h>
+#include <cmath>
+#include <ctime>
 #include <setjmp.h>
 #include <sys/errno.h>
 #include <sys/unistd.h>
+
+#include <esp_log.h>
+#include <esp_random.h>
+#include <esp_sntp.h>
 
 #include <lvgl.h>
 #include <vector>
@@ -62,6 +62,7 @@ const esp_elfsym main_symbols[] {
     ESP_ELFSYM_EXPORT(srand),
     ESP_ELFSYM_EXPORT(rand_r),
     ESP_ELFSYM_EXPORT(atoi),
+    ESP_ELFSYM_EXPORT(atol),
     // esp random
     ESP_ELFSYM_EXPORT(esp_random),
     ESP_ELFSYM_EXPORT(esp_fill_random),
@@ -73,11 +74,19 @@ const esp_elfsym main_symbols[] {
     // time.h
     ESP_ELFSYM_EXPORT(clock_gettime),
     ESP_ELFSYM_EXPORT(strftime),
+    ESP_ELFSYM_EXPORT(time),
+    ESP_ELFSYM_EXPORT(localtime_r),
+    // esp_sntp.h
+    ESP_ELFSYM_EXPORT(sntp_get_sync_status),
+    // math.h
+    ESP_ELFSYM_EXPORT(cos),
+    ESP_ELFSYM_EXPORT(sin),
     // sys/errno.h
     ESP_ELFSYM_EXPORT(__errno),
     // freertos_tasks_c_additions.h
     ESP_ELFSYM_EXPORT(__getreent),
 #ifdef __HAVE_LOCALE_INFO__
+    // ctype.h
     ESP_ELFSYM_EXPORT(__locale_ctype_ptr),
 #else
     ESP_ELFSYM_EXPORT(_ctype_),
@@ -337,12 +346,11 @@ const esp_elfsym main_symbols[] {
     // lv_obj
     ESP_ELFSYM_EXPORT(lv_color_hex),
     ESP_ELFSYM_EXPORT(lv_color_make),
-    ESP_ELFSYM_EXPORT(lv_color_white),
+    ESP_ELFSYM_EXPORT(lv_obj_center),
     ESP_ELFSYM_EXPORT(lv_obj_clean),
+    ESP_ELFSYM_EXPORT(lv_obj_clear_flag),
     ESP_ELFSYM_EXPORT(lv_obj_create),
     ESP_ELFSYM_EXPORT(lv_obj_delete),
-    ESP_ELFSYM_EXPORT(lv_obj_del),
-    ESP_ELFSYM_EXPORT(lv_obj_clean),
     ESP_ELFSYM_EXPORT(lv_obj_add_event_cb),
     ESP_ELFSYM_EXPORT(lv_obj_add_flag),
     ESP_ELFSYM_EXPORT(lv_obj_add_state),
@@ -357,9 +365,9 @@ const esp_elfsym main_symbols[] {
     ESP_ELFSYM_EXPORT(lv_obj_get_y),
     ESP_ELFSYM_EXPORT(lv_obj_get_content_width),
     ESP_ELFSYM_EXPORT(lv_obj_get_content_height),
-    ESP_ELFSYM_EXPORT(lv_obj_center),
     ESP_ELFSYM_EXPORT(lv_obj_get_user_data),
-    ESP_ELFSYM_EXPORT(lv_obj_set_user_data),
+    ESP_ELFSYM_EXPORT(lv_obj_invalidate),
+    ESP_ELFSYM_EXPORT(lv_obj_is_valid),
     ESP_ELFSYM_EXPORT(lv_obj_remove_event_cb),
     ESP_ELFSYM_EXPORT(lv_obj_remove_flag),
     ESP_ELFSYM_EXPORT(lv_obj_remove_state),
@@ -367,6 +375,16 @@ const esp_elfsym main_symbols[] {
     ESP_ELFSYM_EXPORT(lv_obj_set_flex_align),
     ESP_ELFSYM_EXPORT(lv_obj_set_flex_flow),
     ESP_ELFSYM_EXPORT(lv_obj_set_flex_grow),
+    ESP_ELFSYM_EXPORT(lv_obj_set_scroll_dir),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_radius),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_border_width),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_border_color),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_border_opa),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_line_width),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_line_color),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_line_opa),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_line_rounded),
+    ESP_ELFSYM_EXPORT(lv_obj_set_style_opa),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_bg_color),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_bg_opa),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_bg_image_src),
@@ -404,18 +422,23 @@ const esp_elfsym main_symbols[] {
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_color),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_opa),
     ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_width),
+    ESP_ELFSYM_EXPORT(lv_obj_set_user_data),
     ESP_ELFSYM_EXPORT(lv_obj_set_align),
     ESP_ELFSYM_EXPORT(lv_obj_set_x),
     ESP_ELFSYM_EXPORT(lv_obj_set_y),
     ESP_ELFSYM_EXPORT(lv_obj_set_size),
     ESP_ELFSYM_EXPORT(lv_obj_set_width),
     ESP_ELFSYM_EXPORT(lv_obj_set_height),
-    ESP_ELFSYM_EXPORT(lv_obj_set_scroll_dir),
+    // lv_font
+    ESP_ELFSYM_EXPORT(lv_font_get_default),
+    // lv_theme
     ESP_ELFSYM_EXPORT(lv_theme_get_color_primary),
     ESP_ELFSYM_EXPORT(lv_theme_get_color_secondary),
+    ESP_ELFSYM_EXPORT(lv_theme_get_font_small),
+    ESP_ELFSYM_EXPORT(lv_theme_get_font_normal),
+    ESP_ELFSYM_EXPORT(lv_theme_get_font_large),
     // lv_button
     ESP_ELFSYM_EXPORT(lv_button_create),
-    ESP_ELFSYM_EXPORT(lv_btn_create),
     // lv_buttonmatrix
     ESP_ELFSYM_EXPORT(lv_buttonmatrix_create),
     ESP_ELFSYM_EXPORT(lv_buttonmatrix_get_button_text),
@@ -486,7 +509,6 @@ const esp_elfsym main_symbols[] {
     // lv_textarea
     ESP_ELFSYM_EXPORT(lv_textarea_create),
     ESP_ELFSYM_EXPORT(lv_textarea_get_accepted_chars),
-    ESP_ELFSYM_EXPORT(lv_textarea_get_text),
     ESP_ELFSYM_EXPORT(lv_textarea_get_label),
     ESP_ELFSYM_EXPORT(lv_textarea_get_max_length),
     ESP_ELFSYM_EXPORT(lv_textarea_get_one_line),
@@ -501,8 +523,6 @@ const esp_elfsym main_symbols[] {
     ESP_ELFSYM_EXPORT(lv_textarea_set_placeholder_text),
     ESP_ELFSYM_EXPORT(lv_textarea_set_text),
     ESP_ELFSYM_EXPORT(lv_textarea_set_text_selection),
-    // added for tactile browser
-    ESP_ELFSYM_EXPORT(lv_textarea_class),
     // lv_palette
     ESP_ELFSYM_EXPORT(lv_palette_main),
     ESP_ELFSYM_EXPORT(lv_palette_darken),
@@ -538,6 +558,11 @@ const esp_elfsym main_symbols[] {
     ESP_ELFSYM_EXPORT(lv_indev_get_key),
     ESP_ELFSYM_EXPORT(lv_indev_get_gesture_dir),
     ESP_ELFSYM_EXPORT(lv_indev_get_state),
+    // lvgl other
+    ESP_ELFSYM_EXPORT(lv_refr_now),
+    ESP_ELFSYM_EXPORT(lv_line_create),
+    ESP_ELFSYM_EXPORT(lv_line_set_points),
+    ESP_ELFSYM_EXPORT(lv_line_set_points_mutable),
     // delimiter
     ESP_ELFSYM_END
 };
