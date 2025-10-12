@@ -31,6 +31,7 @@ private:
     esp_lcd_i80_bus_handle_t i80BusHandle = nullptr;
     esp_lcd_panel_io_handle_t ioHandle = nullptr;
     esp_lcd_panel_handle_t panelHandle = nullptr;
+    lv_display_t* lvglDisplay = nullptr;
 
 public:
     explicit I8080St7789Display(const Configuration& config) : configuration(config) {}
@@ -47,7 +48,7 @@ public:
     bool supportsLvgl() const override { return true; }
     bool startLvgl() override { return true; }
     bool stopLvgl() override { return true; }
-    lv_display_t* getLvglDisplay() const override { return nullptr; }
+    lv_display_t* getLvglDisplay() const override { return lvglDisplay; }
     bool supportsDisplayDriver() const override { return false; }
 };
 

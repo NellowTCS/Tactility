@@ -6,6 +6,7 @@
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
+#include <esp_lvgl_port.h>
 #include <driver/gpio.h>
 #include <lvgl.h>
 #include <array>
@@ -119,7 +120,41 @@ bool I8080St7789Display::initialize() {
     gpio_set_level(configuration.backlightPin, 1);
 
     TT_LOG_I(TAG, "I8080 ST7789 Display initialized successfully");
+
+    // LVGL display integration
+    lvgl_port_display_cfg_t lvgl_cfg = {
+        .io_handle = ioHandle,
+        .panel_handle = panelHandle,
+        .control_handle = nullptr,
+        .buffer_size = configuration.bufferSize,
+        .double_buffer = false,
+        .trans_size = 0,
+        .hres = configuration.horizontalResolution,
+        .vres = configuration.verticalResolution,
+        .monochrome = false,
+        .rotation = {
+            .swap_xy = false,
+            .mirror_x = false,
+            .mirror_y = false
+        },
+        .color_format = LV_COLOR_FORMAT_RGB565,
+        .flags = {
+            .buff_dma = true,
+            .buff_spiram = false,
+            .sw_rotate = false,
+            .swap_bytes = false,
+            .full_refresh = true,
+            .direct_mode = false
+        }
+    };
+
+    lvglDisplay = lvgl_port_add_disp(&lvgl_cfg);
+
     return true;
+}
+
+lv_display_t* I8080St7789Display::getLvglDisplay() const {
+    return lvglDisplay;
 }
 
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
