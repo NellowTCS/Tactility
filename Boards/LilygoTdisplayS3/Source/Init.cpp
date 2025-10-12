@@ -3,7 +3,7 @@
 
 #include <Tactility/TactilityCore.h>
 #include <Tactility/hal/spi/Spi.h>
-#include <Tactility/lvgl/EspLvglPort.h>
+#include <Private/Tactility/lvgl/EspLvglPort.h>
 
 #define TAG "tdisplay-s3"
 
