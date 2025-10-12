@@ -3,6 +3,7 @@
 
 #include <Tactility/TactilityCore.h>
 #include <Tactility/hal/spi/Spi.h>
+#include <Tactility/lvgl/LvglSync.h>
 
 #define TAG "tdisplay-s3"
 
@@ -38,6 +39,11 @@ bool initBoot() {
 
     if (!driver::pwmbacklight::init(GPIO_NUM_2, 30000)) {
         ESP_LOGE(TAG, "Failed to initialize backlight.");
+        return false;
+    }
+
+    if (!tt::lvgl::initEspLvglPort()) {
+        ESP_LOGE(TAG, "Failed to initialize LVGL port.");
         return false;
     }
 
