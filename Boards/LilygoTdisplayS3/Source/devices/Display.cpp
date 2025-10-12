@@ -272,13 +272,13 @@ lv_display_t* I8080St7789Display::getLvglDisplay() const {
 
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     auto display = std::make_shared<I8080St7789Display>(I8080St7789Display::Configuration(
-        GPIO_NUM_6,
         GPIO_NUM_7,
         GPIO_NUM_8,
-        GPIO_NUM_9,
-        {GPIO_NUM_39, GPIO_NUM_40, GPIO_NUM_41, GPIO_NUM_42, GPIO_NUM_45, GPIO_NUM_46, GPIO_NUM_47, GPIO_NUM_48},
         GPIO_NUM_5,
-        GPIO_NUM_15
+        GPIO_NUM_6,
+        {GPIO_NUM_39, GPIO_NUM_40, GPIO_NUM_41, GPIO_NUM_42, GPIO_NUM_45, GPIO_NUM_46, GPIO_NUM_47, GPIO_NUM_48},
+        GPIO_NUM_9,
+        GPIO_NUM_38,
     ));
 
     if (!display->initialize()) {
