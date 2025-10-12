@@ -6,6 +6,8 @@
 #include <lvgl.h>
 #include <array>
 #include <cstdint>
+#include <memory>
+#include <string>
 
 class I8080St7789Display : public tt::hal::display::DisplayDevice {
 public:
@@ -17,13 +19,14 @@ public:
         std::array<gpio_num_t, 8> dataPins;
         gpio_num_t resetPin;
         gpio_num_t backlightPin;
-        unsigned int pixelClockFrequency = 10 * 1000 * 1000;
+        unsigned int pixelClockFrequency = 10 * 1000 * 1000;   // 10 MHz default
         size_t transactionQueueDepth = 10;
-        size_t bufferSize = 170 * 320;
+        size_t bufferSize = 170 * 320;                         // full frame buffer
 
-        Configuration(gpio_num_t cs, gpio_num_t dc, gpio_num_t wr, gpio_num_t rd, std::array<gpio_num_t, 8> data,
-                      gpio_num_t rst, gpio_num_t bl)
-            : csPin(cs), dcPin(dc), wrPin(wr), rdPin(rd), dataPins(data), resetPin(rst), backlightPin(bl) {}
+        Configuration(gpio_num_t cs, gpio_num_t dc, gpio_num_t wr, gpio_num_t rd,
+                      std::array<gpio_num_t, 8> data, gpio_num_t rst, gpio_num_t bl)
+            : csPin(cs), dcPin(dc), wrPin(wr), rdPin(rd),
+              dataPins(data), resetPin(rst), backlightPin(bl) {}
     };
 
 private:
@@ -44,19 +47,25 @@ public:
 
     lv_display_t* getLvglDisplay() const override;
 
-    // Add this getter for flush callback
+    // For LVGL flush callback
     esp_lcd_panel_handle_t getPanelHandle() const { return panelHandle; }
 
+    // Metadata
     std::string getName() const override { return "I8080 ST7789"; }
     std::string getDescription() const override { return "I8080-based ST7789 display"; }
 
+    // Lifecycle (no-op for now)
     bool start() override { return true; }
     bool stop() override { return true; }
-    std::shared_ptr<tt::hal::touch::TouchDevice> getTouchDevice() override { return nullptr; }  
-    std::shared_ptr<tt::hal::display::DisplayDriver> getDisplayDriver() override { return nullptr; }
-    bool supportsLvgl() const override { return true; }
     bool stopLvgl() override { return true; }
+
+    // Capabilities
+    bool supportsLvgl() const override { return true; }
     bool supportsDisplayDriver() const override { return false; }
+
+    // No touch or external driver
+    std::shared_ptr<tt::hal::touch::TouchDevice> getTouchDevice() override { return nullptr; }
+    std::shared_ptr<tt::hal::display::DisplayDriver> getDisplayDriver() override { return nullptr; }
 };
 
 // Factory function for registration
