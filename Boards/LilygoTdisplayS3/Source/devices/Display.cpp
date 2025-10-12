@@ -1,4 +1,4 @@
-#include "I8080St7789Display.h"
+#include "Display.h"
 #include <Tactility/Log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
