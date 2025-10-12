@@ -34,13 +34,35 @@ static lcd_cmd_t lcd_st7789v[] = {
     {0xE1, {0xF0, 0x08, 0x0C, 0x0B, 0x09, 0x24, 0x2B, 0x22, 0x43, 0x38, 0x15, 0x16, 0x2F, 0x37}, 14},  // Gamma Negative
 };
 
+// This is the actual flush callback for LVGL
 static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_p) {
-    // Debug log to verify flush is called
     TT_LOG_I("LVGL_FLUSH", "Flush called: x1=%d y1=%d x2=%d y2=%d", area->x1, area->y1, area->x2, area->y2);
-    // TODO: Transfer color_p to display using DMA or direct write
-    // For now, just immediately signal flush ready
+
+    // let's assume I have access to panelHandle, so make panelHandle static/global for test:
+    extern esp_lcd_panel_handle_t g_panelHandle; // Declare global
+
+    // Transfer the LVGL buffer to the display using ESP-IDF API
+    if (g_panelHandle != nullptr) {
+        // Note: x2 and y2 are inclusive, so add 1 to get the actual width/height
+        esp_err_t err = esp_lcd_panel_draw_bitmap(
+            g_panelHandle,
+            area->x1, area->y1,
+            area->x2 + 1, area->y2 + 1,
+            color_p
+        );
+        if (err != ESP_OK) {
+            TT_LOG_E("LVGL_FLUSH", "Panel draw_bitmap failed: %d", err);
+        }
+    } else {
+        TT_LOG_E("LVGL_FLUSH", "panelHandle is null!");
+    }
+
+    // Let LVGL know we're done
     lv_display_flush_ready(disp);
 }
+
+// Make panelHandle global so flush callback can access it
+esp_lcd_panel_handle_t g_panelHandle = nullptr;
 
 bool I8080St7789Display::initialize() {
     TT_LOG_I(TAG, "Initializing I8080 ST7789 Display...");
@@ -61,7 +83,7 @@ bool I8080St7789Display::initialize() {
         },
         8, // bus_width
         configuration.bufferSize * sizeof(uint16_t), // max_transfer_bytes
-        64, // dma_burst_size (psram_trans_align for older ESP-IDF)
+        64, // dma_burst_size
         4   // sram_trans_align
     };
 
@@ -107,6 +129,9 @@ bool I8080St7789Display::initialize() {
 
     esp_lcd_panel_reset(panelHandle);
 
+    // Make panelHandle global for flush callback
+    g_panelHandle = panelHandle;
+
     for (auto& cmd : lcd_st7789v) {
         esp_lcd_panel_io_tx_param(ioHandle, cmd.addr, cmd.param, cmd.len & 0x7F);
         if (cmd.len & 0x80) {
@@ -131,7 +156,6 @@ bool I8080St7789Display::initialize() {
     return true;
 }
 
-// Called by the framework after LVGL is initialized
 bool I8080St7789Display::startLvgl() {
     lvgl_port_display_cfg_t lvgl_cfg = {
         .io_handle = ioHandle,
@@ -170,7 +194,6 @@ lv_display_t* I8080St7789Display::getLvglDisplay() const {
     return lvglDisplay;
 }
 
-// Factory function, returns display for registration
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     auto display = std::make_shared<I8080St7789Display>(I8080St7789Display::Configuration(
         GPIO_NUM_6,  // CS
@@ -182,7 +205,6 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         GPIO_NUM_38   // Backlight
     ));
 
-    // Only hardware init here; LVGL registration happens later via startLvgl()
     if (!display->initialize()) {
         TT_LOG_E(TAG, "Failed to initialize display");
         return nullptr;
