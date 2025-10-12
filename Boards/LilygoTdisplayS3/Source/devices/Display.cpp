@@ -267,10 +267,6 @@ lv_display_t* I8080St7789Display::getLvglDisplay() const {
     return lvglDisplay;
 }
 
-esp_lcd_panel_handle_t I8080St7789Display::getPanelHandle() const {
-    return panelHandle;
-}
-
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     auto display = std::make_shared<I8080St7789Display>(I8080St7789Display::Configuration(
         GPIO_NUM_6,
