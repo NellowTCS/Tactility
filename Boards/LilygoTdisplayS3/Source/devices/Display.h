@@ -36,7 +36,13 @@ private:
 public:
     explicit I8080St7789Display(const Configuration& config) : configuration(config) {}
 
+    // Hardware setup only
     bool initialize();
+
+    // LVGL registration only
+    bool startLvgl() override;
+
+    lv_display_t* getLvglDisplay() const override;
 
     std::string getName() const override { return "I8080 ST7789"; }
     std::string getDescription() const override { return "I8080-based ST7789 display"; }
@@ -46,9 +52,7 @@ public:
     std::shared_ptr<tt::hal::touch::TouchDevice> getTouchDevice() override { return nullptr; }  
     std::shared_ptr<tt::hal::display::DisplayDriver> getDisplayDriver() override { return nullptr; }
     bool supportsLvgl() const override { return true; }
-    bool startLvgl() override { return true; }
     bool stopLvgl() override { return true; }
-    lv_display_t* getLvglDisplay() const override;
     bool supportsDisplayDriver() const override { return false; }
 };
 

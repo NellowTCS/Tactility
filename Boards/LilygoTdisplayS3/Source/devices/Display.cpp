@@ -14,6 +14,7 @@
 
 constexpr auto TAG = "I8080St7789Display";
 
+// Custom ST7789V init commands
 typedef struct {
     uint8_t addr;
     uint8_t param[14];
@@ -35,6 +36,7 @@ static lcd_cmd_t lcd_st7789v[] = {
     {0xE1, {0xF0, 0x08, 0x0C, 0x0B, 0x09, 0x24, 0x2B, 0x22, 0x43, 0x38, 0x15, 0x16, 0x2F, 0x37}, 14},  // Gamma Negative
 };
 
+// Hardware setup ONLY
 bool I8080St7789Display::initialize() {
     TT_LOG_I(TAG, "Initializing I8080 ST7789 Display...");
 
@@ -121,7 +123,11 @@ bool I8080St7789Display::initialize() {
 
     TT_LOG_I(TAG, "I8080 ST7789 Display initialized successfully");
 
-    // LVGL display integration
+    return true;
+}
+
+// LVGL registration ONLY
+bool I8080St7789Display::startLvgl() {
     lvgl_port_display_cfg_t lvgl_cfg = {
         .io_handle = ioHandle,
         .panel_handle = panelHandle,
@@ -149,8 +155,7 @@ bool I8080St7789Display::initialize() {
     };
 
     lvglDisplay = lvgl_port_add_disp(&lvgl_cfg);
-
-    return true;
+    return lvglDisplay != nullptr;
 }
 
 lv_display_t* I8080St7789Display::getLvglDisplay() const {

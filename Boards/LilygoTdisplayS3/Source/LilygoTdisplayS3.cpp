@@ -15,7 +15,6 @@ static std::vector<std::shared_ptr<Device>> createDevices() {
 
 extern const Configuration lilygo_tdisplays3 = {
     .initBoot = initBoot,
-    .lvglInit = LvglInit::None,
     .createDevices = createDevices,
     .i2c = {},
     .spi {
