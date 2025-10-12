@@ -48,7 +48,7 @@ public:
     bool supportsLvgl() const override { return true; }
     bool startLvgl() override { return true; }
     bool stopLvgl() override { return true; }
-    lv_display_t* getLvglDisplay() const override { return lvglDisplay; }
+    lv_display_t* getLvglDisplay() const override;
     bool supportsDisplayDriver() const override { return false; }
 };
 

@@ -129,8 +129,8 @@ bool I8080St7789Display::initialize() {
         .buffer_size = configuration.bufferSize,
         .double_buffer = false,
         .trans_size = 0,
-        .hres = configuration.horizontalResolution,
-        .vres = configuration.verticalResolution,
+        .hres = 170,
+        .vres = 320,
         .monochrome = false,
         .rotation = {
             .swap_xy = false,
