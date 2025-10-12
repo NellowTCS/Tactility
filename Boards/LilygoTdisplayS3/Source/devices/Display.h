@@ -39,7 +39,7 @@ public:
     // Hardware setup only
     bool initialize();
 
-    // LVGL registration only
+    // LVGL registration only (called by framework when LVGL is ready)
     bool startLvgl() override;
 
     lv_display_t* getLvglDisplay() const override;
@@ -56,4 +56,5 @@ public:
     bool supportsDisplayDriver() const override { return false; }
 };
 
+// Factory function for registration
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay();

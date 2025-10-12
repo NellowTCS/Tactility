@@ -1,5 +1,4 @@
 #include "Display.h"
-
 #include <Tactility/Log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -14,7 +13,6 @@
 
 constexpr auto TAG = "I8080St7789Display";
 
-// Custom ST7789V init commands
 typedef struct {
     uint8_t addr;
     uint8_t param[14];
@@ -36,7 +34,14 @@ static lcd_cmd_t lcd_st7789v[] = {
     {0xE1, {0xF0, 0x08, 0x0C, 0x0B, 0x09, 0x24, 0x2B, 0x22, 0x43, 0x38, 0x15, 0x16, 0x2F, 0x37}, 14},  // Gamma Negative
 };
 
-// Hardware setup ONLY
+static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_p) {
+    // Debug log to verify flush is called
+    TT_LOG_I("LVGL_FLUSH", "Flush called: x1=%d y1=%d x2=%d y2=%d", area->x1, area->y1, area->x2, area->y2);
+    // TODO: Transfer color_p to display using DMA or direct write
+    // For now, just immediately signal flush ready
+    lv_display_flush_ready(disp);
+}
+
 bool I8080St7789Display::initialize() {
     TT_LOG_I(TAG, "Initializing I8080 ST7789 Display...");
 
@@ -126,7 +131,7 @@ bool I8080St7789Display::initialize() {
     return true;
 }
 
-// LVGL registration ONLY
+// Called by the framework after LVGL is initialized
 bool I8080St7789Display::startLvgl() {
     lvgl_port_display_cfg_t lvgl_cfg = {
         .io_handle = ioHandle,
@@ -155,6 +160,9 @@ bool I8080St7789Display::startLvgl() {
     };
 
     lvglDisplay = lvgl_port_add_disp(&lvgl_cfg);
+    // Register the flush callback!
+    lv_display_set_flush_cb(lvglDisplay, lvgl_flush_cb);
+
     return lvglDisplay != nullptr;
 }
 
@@ -162,6 +170,7 @@ lv_display_t* I8080St7789Display::getLvglDisplay() const {
     return lvglDisplay;
 }
 
+// Factory function, returns display for registration
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     auto display = std::make_shared<I8080St7789Display>(I8080St7789Display::Configuration(
         GPIO_NUM_6,  // CS
@@ -173,6 +182,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         GPIO_NUM_38   // Backlight
     ));
 
+    // Only hardware init here; LVGL registration happens later via startLvgl()
     if (!display->initialize()) {
         TT_LOG_E(TAG, "Failed to initialize display");
         return nullptr;
