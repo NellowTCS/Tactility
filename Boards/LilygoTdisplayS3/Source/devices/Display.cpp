@@ -95,18 +95,20 @@ typedef struct {
 } lcd_cmd_t;
 
 static lcd_cmd_t lcd_st7789v[] = {
-    {0x11, {0}, 0 | 0x80},  // Sleep Out
-    {0x3A, {0x05}, 1},      // Pixel Format Set (0x05 = 16-bit in many inits)
-    {0xB2, {0x0B, 0x0B, 0x00, 0x33, 0x33}, 5},  // Porch Setting
-    {0xB7, {0x75}, 1},      // Gate Control
-    {0xBB, {0x28}, 1},      // VCOM Setting
-    {0xC0, {0x2C}, 1},      // LCM Control
-    {0xC2, {0x01}, 1},      // Display Timing
-    {0xC3, {0x1F}, 1},      // Power Control
-    {0xC6, {0x13}, 1},      // VCOM Offset
-    {0xD0, {0xA7}, 1},      // Power Setting
-    {0xE0, {0xF0, 0x05, 0x0A, 0x06, 0x06, 0x03, 0x2B, 0x32, 0x43, 0x36, 0x11, 0x10, 0x2B, 0x32}, 14},  // Gamma Positive
-    {0xE1, {0xF0, 0x08, 0x0C, 0x0B, 0x09, 0x24, 0x2B, 0x22, 0x43, 0x38, 0x15, 0x16, 0x2F, 0x37}, 14},  // Gamma Negative
+    {0x11, {0}, 0 | 0x80},
+    {0x3A, {0X05}, 1},
+    {0xB2, {0X0B, 0X0B, 0X00, 0X33, 0X33}, 5},
+    {0xB7, {0X75}, 1},
+    {0xBB, {0X28}, 1},
+    {0xC0, {0X2C}, 1},
+    {0xC2, {0X01}, 1},
+    {0xC3, {0X1F}, 1},
+    {0xC6, {0X13}, 1},
+    {0xD0, {0XA7}, 1},
+    {0xD0, {0XA4, 0XA1}, 2},
+    {0xD6, {0XA1}, 1},
+    {0xE0, {0XF0, 0X05, 0X0A, 0X06, 0X06, 0X03, 0X2B, 0X32, 0X43, 0X36, 0X11, 0X10, 0X2B, 0X32}, 14},
+    {0xE1, {0XF0, 0X08, 0X0C, 0X0B, 0X09, 0X24, 0X2B, 0X22, 0X43, 0X38, 0X15, 0X16, 0X2F, 0X37}, 14},
 };
 
 bool I8080St7789Display::initialize() {
@@ -131,6 +133,7 @@ bool I8080St7789Display::initialize() {
         configuration.dcPin,
         configuration.wrPin,
         LCD_CLK_SRC_DEFAULT,
+        20000000,
         {
             configuration.dataPins[0],
             configuration.dataPins[1],
