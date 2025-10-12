@@ -116,8 +116,11 @@ bool I8080St7789Display::initialize() {
     // If configuration.rdPin is valid, set it high so the display read line is disabled
     if (configuration.rdPin != GPIO_NUM_NC) {
         gpio_config_t rd_gpio_config = {
+            .pin_bit_mask = (1ULL << static_cast<uint32_t>(configuration.rdPin)),
             .mode = GPIO_MODE_OUTPUT,
-            .pin_bit_mask = (1ULL << static_cast<uint32_t>(configuration.rdPin))
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
         };
         gpio_config(&rd_gpio_config);
         gpio_set_level(configuration.rdPin, 1);
