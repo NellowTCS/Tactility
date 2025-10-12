@@ -4,8 +4,8 @@
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_types.h>
 #include <lvgl.h>
-
-#include <memory>
+#include <array>
+#include <cstdint>
 
 class I8080St7789Display : public tt::hal::display::DisplayDevice {
 public:
@@ -27,13 +27,13 @@ public:
     };
 
 private:
-    std::unique_ptr<Configuration> configuration;
+    Configuration configuration;
     esp_lcd_i80_bus_handle_t i80BusHandle = nullptr;
     esp_lcd_panel_io_handle_t ioHandle = nullptr;
     esp_lcd_panel_handle_t panelHandle = nullptr;
 
 public:
-    explicit I8080St7789Display(std::unique_ptr<Configuration> config) : configuration(std::move(config)) {}
+    explicit I8080St7789Display(const Configuration& config) : configuration(config) {}
 
     bool initialize();
 

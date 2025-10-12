@@ -13,14 +13,12 @@
 
 constexpr auto TAG = "I8080St7789Display";
 
-// LCD initialization command structure
 typedef struct {
     uint8_t addr;
     uint8_t param[14];
     uint8_t len;
 } lcd_cmd_t;
 
-// ST7789 initialization command sequence
 static lcd_cmd_t lcd_st7789v[] = {
     {0x11, {0}, 0 | 0x80},  // Sleep Out
     {0x3A, {0x05}, 1},      // Pixel Format Set
@@ -39,23 +37,22 @@ static lcd_cmd_t lcd_st7789v[] = {
 bool I8080St7789Display::initialize() {
     TT_LOG_I(TAG, "Initializing I8080 ST7789 Display...");
 
-    // I80 bus config - order must match ESP-IDF struct!
     esp_lcd_i80_bus_config_t bus_cfg = {
-        configuration->dcPin, // dc_gpio_num
-        configuration->wrPin, // wr_gpio_num
+        configuration.dcPin, // dc_gpio_num
+        configuration.wrPin, // wr_gpio_num
         LCD_CLK_SRC_DEFAULT,  // clk_src
         {                     // data_gpio_nums
-            configuration->dataPins[0],
-            configuration->dataPins[1],
-            configuration->dataPins[2],
-            configuration->dataPins[3],
-            configuration->dataPins[4],
-            configuration->dataPins[5],
-            configuration->dataPins[6],
-            configuration->dataPins[7],
+            configuration.dataPins[0],
+            configuration.dataPins[1],
+            configuration.dataPins[2],
+            configuration.dataPins[3],
+            configuration.dataPins[4],
+            configuration.dataPins[5],
+            configuration.dataPins[6],
+            configuration.dataPins[7],
         },
         8, // bus_width
-        configuration->bufferSize * sizeof(uint16_t), // max_transfer_bytes
+        configuration.bufferSize * sizeof(uint16_t), // max_transfer_bytes
         64, // dma_burst_size (psram_trans_align for older ESP-IDF)
         4   // sram_trans_align
     };
@@ -67,28 +64,16 @@ bool I8080St7789Display::initialize() {
 
     TT_LOG_I(TAG, "I8080 bus initialized");
 
-    // Configure the panel IO
     esp_lcd_panel_io_i80_config_t io_cfg = {
-        configuration->csPin, // cs_gpio_num
-        configuration->pixelClockFrequency, // pclk_hz
-        configuration->transactionQueueDepth, // trans_queue_depth
-        nullptr, // on_color_trans_done
-        nullptr, // user_ctx
-        8, // lcd_cmd_bits
-        8, // lcd_param_bits
-        { // dc_levels
-            0, // dc_idle_level
-            0, // dc_cmd_level
-            0, // dc_dummy_level
-            1  // dc_data_level
-        },
-        { // flags
-            0, // cs_active_high
-            0, // reverse_color_bits
-            0, // swap_color_bytes
-            0, // pclk_active_neg
-            0  // pclk_idle_low
-        }
+        configuration.csPin,
+        configuration.pixelClockFrequency,
+        configuration.transactionQueueDepth,
+        nullptr,
+        nullptr,
+        8,
+        8,
+        { 0, 0, 0, 1 },
+        { 0, 0, 0, 0, 0 }
     };
 
     if (esp_lcd_new_panel_io_i80(i80BusHandle, &io_cfg, &ioHandle) != ESP_OK) {
@@ -98,9 +83,8 @@ bool I8080St7789Display::initialize() {
 
     TT_LOG_I(TAG, "Panel IO initialized");
 
-    // Panel config (named initializers for clarity)
     esp_lcd_panel_dev_config_t panel_cfg = {
-        .reset_gpio_num = configuration->resetPin,
+        .reset_gpio_num = configuration.resetPin,
         .color_space = ESP_LCD_COLOR_SPACE_RGB,
         .bits_per_pixel = 16,
         .vendor_config = nullptr,
@@ -113,10 +97,8 @@ bool I8080St7789Display::initialize() {
 
     TT_LOG_I(TAG, "Panel initialized");
 
-    // Hard reset
     esp_lcd_panel_reset(panelHandle);
 
-    // Send custom init commands
     for (auto& cmd : lcd_st7789v) {
         esp_lcd_panel_io_tx_param(ioHandle, cmd.addr, cmd.param, cmd.len & 0x7F);
         if (cmd.len & 0x80) {
@@ -124,26 +106,24 @@ bool I8080St7789Display::initialize() {
         }
     }
 
-    // Turn on the display
     esp_lcd_panel_disp_on_off(panelHandle, true);
 
-    // Enable the backlight
     gpio_config_t bk_gpio_cfg = {
-        .pin_bit_mask = 1ULL << configuration->backlightPin,
+        .pin_bit_mask = 1ULL << configuration.backlightPin,
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&bk_gpio_cfg);
-    gpio_set_level(configuration->backlightPin, 1);
+    gpio_set_level(configuration.backlightPin, 1);
 
     TT_LOG_I(TAG, "I8080 ST7789 Display initialized successfully");
     return true;
 }
 
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
-    auto display = std::make_shared<I8080St7789Display>(std::make_unique<I8080St7789Display::Configuration>(
+    auto display = std::make_shared<I8080St7789Display>(I8080St7789Display::Configuration(
         GPIO_NUM_6,  // CS
         GPIO_NUM_7,  // DC
         GPIO_NUM_8,  // WR
