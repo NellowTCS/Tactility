@@ -146,7 +146,7 @@ bool I8080St7789Display::initialize() {
         },
         8,
         // Keep max_transfer_bytes moderate; esp_lcd can handle chunking but this protects DMA
-        std::min<size_t>(configuration.bufferSize * sizeof(uint16_t), 64 * 1024),
+        (int)std::min<size_t>(configuration.bufferSize * sizeof(uint16_t), 64 * 1024),
         64,
         4
     };
