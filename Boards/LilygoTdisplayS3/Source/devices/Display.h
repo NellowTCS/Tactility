@@ -42,13 +42,13 @@ public:
 
     bool start() override { return true; }
     bool stop() override { return true; }
-    std::shared_ptr<touch::TouchDevice> getTouchDevice() override { return nullptr; }
+    std::shared_ptr<tt::hal::touch::TouchDevice> getTouchDevice() override { return nullptr; }  
+    std::shared_ptr<tt::hal::display::DisplayDriver> getDisplayDriver() override { return nullptr; }
     bool supportsLvgl() const override { return true; }
     bool startLvgl() override { return true; }
     bool stopLvgl() override { return true; }
     lv_display_t* getLvglDisplay() const override { return nullptr; }
     bool supportsDisplayDriver() const override { return false; }
-    std::shared_ptr<DisplayDriver> getDisplayDriver() override { return nullptr; }
 };
 
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay();
