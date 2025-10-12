@@ -34,6 +34,8 @@ static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *co
         TT_LOG_E("LVGL_FLUSH", "panelHandle is null!");
         lv_display_flush_ready(disp); // Fail-safe: always signal ready if error
     }
+    // Probably unnecessary, but ensure LVGL knows we're done
+    lv_display_flush_ready(disp);
 }
 
 typedef struct {
@@ -91,7 +93,7 @@ bool I8080St7789Display::initialize() {
         configuration.pixelClockFrequency,
         configuration.transactionQueueDepth,
         nullptr,
-        on_color_trans_done, // DMA complete callback
+        nullptr, // No on_color_trans_done
         8,
         8,
         { 0, 0, 0, 1 },
