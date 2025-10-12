@@ -10,13 +10,14 @@
 #include <lvgl.h>
 #include <array>
 #include <cstdint>
+#include <cstring>
 
 constexpr auto TAG = "I8080St7789Display";
 
-// Forward-declare for flush callback context
+// Forward pointer for flush callback use
 static I8080St7789Display *g_display_instance = nullptr;
 
-// LVGL flush callback: just kick off DMA transfer, let LVGL handle completion
+// LVGL flush callback: starts transfer (lv_display_flush_ready may be called by DMA completion)
 static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_p) {
     TT_LOG_I("LVGL_FLUSH", "Flush called: x1=%d y1=%d x2=%d y2=%d", area->x1, area->y1, area->x2, area->y2);
     if (g_display_instance && g_display_instance->getPanelHandle()) {
@@ -28,14 +29,63 @@ static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *co
         );
         if (err != ESP_OK) {
             TT_LOG_E("LVGL_FLUSH", "Panel draw_bitmap failed: %d", err);
-            lv_display_flush_ready(disp); // Fail-safe: always signal ready if error
+            lv_display_flush_ready(disp); // fail-safe so LVGL isn't blocked
         }
     } else {
         TT_LOG_E("LVGL_FLUSH", "panelHandle is null!");
-        lv_display_flush_ready(disp); // Fail-safe: always signal ready if error
+        lv_display_flush_ready(disp);
     }
-    // Probably unnecessary, but ensure LVGL knows we're done
-    lv_display_flush_ready(disp);
+}
+
+// Small utility to draw a test pattern (fills rows in chunks)
+static void draw_test_pattern(esp_lcd_panel_handle_t panel, int w, int h) {
+    if (!panel) {
+        TT_LOG_E(TAG, "draw_test_pattern: panel is null");
+        return;
+    }
+
+    TT_LOG_I(TAG, "Starting test pattern: %dx%d", w, h);
+
+    // We'll allocate a row buffer to stay small: transfer N rows at a time
+    const int chunk_rows = 16; // reduce if DMA can't handle
+    const size_t row_pixels = w;
+    const size_t buf_pixels = row_pixels * chunk_rows;
+    // 2 bytes per pixel (RGB565)
+    uint16_t *buf = (uint16_t *)heap_caps_malloc(buf_pixels * sizeof(uint16_t), MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+    if (!buf) {
+        TT_LOG_E(TAG, "Failed to allocate test buffer");
+        return;
+    }
+
+    // Three passes: red, green, blue
+    struct { uint16_t color; const char* name; } passes[] = {
+        { 0xF800, "RED" },   // RGB565 red
+        { 0x07E0, "GREEN" }, // RGB565 green
+        { 0x001F, "BLUE" }   // RGB565 blue
+    };
+
+    for (auto &p : passes) {
+        TT_LOG_I(TAG, "Test pass: %s", p.name);
+        // fill row buffer with color
+        for (size_t i = 0; i < buf_pixels; ++i) buf[i] = p.color;
+
+        for (int y = 0; y < h; y += chunk_rows) {
+            int rows = std::min(chunk_rows, h - y);
+            esp_err_t err = esp_lcd_panel_draw_bitmap(panel, 0, y, w, rows, buf);
+            if (err != ESP_OK) {
+                TT_LOG_E(TAG, "draw_bitmap failed at y=%d rows=%d err=%d", y, rows, err);
+                heap_caps_free(buf);
+                return;
+            }
+            // small delay to let transfers complete (optional)
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        // pause between passes
+        vTaskDelay(pdMS_TO_TICKS(300));
+    }
+
+    heap_caps_free(buf);
+    TT_LOG_I(TAG, "Test pattern done");
 }
 
 typedef struct {
@@ -46,7 +96,7 @@ typedef struct {
 
 static lcd_cmd_t lcd_st7789v[] = {
     {0x11, {0}, 0 | 0x80},  // Sleep Out
-    {0x3A, {0x05}, 1},      // Pixel Format Set
+    {0x3A, {0x05}, 1},      // Pixel Format Set (0x05 = 16-bit in many inits)
     {0xB2, {0x0B, 0x0B, 0x00, 0x33, 0x33}, 5},  // Porch Setting
     {0xB7, {0x75}, 1},      // Gate Control
     {0xBB, {0x28}, 1},      // VCOM Setting
@@ -61,6 +111,18 @@ static lcd_cmd_t lcd_st7789v[] = {
 
 bool I8080St7789Display::initialize() {
     TT_LOG_I(TAG, "Initializing I8080 ST7789 Display...");
+
+    // Ensure RD (read) is output-high (demo does this)
+    // If configuration.rdPin is valid, set it high so the display read line is disabled
+    if (configuration.rdPin != GPIO_NUM_NC) {
+        gpio_config_t rd_gpio_config = {
+            .mode = GPIO_MODE_OUTPUT,
+            .pin_bit_mask = (1ULL << static_cast<uint32_t>(configuration.rdPin))
+        };
+        gpio_config(&rd_gpio_config);
+        gpio_set_level(configuration.rdPin, 1);
+        TT_LOG_I(TAG, "Set RD pin %d HIGH", configuration.rdPin);
+    }
 
     esp_lcd_i80_bus_config_t bus_cfg = {
         configuration.dcPin,
@@ -77,7 +139,8 @@ bool I8080St7789Display::initialize() {
             configuration.dataPins[7],
         },
         8,
-        configuration.bufferSize * sizeof(uint16_t),
+        // Keep max_transfer_bytes moderate; esp_lcd can handle chunking but this protects DMA
+        std::min<size_t>(configuration.bufferSize * sizeof(uint16_t), 64 * 1024),
         64,
         4
     };
@@ -93,7 +156,7 @@ bool I8080St7789Display::initialize() {
         configuration.pixelClockFrequency,
         configuration.transactionQueueDepth,
         nullptr,
-        nullptr, // No on_color_trans_done
+        nullptr,
         8,
         8,
         { 0, 0, 0, 1 },
@@ -119,8 +182,16 @@ bool I8080St7789Display::initialize() {
     }
     TT_LOG_I(TAG, "Panel initialized");
 
+    // Important: call panel init (demo calls this)
+    esp_err_t err = esp_lcd_panel_init(panelHandle);
+    if (err != ESP_OK) {
+        TT_LOG_E(TAG, "esp_lcd_panel_init failed: %d", err);
+        return false;
+    }
+
     esp_lcd_panel_reset(panelHandle);
 
+    // Send panel init command sequence
     for (auto& cmd : lcd_st7789v) {
         esp_lcd_panel_io_tx_param(ioHandle, cmd.addr, cmd.param, cmd.len & 0x7F);
         if (cmd.len & 0x80) {
@@ -131,7 +202,7 @@ bool I8080St7789Display::initialize() {
     esp_lcd_panel_disp_on_off(panelHandle, true);
 
     gpio_config_t bk_gpio_cfg = {
-        .pin_bit_mask = 1ULL << configuration.backlightPin,
+        .pin_bit_mask = 1ULL << static_cast<uint32_t>(configuration.backlightPin),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -142,8 +213,11 @@ bool I8080St7789Display::initialize() {
 
     TT_LOG_I(TAG, "I8080 ST7789 Display initialized successfully");
 
-    // Make this instance available for flush callback
+    // Make instance available to flush callback
     g_display_instance = this;
+
+    // run test pattern right away to validate hardware (non-LVGL)
+    draw_test_pattern(panelHandle, 170, 320);
 
     return true;
 }
@@ -176,9 +250,11 @@ bool I8080St7789Display::startLvgl() {
     };
 
     lvglDisplay = lvgl_port_add_disp(&lvgl_cfg);
-    lv_display_set_flush_cb(lvglDisplay, lvgl_flush_cb);
+    if (lvglDisplay) {
+        lv_display_set_flush_cb(lvglDisplay, lvgl_flush_cb);
+    }
 
-    // Set gap, invert color, etc. as in demo
+    // Configure panel orientation and gap to match the demo
     esp_lcd_panel_invert_color(panelHandle, true);
     esp_lcd_panel_swap_xy(panelHandle, true);
     esp_lcd_panel_mirror(panelHandle, false, true);
@@ -189,6 +265,10 @@ bool I8080St7789Display::startLvgl() {
 
 lv_display_t* I8080St7789Display::getLvglDisplay() const {
     return lvglDisplay;
+}
+
+esp_lcd_panel_handle_t I8080St7789Display::getPanelHandle() const {
+    return panelHandle;
 }
 
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
