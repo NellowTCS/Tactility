@@ -16,31 +16,23 @@ constexpr auto TAG = "I8080St7789Display";
 // Forward-declare for flush callback context
 static I8080St7789Display *g_display_instance = nullptr;
 
-// DMA complete callback: called by panel IO after color data transfer
-static bool on_color_trans_done(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx) {
-    I8080St7789Display *disp = static_cast<I8080St7789Display *>(user_ctx);
-    if (disp && disp->getLvglDisplay()) {
-        lv_display_flush_ready(disp->getLvglDisplay());
-    }
-    return false;
-}
-
-// LVGL flush callback
+// LVGL flush callback: just kick off DMA transfer, let LVGL handle completion
 static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_p) {
     TT_LOG_I("LVGL_FLUSH", "Flush called: x1=%d y1=%d x2=%d y2=%d", area->x1, area->y1, area->x2, area->y2);
-    // Get panelHandle from the display instance
-    if (g_display_instance && g_display_instance->panelHandle) {
+    if (g_display_instance && g_display_instance->getPanelHandle()) {
         esp_err_t err = esp_lcd_panel_draw_bitmap(
-            g_display_instance->panelHandle,
+            g_display_instance->getPanelHandle(),
             area->x1, area->y1,
             area->x2 + 1, area->y2 + 1,
             color_p
         );
         if (err != ESP_OK) {
             TT_LOG_E("LVGL_FLUSH", "Panel draw_bitmap failed: %d", err);
+            lv_display_flush_ready(disp); // Fail-safe: always signal ready if error
         }
     } else {
         TT_LOG_E("LVGL_FLUSH", "panelHandle is null!");
+        lv_display_flush_ready(disp); // Fail-safe: always signal ready if error
     }
 }
 
@@ -103,8 +95,7 @@ bool I8080St7789Display::initialize() {
         8,
         8,
         { 0, 0, 0, 1 },
-        { 0, 0, 0, 0, 0 },
-        this // Pass display instance for flush ready
+        { 0, 0, 0, 0, 0 }
     };
 
     if (esp_lcd_new_panel_io_i80(i80BusHandle, &io_cfg, &ioHandle) != ESP_OK) {
@@ -167,16 +158,16 @@ bool I8080St7789Display::startLvgl() {
         .vres = 320,
         .monochrome = false,
         .rotation = {
-            .swap_xy = true,      // Match demo orientation
-            .mirror_x = false,    // Match demo orientation
-            .mirror_y = true,     // Match demo orientation
+            .swap_xy = true,
+            .mirror_x = false,
+            .mirror_y = true,
         },
         .color_format = LV_COLOR_FORMAT_RGB565,
         .flags = {
             .buff_dma = true,
             .buff_spiram = false,
             .sw_rotate = false,
-            .swap_bytes = false, // Try true if colors are wrong later
+            .swap_bytes = false,
             .full_refresh = true,
             .direct_mode = false
         }

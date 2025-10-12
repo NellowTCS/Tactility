@@ -44,6 +44,9 @@ public:
 
     lv_display_t* getLvglDisplay() const override;
 
+    // Add this getter for flush callback
+    esp_lcd_panel_handle_t getPanelHandle() const { return panelHandle; }
+
     std::string getName() const override { return "I8080 ST7789"; }
     std::string getDescription() const override { return "I8080-based ST7789 display"; }
 
