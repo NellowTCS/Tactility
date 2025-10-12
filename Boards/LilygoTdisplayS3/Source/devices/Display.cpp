@@ -278,7 +278,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         GPIO_NUM_6,
         {GPIO_NUM_39, GPIO_NUM_40, GPIO_NUM_41, GPIO_NUM_42, GPIO_NUM_45, GPIO_NUM_46, GPIO_NUM_47, GPIO_NUM_48},
         GPIO_NUM_9,
-        GPIO_NUM_38,
+        GPIO_NUM_38
     ));
 
     if (!display->initialize()) {
