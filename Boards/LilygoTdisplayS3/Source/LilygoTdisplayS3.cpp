@@ -13,7 +13,7 @@ static std::vector<std::shared_ptr<Device>> createDevices() {
     };
 }
 
-extern const Configuration lilygo_tdisplay_s3 = {
+extern const Configuration lilygo_tdisplays3 = {
     .initBoot = initBoot,
     .createDevices = createDevices,
     .i2c = nullptr,

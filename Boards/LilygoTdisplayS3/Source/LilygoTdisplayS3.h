@@ -2,4 +2,4 @@
 
 #include <Tactility/hal/Configuration.h>
 
-extern const tt::hal::Configuration lilygo_tdisplay_s3;
+extern const tt::hal::Configuration lilygo_tdisplays3;

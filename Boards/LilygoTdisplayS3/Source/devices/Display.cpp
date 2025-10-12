@@ -11,6 +11,12 @@
 
 constexpr auto TAG = "I8080St7789Display";
 
+typedef struct {
+    uint8_t addr;
+    uint8_t param[14];
+    uint8_t len;
+} lcd_cmd_t;
+
 static lcd_cmd_t lcd_st7789v[] = {
     {0x11, {0}, 0 | 0x80},  // Sleep Out
     {0x3A, {0x05}, 1},      // Pixel Format Set
