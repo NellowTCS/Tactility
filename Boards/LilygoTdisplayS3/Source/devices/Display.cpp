@@ -191,17 +191,22 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     return true;
 }
 
+static void st7789_send_cmd_cb(lv_display_t*, const uint8_t* cmd, size_t, const uint8_t* param, size_t param_size) {
+    esp_lcd_panel_io_tx_param(g_display_instance->getIoHandle(), *cmd, param, param_size);
+    if (param_size & 0x80) vTaskDelay(pdMS_TO_TICKS(120));
+}
+
+static void st7789_send_color_cb(lv_display_t*, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
+    esp_lcd_panel_io_tx_color(g_display_instance->getIoHandle(), *cmd, param, param_size);
+}
+
+
 bool I8080St7789Display::startLvgl() {
     TT_LOG_I(TAG, "Creating LVGL ST7789 display");
 
     lvglDisplay = lv_st7789_create(170, 320, LV_LCD_FLAG_NONE,
-        [this](lv_display_t*, const uint8_t* cmd, size_t, const uint8_t* param, size_t param_size) {
-            esp_lcd_panel_io_tx_param(ioHandle, *cmd, param, param_size);
-            if (param_size & 0x80) vTaskDelay(pdMS_TO_TICKS(120));
-        },
-        [this](lv_display_t*, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
-            esp_lcd_panel_io_tx_color(ioHandle, *cmd, param, param_size);
-        }
+        st7789_send_cmd_cb,
+        st7789_send_color_cb
     );
 
     if (!lvglDisplay) {

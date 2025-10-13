@@ -51,6 +51,8 @@ public:
 
     lv_display_t* getLvglDisplay() const override;
 
+    esp_lcd_panel_io_handle_t getIoHandle() const { return ioHandle; }
+    
     // For LVGL flush callback
     esp_lcd_panel_handle_t getPanelHandle() const { return panelHandle; }
 
