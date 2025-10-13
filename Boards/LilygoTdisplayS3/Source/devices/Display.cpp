@@ -195,11 +195,11 @@ bool I8080St7789Display::startLvgl() {
     TT_LOG_I(TAG, "Creating LVGL ST7789 display");
 
     lvglDisplay = lv_st7789_create(170, 320, LV_LCD_FLAG_NONE,
-        [](lv_display_t*, const uint8_t* cmd, size_t, const uint8_t* param, size_t param_size) {
+        [this](lv_display_t*, const uint8_t* cmd, size_t, const uint8_t* param, size_t param_size) {
             esp_lcd_panel_io_tx_param(ioHandle, *cmd, param, param_size);
             if (param_size & 0x80) vTaskDelay(pdMS_TO_TICKS(120));
         },
-        [](lv_display_t*, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
+        [this](lv_display_t*, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
             esp_lcd_panel_io_tx_color(ioHandle, *cmd, param, param_size);
         }
     );

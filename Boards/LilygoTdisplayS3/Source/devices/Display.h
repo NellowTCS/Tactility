@@ -6,6 +6,7 @@
 #include <esp_lcd_types.h>
 #include <lvgl.h>
 #include <lv_st7789.h>
+#include "lv_lcd_generic_mipi.h"
 // maybe need to #include "src/drivers/display/st7789/lv_st7789.h"
 #include <array>
 #include <cstdint>
