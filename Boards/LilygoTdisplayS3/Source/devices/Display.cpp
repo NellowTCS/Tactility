@@ -44,15 +44,15 @@ extern "C" void lv_flush_ready_async(void* user_ctx) {
     lv_display_flush_ready((lv_display_t*)user_ctx);
 }
 
-
-extern "C" void lv_port_flush_ready_cb(esp_lcd_panel_io_handle_t,
+extern "C" bool lv_port_flush_ready_cb(esp_lcd_panel_io_handle_t,
                                        esp_lcd_panel_io_event_data_t*,
                                        void* user_ctx) {
     // Defer actual LVGL call to its task context
     TT_LOG_I("I8080St7789Display", "Flush complete (ISR), deferring");
-    extern void lv_flush_ready_async(void* user_ctx);
     lv_async_call(lv_flush_ready_async, user_ctx);
+    return true;   // must return a bool
 }
+
 
 bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     TT_LOG_I(TAG, "Initializing I8080 ST7789 Display...");
