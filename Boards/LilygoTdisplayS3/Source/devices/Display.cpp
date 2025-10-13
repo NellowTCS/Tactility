@@ -14,26 +14,8 @@
 
 constexpr auto TAG = "I8080St7789Display";
 static I8080St7789Display* g_display_instance = nullptr;
+static uint8_t buf1[170 * 320 / 10 * LV_COLOR_FORMAT_GET_SIZE(LV_COLOR_FORMAT_RGB565)];
 
-static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* color_p) {
-    if (!g_display_instance || !g_display_instance->getPanelHandle()) {
-        TT_LOG_E(TAG, "Flush: panelHandle is null");
-        lv_display_flush_ready(disp);
-        return;
-    }
-
-    esp_err_t err = esp_lcd_panel_draw_bitmap(
-        g_display_instance->getPanelHandle(),
-        area->x1, area->y1,
-        area->x2 + 1, area->y2 + 1,
-        color_p
-    );
-
-    if (err != ESP_OK) {
-        TT_LOG_E(TAG, "Flush: draw_bitmap failed (%d)", err);
-        lv_display_flush_ready(disp);
-    }
-}
 
 static void draw_test_pattern(esp_lcd_panel_handle_t panel, int w, int h) {
     if (!panel) return;
@@ -209,50 +191,36 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     return true;
 }
 
-   bool I8080St7789Display::startLvgl() {
-    if (!initialize(nullptr)) {
-        TT_LOG_E(TAG, "Display hardware init failed");
-        return false;
-    }
+bool I8080St7789Display::startLvgl() {
+    TT_LOG_I(TAG, "Creating LVGL ST7789 display");
 
-    lvgl_port_display_cfg_t lvgl_cfg = {
-        .io_handle = ioHandle,
-        .panel_handle = panelHandle,
-        .control_handle = nullptr,
-        .buffer_size = configuration.bufferSize,
-        .double_buffer = false,
-        .trans_size = 0,
-        .hres = 170,
-        .vres = 320,
-        .monochrome = false,
-        .rotation = {
-            .swap_xy = true,
-            .mirror_x = false,
-            .mirror_y = true,
+    lvglDisplay = lv_st7789_create(170, 320, LV_LCD_FLAG_NONE,
+        [](lv_display_t*, const uint8_t* cmd, size_t, const uint8_t* param, size_t param_size) {
+            esp_lcd_panel_io_tx_param(ioHandle, *cmd, param, param_size);
+            if (param_size & 0x80) vTaskDelay(pdMS_TO_TICKS(120));
         },
-        .color_format = LV_COLOR_FORMAT_RGB565,
-        .flags = {
-            .buff_dma = true,
-            .buff_spiram = false,
-            .sw_rotate = false,
-            .swap_bytes = false,
-            .full_refresh = true,
-            .direct_mode = false,
+        [](lv_display_t*, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
+            esp_lcd_panel_io_tx_color(ioHandle, *cmd, param, param_size);
         }
-    };
+    );
 
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    lvglDisplay = lvgl_port_add_disp(&lvgl_cfg);
     if (!lvglDisplay) {
-        TT_LOG_E(TAG, "Failed to register LVGL display");
+        TT_LOG_E(TAG, "Failed to create LVGL ST7789 display");
         return false;
     }
 
-    lv_display_set_flush_cb(lvglDisplay, lvgl_flush_cb);
-    TT_LOG_I(TAG, "LVGL display registered");
+    lv_st7789_set_gap(lvglDisplay, 0, 35);
+    lv_st7789_set_invert(lvglDisplay, true);
+    lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
+    lv_display_set_buffers(lvglDisplay, buf1, nullptr, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_rotation(lvglDisplay, LV_DISPLAY_ROTATION_180);
+
+    esp_lcd_panel_disp_on_off(panelHandle, true);
+
+    TT_LOG_I(TAG, "LVGL ST7789 display registered");
     return true;
 }
+
 
 lv_display_t* I8080St7789Display::getLvglDisplay() const {
     return lvglDisplay;
