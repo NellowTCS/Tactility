@@ -39,12 +39,19 @@ static const lcd_init_cmd_t st7789_init_cmds[] = {
     {0xE1, {0XF0, 0X08, 0X0C, 0X0B, 0X09, 0X24, 0X2B, 0X22, 0X43, 0X38, 0X15, 0X16, 0X2F, 0X37}, 14},
 };
 
-extern "C" bool lv_port_flush_ready_cb(esp_lcd_panel_io_handle_t,
+// Runs in LVGL task context; safe to call LVGL APIs here
+extern "C" void lv_flush_ready_async(void* user_ctx) {
+    lv_display_flush_ready((lv_display_t*)user_ctx);
+}
+
+
+extern "C" void lv_port_flush_ready_cb(esp_lcd_panel_io_handle_t,
                                        esp_lcd_panel_io_event_data_t*,
                                        void* user_ctx) {
-    TT_LOG_I("I8080St7789Display", "Flush complete");
-    lv_display_flush_ready((lv_display_t*)user_ctx);
-    return false;
+    // Defer actual LVGL call to its task context
+    TT_LOG_I("I8080St7789Display", "Flush complete (ISR), deferring");
+    extern void lv_flush_ready_async(void* user_ctx);
+    lv_async_call(lv_flush_ready_async, user_ctx);
 }
 
 bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
@@ -210,11 +217,7 @@ bool I8080St7789Display::startLvgl() {
     // 3) Register flush-complete callback with LVGL display as user_ctx
     esp_lcd_panel_io_callbacks_t cbs = {};
     cbs.on_color_trans_done = lv_port_flush_ready_cb;
-    esp_err_t err = esp_lcd_panel_io_register_event_callbacks(ioHandle, &cbs, lvglDisplay);
-    if (err != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to register panel IO callbacks (%d)", (int)err);
-        return false;
-    }
+    ESP_ERROR_CHECK(esp_lcd_panel_io_register_event_callbacks(ioHandle, &cbs, lvglDisplay));
 
     // 4) Configure LVGL display
     lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
