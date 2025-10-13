@@ -2,16 +2,19 @@
 #include <Tactility/Log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
-#include <esp_lcd_panel_io_additions.h>
 #include <esp_lcd_panel_vendor.h>
+#include <esp_lvgl_port.h>
 #include <driver/gpio.h>
-#include <esp_err.h>
+#include <lvgl.h>
+#include <array>
+#include <cstdint>
 #include <cstring>
 
 constexpr auto TAG = "I8080St7789Display";
 
-// Forward pointer for LVGL flush callback
+// Forward pointer for flush callback
 static I8080St7789Display* g_display_instance = nullptr;
 
 // LVGL flush callback
@@ -25,17 +28,17 @@ static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* co
     esp_err_t err = esp_lcd_panel_draw_bitmap(
         g_display_instance->getPanelHandle(),
         area->x1, area->y1,
-        area->x2 + 1, area->y2 + 1, // exclusive end
+        area->x2 + 1, area->y2 + 1,
         color_p
     );
 
     if (err != ESP_OK) {
         TT_LOG_E(TAG, "Flush: draw_bitmap failed (%d)", err);
-        lv_display_flush_ready(disp); // fail-safe
+        lv_display_flush_ready(disp);
     }
 }
 
-// Vendor init sequence
+// ST7789 init sequence
 typedef struct {
     uint8_t addr;
     uint8_t param[14];
@@ -59,10 +62,41 @@ static lcd_cmd_t lcd_st7789v[] = {
     {0xE1, {0XF0, 0X08, 0X0C, 0X0B, 0X09, 0X24, 0X2B, 0X22, 0X43, 0X38, 0X15, 0X16, 0X2F, 0X37}, 14},
 };
 
+static void draw_test_pattern(esp_lcd_panel_handle_t panel, int w, int h) {
+    if (!panel) return;
+
+    const int chunk_rows = 16;
+    const size_t buf_pixels = w * chunk_rows;
+    uint16_t* buf = (uint16_t*)heap_caps_malloc(buf_pixels * sizeof(uint16_t), MALLOC_CAP_DMA);
+    if (!buf) {
+        TT_LOG_E(TAG, "Failed to allocate test buffer");
+        return;
+    }
+
+    struct { uint16_t color; const char* name; } passes[] = {
+        { 0xF800, "RED" },
+        { 0x07E0, "GREEN" },
+        { 0x001F, "BLUE" }
+    };
+
+    for (auto& p : passes) {
+        TT_LOG_I(TAG, "Test pass: %s", p.name);
+        std::fill_n(buf, buf_pixels, p.color);
+
+        for (int y = 0; y < h; y += chunk_rows) {
+            int rows = std::min(chunk_rows, h - y);
+            esp_lcd_panel_draw_bitmap(panel, 0, y, w, y + rows, buf);
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        vTaskDelay(pdMS_TO_TICKS(300));
+    }
+
+    heap_caps_free(buf);
+}
+
 bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     TT_LOG_I(TAG, "Initializing I8080 ST7789 Display...");
 
-    // Set RD pin high
     if (configuration.rdPin != GPIO_NUM_NC) {
         gpio_config_t rd_gpio_config = {
             .pin_bit_mask = (1ULL << static_cast<uint32_t>(configuration.rdPin)),
@@ -75,7 +109,6 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         gpio_set_level(configuration.rdPin, 1);
     }
 
-    // I80 bus
     size_t max_bytes = configuration.bufferSize * sizeof(uint16_t);
     esp_lcd_i80_bus_config_t bus_cfg = {
         configuration.dcPin,
@@ -95,20 +128,19 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         return false;
     }
 
-    // Panel IO
-    size_t queue_depth = configuration.transactionQueueDepth;
     esp_lcd_panel_io_i80_config_t io_cfg = {
         configuration.csPin,
         configuration.pixelClockFrequency,
-        queue_depth,
+        configuration.transactionQueueDepth,
         nullptr, nullptr,
         8, 8,
         {0, 0, 0, 1},
         {0, 0, 0, 0, 0}
     };
-    io_cfg.on_color_trans_done = [](esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*, void* user_ctx) {
+    io_cfg.on_color_trans_done = [](esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*, void* user_ctx) -> bool {
         auto disp = static_cast<lv_display_t*>(user_ctx);
         if (disp) lv_display_flush_ready(disp);
+        return false;
     };
     io_cfg.user_ctx = lvglDisplayCtx;
 
@@ -117,7 +149,6 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         return false;
     }
 
-    // Panel
     esp_lcd_panel_dev_config_t panel_cfg = {
         .reset_gpio_num = configuration.resetPin,
         .color_space = ESP_LCD_COLOR_SPACE_RGB,
@@ -129,17 +160,12 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         return false;
     }
 
-    // Reset then init
-    if (esp_lcd_panel_reset(panelHandle) != ESP_OK) {
-        TT_LOG_E(TAG, "Panel reset failed");
-        return false;
-    }
-    if (esp_lcd_panel_init(panelHandle) != ESP_OK) {
-        TT_LOG_E(TAG, "Panel init failed");
+    if (esp_lcd_panel_reset(panelHandle) != ESP_OK ||
+        esp_lcd_panel_init(panelHandle) != ESP_OK) {
+        TT_LOG_E(TAG, "Panel reset/init failed");
         return false;
     }
 
-    // Send vendor init sequence
     for (auto &cmd : lcd_st7789v) {
         esp_lcd_panel_io_tx_param(ioHandle, cmd.addr, cmd.param, cmd.len & 0x7F);
         if (cmd.len & 0x80) {
@@ -147,14 +173,12 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         }
     }
 
-    // Orientation and tweaks
     esp_lcd_panel_invert_color(panelHandle, true);
     esp_lcd_panel_swap_xy(panelHandle, true);
     esp_lcd_panel_mirror(panelHandle, false, true);
     esp_lcd_panel_set_gap(panelHandle, 0, 35);
     esp_lcd_panel_disp_on_off(panelHandle, true);
 
-    // Backlight
     gpio_config_t bk_gpio_cfg = {
         .pin_bit_mask = 1ULL << static_cast<uint32_t>(configuration.backlightPin),
         .mode = GPIO_MODE_OUTPUT,
@@ -165,8 +189,9 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     gpio_config(&bk_gpio_cfg);
     gpio_set_level(configuration.backlightPin, 1);
 
-    // Make instance available to flush callback
     g_display_instance = this;
+
+    draw_test_pattern(panelHandle, 170, 320);
 
     TT_LOG_I(TAG, "Display initialized successfully");
     return true;
@@ -205,9 +230,12 @@ bool I8080St7789Display::startLvgl() {
         return false;
     }
 
-    // Hook flush callback
-    lv_display_set_flush_cb(lvglDisplay, lvgl_flush_cb);
+    if (!initialize(lvglDisplay)) {
+        TT_LOG_E(TAG, "Display hardware init failed");
+        return false;
+    }
 
+    lv_display_set_flush_cb(lvglDisplay, lvgl_flush_cb);
     TT_LOG_I(TAG, "LVGL display registered");
     return true;
 }
@@ -216,7 +244,6 @@ lv_display_t* I8080St7789Display::getLvglDisplay() const {
     return lvglDisplay;
 }
 
-// Factory
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     auto display = std::make_shared<I8080St7789Display>(
         I8080St7789Display::Configuration(
@@ -231,10 +258,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         )
     );
 
-    if (!display->initialize()) {
-        TT_LOG_E(TAG, "Display initialization failed");
-        return nullptr;
-    }
+    // No call to initialize() here — LVGL will trigger it via startLvgl()
 
     return display;
 }
