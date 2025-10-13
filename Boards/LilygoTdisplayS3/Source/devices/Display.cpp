@@ -11,7 +11,7 @@
 
 constexpr auto TAG = "I8080St7789Display";
 static I8080St7789Display* g_display_instance = nullptr;
-static uint8_t buf1[170 * 320 / 10 * LV_COLOR_FORMAT_GET_SIZE(LV_COLOR_FORMAT_RGB565)];
+static DRAM_ATTR uint8_t buf1[170 * 320 / 10 * LV_COLOR_FORMAT_GET_SIZE(LV_COLOR_FORMAT_RGB565)];
 
 // ST7789 initialization commands
 typedef struct {

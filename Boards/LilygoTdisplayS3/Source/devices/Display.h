@@ -7,7 +7,6 @@
 #include <lvgl.h>
 #include <lv_st7789.h>
 #include "lv_lcd_generic_mipi.h"
-// maybe need to #include "src/drivers/display/st7789/lv_st7789.h"
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -23,7 +22,7 @@ public:
         std::array<gpio_num_t, 8> dataPins;
         gpio_num_t resetPin;
         gpio_num_t backlightPin;
-        unsigned int pixelClockFrequency = 10 * 1000 * 1000;   // 10 MHz default
+        unsigned int pixelClockFrequency = 5 * 1000 * 1000;   // trying 5 MHz
         size_t transactionQueueDepth = 10;
         size_t bufferSize = 170 * 320;                         // full frame buffer
 
