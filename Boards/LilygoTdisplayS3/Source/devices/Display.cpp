@@ -22,7 +22,7 @@ typedef struct {
 
 static const lcd_init_cmd_t st7789_init_cmds[] = {
     {0x11, {0}, 0 | 0x80},
-    {0x36, {0x00}, 1},  
+    {0x36, {0x08}, 1},  
     {0x3A, {0X05}, 1},
     {0x20, {0}, 0},  
     {0xB2, {0X0B, 0X0B, 0X00, 0X33, 0X33}, 5},
@@ -214,7 +214,7 @@ bool I8080St7789Display::startLvgl() {
     
     lv_st7789_set_gap(lvglDisplay, 35, 0);
     
-    lv_st7789_set_invert(lvglDisplay, false);
+    lv_st7789_set_invert(lvglDisplay, true);
 
     TT_LOG_I(TAG, "LVGL ST7789 display created successfully");
     return true;
