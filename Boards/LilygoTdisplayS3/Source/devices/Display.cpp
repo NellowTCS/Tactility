@@ -169,9 +169,13 @@ static void st7789_send_cmd_cb(lv_display_t*, const uint8_t* cmd, size_t, const 
 }
 
 // LVGL color data callback
-static void st7789_send_color_cb(lv_display_t*, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
+static void st7789_send_color_cb(lv_display_t* disp, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
     if (g_display_instance && g_display_instance->getIoHandle()) {
         esp_lcd_panel_io_tx_color(g_display_instance->getIoHandle(), *cmd, param, param_size);
+        // Signal flush complete immediately after sending data
+        if (disp) {
+            lv_display_flush_ready(disp);
+        }
     }
 }
 
@@ -200,12 +204,14 @@ bool I8080St7789Display::startLvgl() {
     }
 
     // Configure LVGL display
-    lv_st7789_set_gap(lvglDisplay, 0, 35);
-    lv_st7789_set_invert(lvglDisplay, true);
     lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(lvglDisplay, buf1, nullptr, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
 
-    lv_display_set_rotation(lvglDisplay, LV_DISPLAY_ROTATION_270);
+    lv_display_set_rotation(lvglDisplay, LV_DISPLAY_ROTATION_0);
+    
+    // Set these AFTER rotation
+    lv_st7789_set_gap(lvglDisplay, 0, 35);
+    lv_st7789_set_invert(lvglDisplay, true);
 
     TT_LOG_I(TAG, "LVGL ST7789 display created successfully");
     return true;
