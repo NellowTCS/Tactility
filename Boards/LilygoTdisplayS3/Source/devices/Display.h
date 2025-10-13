@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Tactility/hal/display/DisplayDevice.h>
+#include <esp_lvgl_port.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_types.h>
 #include <lvgl.h>

@@ -3,6 +3,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_lcd_panel_ops.h>
+#include <esp_lcd_panel_io_additions.h>
 #include <esp_lcd_panel_vendor.h>
 #include <driver/gpio.h>
 #include <esp_err.h>
@@ -59,9 +60,9 @@ static lcd_cmd_t lcd_st7789v[] = {
 };
 
 bool I8080St7789Display::initialize() {
-    TT_LOG_I(TAG, "Initializing...");
+    TT_LOG_I(TAG, "Initializing I8080 ST7789 Display...");
 
-    // RD pin high
+    // Set RD pin high (disable read)
     if (configuration.rdPin != GPIO_NUM_NC) {
         gpio_config_t rd_gpio_config = {
             .pin_bit_mask = (1ULL << static_cast<uint32_t>(configuration.rdPin)),
@@ -75,39 +76,35 @@ bool I8080St7789Display::initialize() {
     }
 
     // I80 bus
+    int max_bytes = static_cast<int>(configuration.bufferSize * sizeof(uint16_t));
     esp_lcd_i80_bus_config_t bus_cfg = {
-        .dc_gpio_num = configuration.dcPin,
-        .wr_gpio_num = configuration.wrPin,
-        .clk_src = LCD_CLK_SRC_DEFAULT,
-        .data_gpio_nums = {
-            configuration.dataPins[0], configuration.dataPins[1],
-            configuration.dataPins[2], configuration.dataPins[3],
-            configuration.dataPins[4], configuration.dataPins[5],
-            configuration.dataPins[6], configuration.dataPins[7],
+        configuration.dcPin,
+        configuration.wrPin,
+        LCD_CLK_SRC_DEFAULT,
+        {
+            configuration.dataPins[0], configuration.dataPins[1], configuration.dataPins[2], configuration.dataPins[3],
+            configuration.dataPins[4], configuration.dataPins[5], configuration.dataPins[6], configuration.dataPins[7],
         },
-        .bus_width = 8,
-        .max_transfer_bytes = static_cast<int>(configuration.bufferSize * sizeof(uint16_t)),
-        .psram_trans_align = 64,
-        .sram_trans_align = 4,
+        8,
+        max_bytes,
+        64,
+        4
     };
     if (esp_lcd_new_i80_bus(&bus_cfg, &i80BusHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to create I80 bus");
         return false;
     }
 
-    // IO
+    // Panel IO
+    int queue_depth = static_cast<int>(configuration.transactionQueueDepth);
     esp_lcd_panel_io_i80_config_t io_cfg = {
-        .cs_gpio_num = configuration.csPin,
-        .pclk_hz = configuration.pixelClockFrequency,
-        .trans_queue_depth = static_cast<int>(configuration.transactionQueueDepth),
-        .lcd_cmd_bits = 8,
-        .lcd_param_bits = 8,
-        .dc_levels = {0, 0, 0, 1},
-        .on_color_trans_done = [](esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*, void* user_ctx) {
-            auto disp = static_cast<lv_display_t*>(user_ctx);
-            if (disp) lv_display_flush_ready(disp);
-        },
-        .user_ctx = nullptr, // patched later in startLvgl
+        configuration.csPin,
+        configuration.pixelClockFrequency,
+        queue_depth,
+        nullptr, nullptr,
+        8, 8,
+        {0, 0, 0, 1},
+        {0, 0, 0, 0, 0}
     };
     if (esp_lcd_new_panel_io_i80(i80BusHandle, &io_cfg, &ioHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to create panel IO");
@@ -116,16 +113,19 @@ bool I8080St7789Display::initialize() {
 
     // Panel
     esp_lcd_panel_dev_config_t panel_cfg = {
-        .reset_gpio_num = configuration.resetPin,
-        .color_space = ESP_LCD_COLOR_SPACE_RGB,
-        .bits_per_pixel = 16,
+        configuration.resetPin,
+        ESP_LCD_COLOR_SPACE_RGB,
+        16,
+        ESP_LCD_ENDIAN_BIG,
+        {0, 0},
+        nullptr
     };
     if (esp_lcd_new_panel_st7789(ioHandle, &panel_cfg, &panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to create panel");
         return false;
     }
 
-    // Reset then init (order matters)
+    // Reset then init
     if (esp_lcd_panel_reset(panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Panel reset failed");
         return false;
@@ -135,7 +135,7 @@ bool I8080St7789Display::initialize() {
         return false;
     }
 
-    // Apply vendor init sequence
+    // Send vendor init sequence
     for (auto &cmd : lcd_st7789v) {
         esp_lcd_panel_io_tx_param(ioHandle, cmd.addr, cmd.param, cmd.len & 0x7F);
         if (cmd.len & 0x80) {
@@ -143,13 +143,11 @@ bool I8080St7789Display::initialize() {
         }
     }
 
-    // Orientation and color tweaks
+    // Orientation and tweaks
     esp_lcd_panel_invert_color(panelHandle, true);
     esp_lcd_panel_swap_xy(panelHandle, true);
     esp_lcd_panel_mirror(panelHandle, false, true);
     esp_lcd_panel_set_gap(panelHandle, 0, 35);
-
-    // Turn on display
     esp_lcd_panel_disp_on_off(panelHandle, true);
 
     // Backlight
@@ -166,7 +164,7 @@ bool I8080St7789Display::initialize() {
     // Make instance available to flush callback
     g_display_instance = this;
 
-    TT_LOG_I(TAG, "I8080 ST7789 Display initialized successfully");
+    TT_LOG_I(TAG, "Display initialized successfully");
     return true;
 }
 
