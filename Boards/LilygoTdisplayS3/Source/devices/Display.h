@@ -41,7 +41,7 @@ public:
     explicit I8080St7789Display(const Configuration& config) : configuration(config) {}
 
     // Hardware setup only
-    bool initialize();
+    bool initialize(lv_display_t* lvglDisplayCtx);
 
     // LVGL registration only (called by framework when LVGL is ready)
     bool startLvgl() override;

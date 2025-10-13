@@ -205,9 +205,6 @@ bool I8080St7789Display::startLvgl() {
         return false;
     }
 
-    // Patch user_ctx for DMA completion callback
-    esp_lcd_panel_io_set_user_ctx(ioHandle, lvglDisplay);
-
     // Hook flush callback
     lv_display_set_flush_cb(lvglDisplay, lvgl_flush_cb);
 
