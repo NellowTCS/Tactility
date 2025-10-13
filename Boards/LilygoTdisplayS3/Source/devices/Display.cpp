@@ -208,7 +208,7 @@ bool I8080St7789Display::startLvgl() {
     }
 
     // 3) Register flush-complete callback with LVGL display as user_ctx
-    esp_lcd_panel_io_event_callbacks_t cbs = {};
+    esp_lcd_panel_io_callbacks_t cbs = {};
     cbs.on_color_trans_done = lv_port_flush_ready_cb;
     esp_err_t err = esp_lcd_panel_io_register_event_callbacks(ioHandle, &cbs, lvglDisplay);
     if (err != ESP_OK) {
