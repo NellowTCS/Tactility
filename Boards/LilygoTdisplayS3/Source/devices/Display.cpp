@@ -39,10 +39,19 @@ static const lcd_init_cmd_t st7789_init_cmds[] = {
     {0xE1, {0XF0, 0X08, 0X0C, 0X0B, 0X09, 0X24, 0X2B, 0X22, 0X43, 0X38, 0X15, 0X16, 0X2F, 0X37}, 14},
 };
 
+// Callback when color transfer is done
+static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, 
+                                    esp_lcd_panel_io_event_data_t *edata, 
+                                    void *user_ctx) {
+    lv_display_t *disp = (lv_display_t *)user_ctx;
+    lv_display_flush_ready(disp);
+    return false;
+}
+
 bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     TT_LOG_I(TAG, "Initializing I8080 ST7789 Display...");
 
-    // Power on the display first! (IDC this is duplicated)
+    // Power on the display first!
     gpio_config_t pwr_gpio_cfg = {
         .pin_bit_mask = 1ULL << 15,  // PIN_POWER_ON
         .mode = GPIO_MODE_OUTPUT,
@@ -91,13 +100,13 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         return false;
     }
 
-    // Create panel IO
+    // Create panel IO with proper callback
     esp_lcd_panel_io_i80_config_t io_cfg = {
         .cs_gpio_num = configuration.csPin,
         .pclk_hz = configuration.pixelClockFrequency,
         .trans_queue_depth = configuration.transactionQueueDepth,
-        .on_color_trans_done = nullptr,
-        .user_ctx = nullptr,
+        .on_color_trans_done = notify_lvgl_flush_ready,
+        .user_ctx = lvglDisplayCtx,    // Pass display context
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
         .dc_levels = {
@@ -170,28 +179,15 @@ static void st7789_send_cmd_cb(lv_display_t*, const uint8_t* cmd, size_t, const 
     }
 }
 
-// LVGL color data callback
+// LVGL color data callback - don't call flush_ready here, let the hardware callback do it
 static void st7789_send_color_cb(lv_display_t* disp, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
     if (g_display_instance && g_display_instance->getIoHandle()) {
         esp_lcd_panel_io_tx_color(g_display_instance->getIoHandle(), *cmd, param, param_size);
-        // Signal flush complete immediately after sending data
-        if (disp) {
-            lv_display_flush_ready(disp);
-        }
     }
 }
 
 bool I8080St7789Display::startLvgl() {
     TT_LOG_I(TAG, "Starting LVGL for ST7789 display");
-
-    // Initialize hardware first if not already done
-    if (!ioHandle) {
-        TT_LOG_I(TAG, "Hardware not initialized, calling initialize()");
-        if (!initialize(nullptr)) {
-            TT_LOG_E(TAG, "Hardware initialization failed");
-            return false;
-        }
-    }
 
     TT_LOG_I(TAG, "Creating LVGL ST7789 display");
 
@@ -203,6 +199,15 @@ bool I8080St7789Display::startLvgl() {
     if (!lvglDisplay) {
         TT_LOG_E(TAG, "Failed to create LVGL ST7789 display");
         return false;
+    }
+
+    // now initialize hardware with the display context
+    if (!ioHandle) {
+        TT_LOG_I(TAG, "Hardware not initialized, calling initialize()");
+        if (!initialize(lvglDisplay)) {  // Pass lvglDisplay here
+            TT_LOG_E(TAG, "Hardware initialization failed");
+            return false;
+        }
     }
 
     // Configure LVGL display
