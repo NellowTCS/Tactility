@@ -22,7 +22,7 @@ public:
         std::array<gpio_num_t, 8> dataPins;
         gpio_num_t resetPin;
         gpio_num_t backlightPin;
-        unsigned int pixelClockFrequency = 5 * 1000 * 1000;   // trying 5 MHz
+        unsigned int pixelClockFrequency = 2 * 1000 * 1000;   // even lower?!?
         size_t transactionQueueDepth = 10;
         size_t bufferSize = 170 * 320;                         // full frame buffer
 

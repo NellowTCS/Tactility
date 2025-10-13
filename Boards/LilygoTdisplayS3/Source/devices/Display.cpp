@@ -20,6 +20,30 @@ typedef struct {
     uint8_t len;
 } lcd_init_cmd_t;
 
+extern "C" bool lv_port_flush_ready_cb(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*, void* user_ctx) {
+    TT_LOG_I(TAG, "Flush complete");
+    lv_display_flush_ready((lv_display_t*)user_ctx);
+    return false;
+}
+
+// LVGL command callback
+static void st7789_send_cmd_cb(lv_display_t*, const uint8_t* cmd, size_t, const uint8_t* param, size_t param_size) {
+    if (g_display_instance && g_display_instance->getIoHandle()) {
+        esp_lcd_panel_io_tx_param(g_display_instance->getIoHandle(), *cmd, param, param_size);
+    }
+}
+
+// LVGL color data callback
+static void st7789_send_color_cb(lv_display_t* disp, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
+    if (g_display_instance && g_display_instance->getIoHandle()) {
+        esp_lcd_panel_io_tx_color(g_display_instance->getIoHandle(), *cmd, param, param_size);
+        // Signal flush complete immediately after sending data
+        if (disp) {
+            lv_display_flush_ready(disp);
+        }
+    }
+}
+
 static const lcd_init_cmd_t st7789_init_cmds[] = {
     {0x11, {0}, 0 | 0x80},
     {0x36, {0x08}, 1},  
@@ -96,8 +120,8 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         .cs_gpio_num = configuration.csPin,
         .pclk_hz = configuration.pixelClockFrequency,
         .trans_queue_depth = configuration.transactionQueueDepth,
-        .on_color_trans_done = nullptr,
-        .user_ctx = nullptr,
+        .on_color_trans_done = lv_port_flush_ready_cb,
+        .user_ctx = lvglDisplayCtx,  // Pass display context for flush
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
         .dc_levels = {
@@ -110,8 +134,8 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
             .cs_active_high = 0,
             .reverse_color_bits = 0,
             .swap_color_bytes = 1,
-            .pclk_active_neg = 0,
-            .pclk_idle_low = 0
+            .pclk_active_neg = 1,  // Sample on falling edge
+            .pclk_idle_low = 0     // Clock idles high
         }
     };
 
@@ -163,31 +187,13 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     return true;
 }
 
-// LVGL command callback
-static void st7789_send_cmd_cb(lv_display_t*, const uint8_t* cmd, size_t, const uint8_t* param, size_t param_size) {
-    if (g_display_instance && g_display_instance->getIoHandle()) {
-        esp_lcd_panel_io_tx_param(g_display_instance->getIoHandle(), *cmd, param, param_size);
-    }
-}
-
-// LVGL color data callback
-static void st7789_send_color_cb(lv_display_t* disp, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
-    if (g_display_instance && g_display_instance->getIoHandle()) {
-        esp_lcd_panel_io_tx_color(g_display_instance->getIoHandle(), *cmd, param, param_size);
-        // Signal flush complete immediately after sending data
-        if (disp) {
-            lv_display_flush_ready(disp);
-        }
-    }
-}
-
 bool I8080St7789Display::startLvgl() {
     TT_LOG_I(TAG, "Starting LVGL for ST7789 display");
 
     // Initialize hardware first if not already done
     if (!ioHandle) {
         TT_LOG_I(TAG, "Hardware not initialized, calling initialize()");
-        if (!initialize(nullptr)) {
+        if (!initialize(lvglDisplay)) {
             TT_LOG_E(TAG, "Hardware initialization failed");
             return false;
         }
@@ -207,7 +213,7 @@ bool I8080St7789Display::startLvgl() {
 
     // Configure LVGL display
     lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
-    lv_display_set_buffers(lvglDisplay, buf1, nullptr, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(lvglDisplay, buf1, nullptr, sizeof(buf1), LV_DISPLAY_RENDER_MODE_FULL);
     
     // Rotation 0 works!
     lv_display_set_rotation(lvglDisplay, LV_DISPLAY_ROTATION_0);
