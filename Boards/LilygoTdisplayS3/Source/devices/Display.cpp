@@ -37,10 +37,6 @@ static void st7789_send_cmd_cb(lv_display_t*, const uint8_t* cmd, size_t, const 
 static void st7789_send_color_cb(lv_display_t* disp, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
     if (g_display_instance && g_display_instance->getIoHandle()) {
         esp_lcd_panel_io_tx_color(g_display_instance->getIoHandle(), *cmd, param, param_size);
-        // Signal flush complete immediately after sending data
-        if (disp) {
-            lv_display_flush_ready(disp);
-        }
     }
 }
 
