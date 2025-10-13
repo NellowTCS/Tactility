@@ -179,15 +179,28 @@ static void st7789_send_cmd_cb(lv_display_t*, const uint8_t* cmd, size_t, const 
     }
 }
 
-// LVGL color data callback - don't call flush_ready here, let the hardware callback do it
+// LVGL color data callback
 static void st7789_send_color_cb(lv_display_t* disp, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
     if (g_display_instance && g_display_instance->getIoHandle()) {
         esp_lcd_panel_io_tx_color(g_display_instance->getIoHandle(), *cmd, param, param_size);
+        // Call flush_ready immediately - the DMA will handle the actual transfer
+        if (disp) {
+            lv_display_flush_ready(disp);
+        }
     }
 }
 
 bool I8080St7789Display::startLvgl() {
     TT_LOG_I(TAG, "Starting LVGL for ST7789 display");
+
+    // Initialize hardware FIRST without display context
+    if (!ioHandle) {
+        TT_LOG_I(TAG, "Hardware not initialized, calling initialize()");
+        if (!initialize(nullptr)) {  // Pass nullptr for now
+            TT_LOG_E(TAG, "Hardware initialization failed");
+            return false;
+        }
+    }
 
     TT_LOG_I(TAG, "Creating LVGL ST7789 display");
 
@@ -199,15 +212,6 @@ bool I8080St7789Display::startLvgl() {
     if (!lvglDisplay) {
         TT_LOG_E(TAG, "Failed to create LVGL ST7789 display");
         return false;
-    }
-
-    // now initialize hardware with the display context
-    if (!ioHandle) {
-        TT_LOG_I(TAG, "Hardware not initialized, calling initialize()");
-        if (!initialize(lvglDisplay)) {  // Pass lvglDisplay here
-            TT_LOG_E(TAG, "Hardware initialization failed");
-            return false;
-        }
     }
 
     // Configure LVGL display
