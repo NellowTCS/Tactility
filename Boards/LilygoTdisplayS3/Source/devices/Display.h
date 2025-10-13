@@ -22,7 +22,7 @@ public:
         std::array<gpio_num_t, 8> dataPins;
         gpio_num_t resetPin;
         gpio_num_t backlightPin;
-        unsigned int pixelClockFrequency = 16 * 1000 * 1000;   // higher = better, but max 40MHz for ST7789
+        unsigned int pixelClockFrequency = 35 * 1000 * 1000;   // higher = better, but max 40MHz for ST7789
         size_t transactionQueueDepth = 20;
         size_t bufferSize = 170 * 320;                         // full frame buffer
 
