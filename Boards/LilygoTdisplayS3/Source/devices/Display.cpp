@@ -185,6 +185,10 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     gpio_config(&bk_gpio_cfg);
     gpio_set_level(configuration.backlightPin, 1);
 
+    uint16_t red = 0xF800;
+    TT_LOG_I(TAG, "Filling screen with red for test");
+    esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 170, 320, &red);
+
     draw_test_pattern(panelHandle, 170, 320);
     g_display_instance = this;
 
