@@ -22,7 +22,9 @@ typedef struct {
 
 static const lcd_init_cmd_t st7789_init_cmds[] = {
     {0x11, {0}, 0 | 0x80},
+    {0x36, {0x00}, 1},  
     {0x3A, {0X05}, 1},
+    {0x20, {0}, 0},  
     {0xB2, {0X0B, 0X0B, 0X00, 0X33, 0X33}, 5},
     {0xB7, {0X75}, 1},
     {0xBB, {0X28}, 1},
@@ -107,7 +109,7 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         .flags = {
             .cs_active_high = 0,
             .reverse_color_bits = 0,
-            .swap_color_bytes = 0,
+            .swap_color_bytes = 1,
             .pclk_active_neg = 0,
             .pclk_idle_low = 0
         }
@@ -210,10 +212,8 @@ bool I8080St7789Display::startLvgl() {
     // Rotation 0 works!
     lv_display_set_rotation(lvglDisplay, LV_DISPLAY_ROTATION_0);
     
-    // Remove gap - causing 35px offset
-    lv_st7789_set_gap(lvglDisplay, 0, 0);
+    lv_st7789_set_gap(lvglDisplay, 35, 0);
     
-    // Colors are inverted (green instead of blue) - try toggling invert
     lv_st7789_set_invert(lvglDisplay, false);
 
     TT_LOG_I(TAG, "LVGL ST7789 display created successfully");
