@@ -39,19 +39,10 @@ static const lcd_init_cmd_t st7789_init_cmds[] = {
     {0xE1, {0XF0, 0X08, 0X0C, 0X0B, 0X09, 0X24, 0X2B, 0X22, 0X43, 0X38, 0X15, 0X16, 0X2F, 0X37}, 14},
 };
 
-// DMA transfer complete callback
-static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx) {
-    lv_display_t* disp = (lv_display_t*)user_ctx;
-    if (disp) {
-        lv_display_flush_ready(disp);
-    }
-    return false;
-}
-
 bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     TT_LOG_I(TAG, "Initializing I8080 ST7789 Display...");
 
-    // Power on the display first!
+    // Power on the display first! (IDC this is duplicated)
     gpio_config_t pwr_gpio_cfg = {
         .pin_bit_mask = 1ULL << 15,  // PIN_POWER_ON
         .mode = GPIO_MODE_OUTPUT,
@@ -100,13 +91,13 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         return false;
     }
 
-    // Create panel IO with DMA callback
+    // Create panel IO
     esp_lcd_panel_io_i80_config_t io_cfg = {
         .cs_gpio_num = configuration.csPin,
         .pclk_hz = configuration.pixelClockFrequency,
         .trans_queue_depth = configuration.transactionQueueDepth,
-        .on_color_trans_done = notify_lvgl_flush_ready,  // DMA callback
-        .user_ctx = lvglDisplayCtx,  // Pass display context
+        .on_color_trans_done = nullptr,
+        .user_ctx = nullptr,
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
         .dc_levels = {
@@ -118,7 +109,7 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         .flags = {
             .cs_active_high = 0,
             .reverse_color_bits = 0,
-            .swap_color_bytes = 1,  // Keep this for RGB->BGR conversion
+            .swap_color_bytes = 1,
             .pclk_active_neg = 0,
             .pclk_idle_low = 0
         }
@@ -179,11 +170,14 @@ static void st7789_send_cmd_cb(lv_display_t*, const uint8_t* cmd, size_t, const 
     }
 }
 
-// LVGL color data callback - don't call flush_ready here, let DMA callback do it
+// LVGL color data callback
 static void st7789_send_color_cb(lv_display_t* disp, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
     if (g_display_instance && g_display_instance->getIoHandle()) {
         esp_lcd_panel_io_tx_color(g_display_instance->getIoHandle(), *cmd, param, param_size);
-        // DO NOT call lv_display_flush_ready() here - the DMA callback will do it
+        // Signal flush complete immediately after sending data
+        if (disp) {
+            lv_display_flush_ready(disp);
+        }
     }
 }
 
@@ -193,26 +187,23 @@ bool I8080St7789Display::startLvgl() {
     // Initialize hardware first if not already done
     if (!ioHandle) {
         TT_LOG_I(TAG, "Hardware not initialized, calling initialize()");
-        
-        // Create a temporary display to pass to initialize
-        lvglDisplay = lv_st7789_create(170, 320, LV_LCD_FLAG_NONE,
-            st7789_send_cmd_cb,
-            st7789_send_color_cb
-        );
-        
-        if (!lvglDisplay) {
-            TT_LOG_E(TAG, "Failed to create LVGL ST7789 display");
-            return false;
-        }
-        
-        // Now initialize hardware with the display handle for DMA callback
-        if (!initialize(lvglDisplay)) {
+        if (!initialize(nullptr)) {
             TT_LOG_E(TAG, "Hardware initialization failed");
             return false;
         }
     }
 
     TT_LOG_I(TAG, "Creating LVGL ST7789 display");
+
+    lvglDisplay = lv_st7789_create(170, 320, LV_LCD_FLAG_NONE,
+        st7789_send_cmd_cb,
+        st7789_send_color_cb
+    );
+
+    if (!lvglDisplay) {
+        TT_LOG_E(TAG, "Failed to create LVGL ST7789 display");
+        return false;
+    }
 
     // Configure LVGL display
     lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
@@ -223,7 +214,6 @@ bool I8080St7789Display::startLvgl() {
     
     lv_st7789_set_gap(lvglDisplay, 35, 0);
     
-    // Invert on
     lv_st7789_set_invert(lvglDisplay, true);
 
     TT_LOG_I(TAG, "LVGL ST7789 display created successfully");
