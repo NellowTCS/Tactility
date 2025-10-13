@@ -185,9 +185,22 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     gpio_config(&bk_gpio_cfg);
     gpio_set_level(configuration.backlightPin, 1);
 
-    uint16_t red = 0xF800;
     TT_LOG_I(TAG, "Filling screen with red for test");
-    esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 170, 320, &red);
+
+    size_t pixel_count = 170 * 320;
+    uint16_t* red_buffer = (uint16_t*)heap_caps_malloc(pixel_count * sizeof(uint16_t), MALLOC_CAP_DMA);
+    if (!red_buffer) {
+        TT_LOG_E(TAG, "Failed to allocate red buffer");
+        return false;
+    }
+
+    std::fill_n(red_buffer, pixel_count, 0xF800);  // Fill with red
+    esp_err_t err = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 170, 320, red_buffer);
+    if (err != ESP_OK) {
+        TT_LOG_E(TAG, "Draw red failed: %d", err);
+    }
+
+    heap_caps_free(red_buffer);
 
     draw_test_pattern(panelHandle, 170, 320);
     g_display_instance = this;
@@ -227,6 +240,8 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
             .direct_mode = false,
         }
     };
+
+    vTaskDelay(pdMS_TO_TICKS(2000));
 
     lvglDisplay = lvgl_port_add_disp(&lvgl_cfg);
     if (!lvglDisplay) {
