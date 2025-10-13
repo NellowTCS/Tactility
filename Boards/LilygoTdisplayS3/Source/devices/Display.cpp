@@ -206,12 +206,15 @@ bool I8080St7789Display::startLvgl() {
     // Configure LVGL display
     lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(lvglDisplay, buf1, nullptr, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
-
+    
+    // Rotation 0 works!
     lv_display_set_rotation(lvglDisplay, LV_DISPLAY_ROTATION_0);
     
-    // Set these AFTER rotation
-    lv_st7789_set_gap(lvglDisplay, 0, 35);
-    lv_st7789_set_invert(lvglDisplay, true);
+    // Remove gap - causing 35px offset
+    lv_st7789_set_gap(lvglDisplay, 0, 0);
+    
+    // Colors are inverted (green instead of blue) - try toggling invert
+    lv_st7789_set_invert(lvglDisplay, false);
 
     TT_LOG_I(TAG, "LVGL ST7789 display created successfully");
     return true;
