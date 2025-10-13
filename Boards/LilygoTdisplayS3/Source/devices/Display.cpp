@@ -100,13 +100,13 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         return false;
     }
 
-    // Create panel IO with proper callback
+    // Create panel IO - don't use callback, let LVGL handle it
     esp_lcd_panel_io_i80_config_t io_cfg = {
         .cs_gpio_num = configuration.csPin,
         .pclk_hz = configuration.pixelClockFrequency,
         .trans_queue_depth = configuration.transactionQueueDepth,
-        .on_color_trans_done = notify_lvgl_flush_ready,
-        .user_ctx = lvglDisplayCtx,    // Pass display context
+        .on_color_trans_done = nullptr,  // No callback - LVGL will handle flush
+        .user_ctx = nullptr,
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
         .dc_levels = {
@@ -181,13 +181,19 @@ static void st7789_send_cmd_cb(lv_display_t*, const uint8_t* cmd, size_t, const 
 
 // LVGL color data callback
 static void st7789_send_color_cb(lv_display_t* disp, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
-    if (g_display_instance && g_display_instance->getIoHandle()) {
-        esp_lcd_panel_io_tx_color(g_display_instance->getIoHandle(), *cmd, param, param_size);
-        // Call flush_ready immediately - the DMA will handle the actual transfer
-        if (disp) {
-            lv_display_flush_ready(disp);
-        }
+    if (!g_display_instance || !g_display_instance->getIoHandle()) {
+        return;
     }
+    
+    if (!disp) {
+        TT_LOG_E(TAG, "Display context is NULL in color callback!");
+        return;
+    }
+    
+    esp_lcd_panel_io_tx_color(g_display_instance->getIoHandle(), *cmd, param, param_size);
+    
+    // Call flush_ready immediately - the DMA will handle the actual transfer
+    lv_display_flush_ready(disp);
 }
 
 bool I8080St7789Display::startLvgl() {
