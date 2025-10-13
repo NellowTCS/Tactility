@@ -176,6 +176,17 @@ static void st7789_send_color_cb(lv_display_t*, const uint8_t* cmd, size_t, uint
 }
 
 bool I8080St7789Display::startLvgl() {
+    TT_LOG_I(TAG, "Starting LVGL for ST7789 display");
+
+    // Initialize hardware first if not already done
+    if (!ioHandle) {
+        TT_LOG_I(TAG, "Hardware not initialized, calling initialize()");
+        if (!initialize(nullptr)) {
+            TT_LOG_E(TAG, "Hardware initialization failed");
+            return false;
+        }
+    }
+
     TT_LOG_I(TAG, "Creating LVGL ST7789 display");
 
     lvglDisplay = lv_st7789_create(170, 320, LV_LCD_FLAG_NONE,
@@ -188,6 +199,7 @@ bool I8080St7789Display::startLvgl() {
         return false;
     }
 
+    // Configure LVGL display
     lv_st7789_set_gap(lvglDisplay, 0, 35);
     lv_st7789_set_invert(lvglDisplay, true);
     lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
