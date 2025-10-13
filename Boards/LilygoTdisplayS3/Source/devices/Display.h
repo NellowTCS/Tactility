@@ -23,7 +23,7 @@ public:
         gpio_num_t resetPin;
         gpio_num_t backlightPin;
         unsigned int pixelClockFrequency = 2 * 1000 * 1000;   // even lower?!?
-        size_t transactionQueueDepth = 10;
+        size_t transactionQueueDepth = 1;
         size_t bufferSize = 170 * 320;                         // full frame buffer
 
         Configuration(gpio_num_t cs, gpio_num_t dc, gpio_num_t wr, gpio_num_t rd,
