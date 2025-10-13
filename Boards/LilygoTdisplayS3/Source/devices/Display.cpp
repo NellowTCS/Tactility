@@ -59,10 +59,10 @@ static lcd_cmd_t lcd_st7789v[] = {
     {0xE1, {0XF0, 0X08, 0X0C, 0X0B, 0X09, 0X24, 0X2B, 0X22, 0X43, 0X38, 0X15, 0X16, 0X2F, 0X37}, 14},
 };
 
-bool I8080St7789Display::initialize() {
+bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     TT_LOG_I(TAG, "Initializing I8080 ST7789 Display...");
 
-    // Set RD pin high (disable read)
+    // Set RD pin high
     if (configuration.rdPin != GPIO_NUM_NC) {
         gpio_config_t rd_gpio_config = {
             .pin_bit_mask = (1ULL << static_cast<uint32_t>(configuration.rdPin)),
@@ -76,7 +76,7 @@ bool I8080St7789Display::initialize() {
     }
 
     // I80 bus
-    int max_bytes = static_cast<int>(configuration.bufferSize * sizeof(uint16_t));
+    size_t max_bytes = configuration.bufferSize * sizeof(uint16_t);
     esp_lcd_i80_bus_config_t bus_cfg = {
         configuration.dcPin,
         configuration.wrPin,
@@ -96,7 +96,7 @@ bool I8080St7789Display::initialize() {
     }
 
     // Panel IO
-    int queue_depth = static_cast<int>(configuration.transactionQueueDepth);
+    size_t queue_depth = configuration.transactionQueueDepth;
     esp_lcd_panel_io_i80_config_t io_cfg = {
         configuration.csPin,
         configuration.pixelClockFrequency,
@@ -106,6 +106,12 @@ bool I8080St7789Display::initialize() {
         {0, 0, 0, 1},
         {0, 0, 0, 0, 0}
     };
+    io_cfg.on_color_trans_done = [](esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*, void* user_ctx) {
+        auto disp = static_cast<lv_display_t*>(user_ctx);
+        if (disp) lv_display_flush_ready(disp);
+    };
+    io_cfg.user_ctx = lvglDisplayCtx;
+
     if (esp_lcd_new_panel_io_i80(i80BusHandle, &io_cfg, &ioHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to create panel IO");
         return false;
@@ -113,12 +119,10 @@ bool I8080St7789Display::initialize() {
 
     // Panel
     esp_lcd_panel_dev_config_t panel_cfg = {
-        configuration.resetPin,
-        ESP_LCD_COLOR_SPACE_RGB,
-        16,
-        ESP_LCD_ENDIAN_BIG,
-        {0, 0},
-        nullptr
+        .reset_gpio_num = configuration.resetPin,
+        .color_space = ESP_LCD_COLOR_SPACE_RGB,
+        .bits_per_pixel = 16,
+        .vendor_config = nullptr
     };
     if (esp_lcd_new_panel_st7789(ioHandle, &panel_cfg, &panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to create panel");
