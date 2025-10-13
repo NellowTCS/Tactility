@@ -40,7 +40,20 @@ static const lcd_init_cmd_t st7789_init_cmds[] = {
 bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     TT_LOG_I(TAG, "Initializing I8080 ST7789 Display...");
 
-    // Configure RD pin if present
+    // Power on the display first! (IDC this is duplicated)
+    gpio_config_t pwr_gpio_cfg = {
+        .pin_bit_mask = 1ULL << 15,  // PIN_POWER_ON
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&pwr_gpio_cfg);
+    gpio_set_level((gpio_num_t)15, 1);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    TT_LOG_I(TAG, "Display power enabled");
+
+    // Configure RD pin
     if (configuration.rdPin != GPIO_NUM_NC) {
         gpio_config_t rd_gpio_config = {
             .pin_bit_mask = (1ULL << static_cast<uint32_t>(configuration.rdPin)),
@@ -117,7 +130,7 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         gpio_config(&rst_gpio_cfg);
         
         gpio_set_level(configuration.resetPin, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(20));
         gpio_set_level(configuration.resetPin, 1);
         vTaskDelay(pdMS_TO_TICKS(120));
     }
@@ -175,12 +188,12 @@ bool I8080St7789Display::startLvgl() {
         return false;
     }
 
-    // Configure LVGL display
     lv_st7789_set_gap(lvglDisplay, 0, 35);
     lv_st7789_set_invert(lvglDisplay, true);
     lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(lvglDisplay, buf1, nullptr, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
-    lv_display_set_rotation(lvglDisplay, LV_DISPLAY_ROTATION_180);
+
+    lv_display_set_rotation(lvglDisplay, LV_DISPLAY_ROTATION_270);
 
     TT_LOG_I(TAG, "LVGL ST7789 display created successfully");
     return true;
@@ -193,13 +206,13 @@ lv_display_t* I8080St7789Display::getLvglDisplay() const {
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     auto display = std::make_shared<I8080St7789Display>(
         I8080St7789Display::Configuration(
-            GPIO_NUM_7,   // CS
-            GPIO_NUM_8,   // DC
-            GPIO_NUM_5,   // WR
-            GPIO_NUM_6,   // RD
+            GPIO_NUM_6,   // CS
+            GPIO_NUM_7,   // DC
+            GPIO_NUM_8,   // WR
+            GPIO_NUM_9,   // RD
             { GPIO_NUM_39, GPIO_NUM_40, GPIO_NUM_41, GPIO_NUM_42,
               GPIO_NUM_45, GPIO_NUM_46, GPIO_NUM_47, GPIO_NUM_48 }, // D0..D7
-            GPIO_NUM_9,   // RST
+            GPIO_NUM_5,   // RST
             GPIO_NUM_38   // BL
         )
     );
