@@ -13,11 +13,8 @@
 #include <cstring>
 
 constexpr auto TAG = "I8080St7789Display";
-
-// Forward pointer for flush callback
 static I8080St7789Display* g_display_instance = nullptr;
 
-// LVGL flush callback
 static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* color_p) {
     if (!g_display_instance || !g_display_instance->getPanelHandle()) {
         TT_LOG_E(TAG, "Flush: panelHandle is null");
@@ -37,30 +34,6 @@ static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* co
         lv_display_flush_ready(disp);
     }
 }
-
-// ST7789 init sequence
-typedef struct {
-    uint8_t addr;
-    uint8_t param[14];
-    uint8_t len;
-} lcd_cmd_t;
-
-static lcd_cmd_t lcd_st7789v[] = {
-    {0x11, {0}, 0 | 0x80},
-    {0x3A, {0X05}, 1},
-    {0xB2, {0X0B, 0X0B, 0X00, 0X33, 0X33}, 5},
-    {0xB7, {0X75}, 1},
-    {0xBB, {0X28}, 1},
-    {0xC0, {0X2C}, 1},
-    {0xC2, {0X01}, 1},
-    {0xC3, {0X1F}, 1},
-    {0xC6, {0X13}, 1},
-    {0xD0, {0XA7}, 1},
-    {0xD0, {0XA4, 0XA1}, 2},
-    {0xD6, {0XA1}, 1},
-    {0xE0, {0XF0, 0X05, 0X0A, 0X06, 0X06, 0X03, 0X2B, 0X32, 0X43, 0X36, 0X11, 0X10, 0X2B, 0X32}, 14},
-    {0xE1, {0XF0, 0X08, 0X0C, 0X0B, 0X09, 0X24, 0X2B, 0X22, 0X43, 0X38, 0X15, 0X16, 0X2F, 0X37}, 14},
-};
 
 static void draw_test_pattern(esp_lcd_panel_handle_t panel, int w, int h) {
     if (!panel) return;
@@ -93,6 +66,29 @@ static void draw_test_pattern(esp_lcd_panel_handle_t panel, int w, int h) {
 
     heap_caps_free(buf);
 }
+
+typedef struct {
+    uint8_t addr;
+    uint8_t param[14];
+    uint8_t len;
+} lcd_cmd_t;
+
+static lcd_cmd_t lcd_st7789v[] = {
+    {0x11, {0}, 0 | 0x80},
+    {0x3A, {0X05}, 1},
+    {0xB2, {0X0B, 0X0B, 0X00, 0X33, 0X33}, 5},
+    {0xB7, {0X75}, 1},
+    {0xBB, {0X28}, 1},
+    {0xC0, {0X2C}, 1},
+    {0xC2, {0X01}, 1},
+    {0xC3, {0X1F}, 1},
+    {0xC6, {0X13}, 1},
+    {0xD0, {0XA7}, 1},
+    {0xD0, {0XA4, 0XA1}, 2},
+    {0xD6, {0XA1}, 1},
+    {0xE0, {0XF0, 0X05, 0X0A, 0X06, 0X06, 0X03, 0X2B, 0X32, 0X43, 0X36, 0X11, 0X10, 0X2B, 0X32}, 14},
+    {0xE1, {0XF0, 0X08, 0X0C, 0X0B, 0X09, 0X24, 0X2B, 0X22, 0X43, 0X38, 0X15, 0X16, 0X2F, 0X37}, 14},
+};
 
 bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     TT_LOG_I(TAG, "Initializing I8080 ST7789 Display...");
@@ -189,15 +185,19 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     gpio_config(&bk_gpio_cfg);
     gpio_set_level(configuration.backlightPin, 1);
 
-    g_display_instance = this;
-
     draw_test_pattern(panelHandle, 170, 320);
+    g_display_instance = this;
 
     TT_LOG_I(TAG, "Display initialized successfully");
     return true;
 }
 
-bool I8080St7789Display::startLvgl() {
+   bool I8080St7789Display::startLvgl() {
+    if (!initialize(nullptr)) {
+        TT_LOG_E(TAG, "Display hardware init failed");
+        return false;
+    }
+
     lvgl_port_display_cfg_t lvgl_cfg = {
         .io_handle = ioHandle,
         .panel_handle = panelHandle,
@@ -227,11 +227,6 @@ bool I8080St7789Display::startLvgl() {
     lvglDisplay = lvgl_port_add_disp(&lvgl_cfg);
     if (!lvglDisplay) {
         TT_LOG_E(TAG, "Failed to register LVGL display");
-        return false;
-    }
-
-    if (!initialize(lvglDisplay)) {
-        TT_LOG_E(TAG, "Display hardware init failed");
         return false;
     }
 
