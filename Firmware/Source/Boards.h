@@ -9,6 +9,9 @@
 #if defined(CONFIG_TT_BOARD_LILYGO_TDECK)
 #include "LilygoTdeck.h"
 #define TT_BOARD_HARDWARE &lilygo_tdeck
+#elif defined(CONFIG_TT_BOARD_LILYGO_TDISPLAYS3)
+#include "LilygoTdisplayS3.h"
+#define TT_BOARD_HARDWARE &lilygo_tdisplays3
 #elif defined(CONFIG_TT_BOARD_CYD_2432S022C)
 #include "CYD2432S022C.h"
 #define TT_BOARD_HARDWARE &cyd_2432s022c_config

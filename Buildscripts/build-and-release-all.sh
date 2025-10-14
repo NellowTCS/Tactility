@@ -32,6 +32,9 @@ release elecrow-crowpanel-basic-35
 build elecrow-crowpanel-basic-50
 release elecrow-crowpanel-basic-50
 
+build lilygo-tdisplay-s3
+release lilygo-tdisplay-s3
+
 build lilygo-tdeck
 release lilygo-tdeck
 

@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+      - t-display-s3-notouch
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -152,6 +153,15 @@ jobs:
         uses: ./.github/actions/build-firmware
         with:
           board_id: lilygo-tdeck
+          arch: esp32s3
+  lilygo-tdisplay-s3:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Build"
+        uses: ./.github/actions/build-firmware
+        with:
+          board_id: lilygo-tdisplay-s3
           arch: esp32s3
   lilygo-tdongle-s3:
     runs-on: ubuntu-latest
