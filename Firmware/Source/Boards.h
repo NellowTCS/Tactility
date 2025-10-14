@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Tactility/hal/Configuration.h>
 
 #ifdef ESP_PLATFORM
@@ -59,6 +60,12 @@
 #elif defined(CONFIG_TT_BOARD_M5STACK_CORES3)
 #include "M5stackCoreS3.h"
 #define TT_BOARD_HARDWARE &m5stack_cores3
+#elif defined(CONFIG_TT_BOARD_M5STACK_STICKC_PLUS)
+#include "M5StackStickCPlus.h"
+#define TT_BOARD_HARDWARE &m5stack_stickc_plus
+#elif defined(CONFIG_TT_BOARD_M5STACK_STICKC_PLUS2)
+#include "M5StackStickCPlus2.h"
+#define TT_BOARD_HARDWARE &m5stack_stickc_plus2
 #elif defined(CONFIG_TT_BOARD_UNPHONE)
 #include "UnPhone.h"
 #define TT_BOARD_HARDWARE &unPhone
