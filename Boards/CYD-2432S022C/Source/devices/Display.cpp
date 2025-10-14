@@ -41,17 +41,6 @@ static const lcd_init_cmd_t st7789_init_cmds[] = {
     {0xE1, {0XF0, 0X08, 0X0C, 0X0B, 0X09, 0X24, 0X2B, 0X22, 0X43, 0X38, 0X15, 0X16, 0X2F, 0X37}, 14},
 };
 
-// Callback when color transfer is done
-static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, 
-                                    esp_lcd_panel_io_event_data_t *edata, 
-                                    void *user_ctx) {
-    lv_display_t *disp = (lv_display_t *)user_ctx;
-    if (disp) {
-        lv_display_flush_ready(disp);
-    }
-    return false;
-}
-
 bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
     TT_LOG_I(TAG, "Initializing I8080 ST7789 Display (CYD)...");
 
@@ -91,13 +80,13 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         return false;
     }
 
-    // Create panel IO with hardware callback
+    // Create panel IO, no callback, immediate flush in LVGL callback
     esp_lcd_panel_io_i80_config_t io_cfg = {
         .cs_gpio_num = configuration.csPin,
         .pclk_hz = configuration.pixelClockFrequency,
         .trans_queue_depth = configuration.transactionQueueDepth,
-        .on_color_trans_done = notify_lvgl_flush_ready,
-        .user_ctx = lvglDisplayCtx,
+        .on_color_trans_done = nullptr,  // No callback - LVGL will handle flush
+        .user_ctx = nullptr,
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
         .dc_levels = {
@@ -120,7 +109,7 @@ bool I8080St7789Display::initialize(lv_display_t* lvglDisplayCtx) {
         return false;
     }
 
-    // Hardware reset (CYD has no reset pin)
+    // Hardware reset (CYD has no reset pin, but check anyway)
     if (configuration.resetPin != GPIO_NUM_NC) {
         gpio_config_t rst_gpio_cfg = {
             .pin_bit_mask = 1ULL << static_cast<uint32_t>(configuration.resetPin),
@@ -174,18 +163,37 @@ static void st7789_send_cmd_cb(lv_display_t*, const uint8_t* cmd, size_t, const 
 
 // LVGL color data callback
 static void st7789_send_color_cb(lv_display_t* disp, const uint8_t* cmd, size_t, uint8_t* param, size_t param_size) {
-    if (g_display_instance && g_display_instance->getIoHandle()) {
-        esp_lcd_panel_io_tx_color(g_display_instance->getIoHandle(), *cmd, param, param_size);
-        vTaskDelay(1);  // The magic delay that fixed T-Display S3
+    if (!g_display_instance || !g_display_instance->getIoHandle()) {
+        return;
     }
+    
+    if (!disp) {
+        TT_LOG_E(TAG, "Display context is NULL in color callback!");
+        return;
+    }
+    
+    esp_lcd_panel_io_tx_color(g_display_instance->getIoHandle(), *cmd, param, param_size);
+
+    vTaskDelay(1);  // The magic delay that fixed everything :P
+
+    // Call flush_ready immediately - the DMA will handle the actual transfer
+    lv_display_flush_ready(disp);
 }
 
 bool I8080St7789Display::startLvgl() {
     TT_LOG_I(TAG, "Starting LVGL for ST7789 display (CYD)");
 
+    // Initialize hardware FIRST without display context
+    if (!ioHandle) {
+        TT_LOG_I(TAG, "Hardware not initialized, calling initialize()");
+        if (!initialize(nullptr)) {  // Pass nullptr - we don't use callback
+            TT_LOG_E(TAG, "Hardware initialization failed");
+            return false;
+        }
+    }
+
     TT_LOG_I(TAG, "Creating LVGL ST7789 display");
 
-    // Create LVGL display FIRST
     lvglDisplay = lv_st7789_create(240, 320, LV_LCD_FLAG_NONE,
         st7789_send_cmd_cb,
         st7789_send_color_cb
@@ -194,15 +202,6 @@ bool I8080St7789Display::startLvgl() {
     if (!lvglDisplay) {
         TT_LOG_E(TAG, "Failed to create LVGL ST7789 display");
         return false;
-    }
-
-    // Initialize hardware with display context
-    if (!ioHandle) {
-        TT_LOG_I(TAG, "Hardware not initialized, calling initialize()");
-        if (!initialize(lvglDisplay)) {
-            TT_LOG_E(TAG, "Hardware initialization failed");
-            return false;
-        }
     }
 
     // Configure LVGL display
@@ -230,12 +229,14 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         I8080St7789Display::Configuration(
             CYD_2432S022C_LCD_PIN_CS,  // CS
             CYD_2432S022C_LCD_PIN_DC,  // DC
-            CYD_2432S022C_LCD_PIN_WR,   // WR
-            CYD_2432S022C_LCD_PIN_RD,   // RD
-            { CYD_2432S022C_LCD_PIN_D0, CYD_2432S022C_LCD_PIN_D1, CYD_2432S022C_LCD_PIN_D2, CYD_2432S022C_LCD_PIN_D3,
-              CYD_2432S022C_LCD_PIN_D4, CYD_2432S022C_LCD_PIN_D5, CYD_2432S022C_LCD_PIN_D6, CYD_2432S022C_LCD_PIN_D7 }, // D8-D15
-            CYD_2432S022C_LCD_PIN_RST,  // RST (no reset pin on CYD)
-            CYD_2432S022C_LCD_PIN_BACKLIGHT    // BL (backlight)
+            CYD_2432S022C_LCD_PIN_WR,  // WR
+            CYD_2432S022C_LCD_PIN_RD,  // RD
+            { CYD_2432S022C_LCD_PIN_D0, CYD_2432S022C_LCD_PIN_D1, 
+              CYD_2432S022C_LCD_PIN_D2, CYD_2432S022C_LCD_PIN_D3,
+              CYD_2432S022C_LCD_PIN_D4, CYD_2432S022C_LCD_PIN_D5, 
+              CYD_2432S022C_LCD_PIN_D6, CYD_2432S022C_LCD_PIN_D7 }, // D0-D7
+            CYD_2432S022C_LCD_PIN_RST,  // RST
+            CYD_2432S022C_LCD_PIN_BACKLIGHT  // BL
         )
     );
 
