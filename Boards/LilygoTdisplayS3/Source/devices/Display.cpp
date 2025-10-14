@@ -191,7 +191,9 @@ static void st7789_send_color_cb(lv_display_t* disp, const uint8_t* cmd, size_t,
     }
     
     esp_lcd_panel_io_tx_color(g_display_instance->getIoHandle(), *cmd, param, param_size);
-    
+
+    vTaskDelay(1);  // Small delay to ensure command is processed fully
+
     // Call flush_ready immediately - the DMA will handle the actual transfer
     lv_display_flush_ready(disp);
 }
