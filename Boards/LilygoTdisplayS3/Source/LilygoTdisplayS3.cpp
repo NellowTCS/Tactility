@@ -1,6 +1,6 @@
 #include <Tactility/hal/Configuration.h>
 #include <Tactility/lvgl/LvglSync.h>
-
+#include <ButtonControl.h>
 #include "devices/Display.h"
 
 bool initBoot();
@@ -9,7 +9,8 @@ using namespace tt::hal;
 
 static std::vector<std::shared_ptr<Device>> createDevices() {
     return {
-        createDisplay()
+        createDisplay(),
+        ButtonControl::createTwoButtonControl(0, 14),
     };
 }
 
