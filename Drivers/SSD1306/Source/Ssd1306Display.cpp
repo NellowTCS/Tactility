@@ -39,7 +39,7 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
 
     const esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = configuration->resetPin,
-        .color_space = ESP_LCD_COLOR_SPACE_MONO,
+        .color_space = ESP_LCD_COLOR_SPACE_MONOCHROME,
         .bits_per_pixel = 1,
         .flags = {
             .reset_active_high = false
