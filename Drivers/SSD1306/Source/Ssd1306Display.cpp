@@ -158,7 +158,7 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
             .sw_rotate = false,
             .swap_bytes = false,
             .full_refresh = true,
-            .direct_mode = false
+            .direct_mode = true
         }
     };
 
