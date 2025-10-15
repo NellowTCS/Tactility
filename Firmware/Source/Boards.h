@@ -18,6 +18,9 @@
 #elif defined(CONFIG_TT_BOARD_LILYGO_TDONGLE_S3)
 #include "LilygoTdongleS3.h"
 #define TT_BOARD_HARDWARE &lilygo_tdongle_s3
+#elif defined(CONFIG_TT_BOARD_HELTEC_V3)
+#include "HeltecV3.h"
+#define TT_BOARD_HARDWARE &heltec_v3
 #elif defined(CONFIG_TT_BOARD_LILYGO_TLORA_PAGER)
 #include "LilygoTloraPager.h"
 #define TT_BOARD_HARDWARE &lilygo_tlora_pager

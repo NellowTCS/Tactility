@@ -145,6 +145,15 @@ jobs:
         with:
           board_id: elecrow-crowpanel-basic-50
           arch: esp32s3
+  heltec-wifi-lora-32-v3:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Build"
+        uses: ./.github/actions/build-firmware
+        with:
+          board_id: heltec-wifi-lora-32-v3
+          arch: esp32s3
   lilygo-tdeck:
     runs-on: ubuntu-latest
     steps:
