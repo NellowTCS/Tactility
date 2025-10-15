@@ -11,7 +11,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         HELTEC_LCD_HORIZONTAL_RESOLUTION,
         HELTEC_LCD_VERTICAL_RESOLUTION,
         nullptr, // no touch
-        false, // don't invert
+        false // don't invert
     );
 
     auto display = std::make_shared<Ssd1306Display>(std::move(configuration));
