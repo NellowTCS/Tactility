@@ -93,7 +93,7 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         },
         .color_format = LV_COLOR_FORMAT_I1,
         .flags = {
-            .buff_dma = true,
+            .buff_dma = false,        // Must be false for monochrome (I1). DMA only allowed with RGB565.
             .buff_spiram = false,
             .sw_rotate = false,
             .swap_bytes = false,
