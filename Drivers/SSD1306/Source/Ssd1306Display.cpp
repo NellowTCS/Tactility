@@ -105,6 +105,17 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
     }
     TT_LOG_I(TAG, "Display turned on successfully");
 
+    // === DEBUG STEP 2: Test I2C communication ===
+    TT_LOG_I(TAG, "=== POST-INIT DEBUG (STEP 2) ===");
+    TT_LOG_I(TAG, "Panel handle: %p", panelHandle);
+    TT_LOG_I(TAG, "IO handle: %p", ioHandle);
+
+    // Try to manually write test data to see if I2C is alive
+    uint8_t test_data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    esp_err_t test_ret = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 8, 1, test_data);
+    TT_LOG_I(TAG, "Test draw_bitmap result: 0x%X (%s)", test_ret, esp_err_to_name(test_ret));
+    TT_LOG_I(TAG, "=== END DEBUG ===");
+
     return true;
 }
 
@@ -140,4 +151,43 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
             .direct_mode = false
         }
     };
+}
+
+bool Ssd1306Display::startLvgl() {
+    TT_LOG_I(TAG, "Starting LVGL for SSD1306 display");
+
+    // === DEBUG STEP 1: Check LVGL display pointer ===
+    TT_LOG_I(TAG, "=== PRE-LVGL DEBUG (STEP 1) ===");
+    TT_LOG_I(TAG, "LVGL display pointer (before register): %p", lvglDisplay);
+    
+    if (lvglDisplay) {
+        TT_LOG_I(TAG, "LVGL display resolution: %ux%u", 
+            lv_display_get_horizontal_resolution(lvglDisplay), 
+            lv_display_get_vertical_resolution(lvglDisplay));
+    } else {
+        TT_LOG_W(TAG, "WARNING: LVGL display is NULL before registration!");
+    }
+    TT_LOG_I(TAG, "=== END DEBUG ===");
+
+    return true;
+}
+
+lv_display_t* Ssd1306Display::getLvglDisplay() const {
+    return lvglDisplay;
+}
+
+std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
+    auto display = std::make_shared<Ssd1306Display>(
+        std::make_unique<Ssd1306Display::Configuration>(
+            HELTEC_LCD_I2C_PORT,
+            HELTEC_LCD_I2C_ADDRESS,
+            HELTEC_LCD_PIN_RST,
+            HELTEC_LCD_HORIZONTAL_RESOLUTION,
+            HELTEC_LCD_VERTICAL_RESOLUTION,
+            nullptr, // no touch
+            false    // don't invert
+        )
+    );
+
+    return display;
 }
