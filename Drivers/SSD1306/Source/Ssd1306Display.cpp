@@ -105,28 +105,38 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
     }
     TT_LOG_I(TAG, "Display turned on successfully");
 
-    // === DEBUG STEP 2: Test I2C communication ===
-    TT_LOG_I(TAG, "=== POST-INIT DEBUG (STEP 2) ===");
-    TT_LOG_I(TAG, "Panel handle: %p", panelHandle);
-    TT_LOG_I(TAG, "IO handle: %p", ioHandle);
-
-    // Try to manually write test data to see if I2C is alive
+    // ========== Step 2: Test I2C ==========
+    TT_LOG_I(TAG, "=== Step 2: Testing I2C data flow ===");
+    
+    // Try to write test pattern - all pixels on
     uint8_t test_data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    TT_LOG_I(TAG, "Attempting to draw test bitmap (should turn pixels on)...");
     esp_err_t test_ret = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 8, 1, test_data);
-    TT_LOG_I(TAG, "Test draw_bitmap result: 0x%X (%s)", test_ret, esp_err_to_name(test_ret));
-    TT_LOG_I(TAG, "=== END DEBUG ===");
+    
+    if (test_ret != ESP_OK) {
+        TT_LOG_E(TAG, "Test draw_bitmap failed. Error code: 0x%X (%s)", test_ret, esp_err_to_name(test_ret));
+        TT_LOG_W(TAG, "This means I2C communication might not be working!");
+    } else {
+        TT_LOG_I(TAG, "Test draw_bitmap succeeded! I2C communication appears to be working.");
+        TT_LOG_I(TAG, "If I see pixels on the display now, rendering is the issue.");
+        TT_LOG_I(TAG, "If I see nothing, the issue is with LVGL rendering pipeline.");
+    }
 
     return true;
 }
 
 lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) {
-    TT_LOG_I(TAG, "Creating LVGL port display config");
-    TT_LOG_I(TAG, "  Buffer size: %u pixels", configuration->bufferSize);
+    TT_LOG_I(TAG, "=== Step 1: Creating LVGL port display config ===");
+    TT_LOG_I(TAG, "  Buffer size: %u pixels (%u bytes at 1-bit)", 
+        configuration->bufferSize,
+        configuration->bufferSize / 8);
     TT_LOG_I(TAG, "  Resolution: %ux%u", configuration->horizontalResolution, configuration->verticalResolution);
     TT_LOG_I(TAG, "  Monochrome: true");
     TT_LOG_I(TAG, "  Color format: LV_COLOR_FORMAT_I1");
+    TT_LOG_I(TAG, "  IO Handle: %p", ioHandle);
+    TT_LOG_I(TAG, "  Panel Handle: %p", panelHandle);
 
-    return lvgl_port_display_cfg_t {
+    lvgl_port_display_cfg_t config = {
         .io_handle = ioHandle,
         .panel_handle = panelHandle,
         .control_handle = nullptr,
@@ -151,43 +161,9 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
             .direct_mode = false
         }
     };
-}
 
-bool Ssd1306Display::startLvgl() {
-    TT_LOG_I(TAG, "Starting LVGL for SSD1306 display");
-
-    // === DEBUG STEP 1: Check LVGL display pointer ===
-    TT_LOG_I(TAG, "=== PRE-LVGL DEBUG (STEP 1) ===");
-    TT_LOG_I(TAG, "LVGL display pointer (before register): %p", lvglDisplay);
+    TT_LOG_I(TAG, "LVGL config created. This will be passed to lvgl_port_add_disp()");
+    TT_LOG_I(TAG, "If LVGL display doesn't show up, check if lvgl_port_add_disp() succeeds");
     
-    if (lvglDisplay) {
-        TT_LOG_I(TAG, "LVGL display resolution: %ux%u", 
-            lv_display_get_horizontal_resolution(lvglDisplay), 
-            lv_display_get_vertical_resolution(lvglDisplay));
-    } else {
-        TT_LOG_W(TAG, "WARNING: LVGL display is NULL before registration!");
-    }
-    TT_LOG_I(TAG, "=== END DEBUG ===");
-
-    return true;
-}
-
-lv_display_t* Ssd1306Display::getLvglDisplay() const {
-    return lvglDisplay;
-}
-
-std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
-    auto display = std::make_shared<Ssd1306Display>(
-        std::make_unique<Ssd1306Display::Configuration>(
-            HELTEC_LCD_I2C_PORT,
-            HELTEC_LCD_I2C_ADDRESS,
-            HELTEC_LCD_PIN_RST,
-            HELTEC_LCD_HORIZONTAL_RESOLUTION,
-            HELTEC_LCD_VERTICAL_RESOLUTION,
-            nullptr, // no touch
-            false    // don't invert
-        )
-    );
-
-    return display;
+    return config;
 }

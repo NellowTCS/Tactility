@@ -1,13 +1,13 @@
 #include "Display.h"
 
-#include <Xpt2046SoftSpi.h>
+#include <Xpt2046Touch.h>
 #include <St7789Display.h>
 #include <PwmBacklight.h>
 #include <Tactility/hal/touch/TouchDevice.h>
 
 // Create the XPT2046 touch device using software SPI pins shared with the display
 static std::shared_ptr<tt::hal::touch::TouchDevice> createTouch() {
-    auto config = std::make_unique<Xpt2046SoftSpi::Configuration>(
+    auto config = std::make_unique<Xpt2046::Configuration>(
         CYD_TOUCH_MOSI_PIN,
         CYD_TOUCH_MISO_PIN,
         CYD_TOUCH_SCK_PIN,
@@ -19,7 +19,7 @@ static std::shared_ptr<tt::hal::touch::TouchDevice> createTouch() {
         false  // invert_y
     );
 
-    return std::make_shared<Xpt2046SoftSpi>(std::move(config));
+    return std::make_shared<Xpt2046>(std::move(config));
 }
 
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
