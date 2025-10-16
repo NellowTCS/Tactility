@@ -9,18 +9,6 @@
 
 constexpr auto TAG = "SSD1306";
 
-static uint8_t lvgl_disp_buffer[configuration->bufferSize / 8];
-static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* color_p) {
-    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)lv_display_get_user_data(disp);
-
-    // Call the esp_lcd function to draw the bitmap.
-    esp_lcd_panel_draw_bitmap(panel_handle, area->x1, area->y1, area->x2 + 1, area->y2 + 1, color_p);
-
-    // This is required to let LVGL know the flush is complete.
-    lv_display_flush_ready(disp);
-}
-
-
 bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
     TT_LOG_I(TAG, "Creating I2C IO handle");
     TT_LOG_I(TAG, "  I2C Port: %d", configuration->port);
@@ -117,10 +105,8 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
     }
     TT_LOG_I(TAG, "Display turned on successfully");
 
-    // ========== Step 2: Test I2C ==========
-    TT_LOG_I(TAG, "=== Step 2: Testing I2C data flow ===");
-    
-    // Try to write test pattern - all pixels on
+    // Test I2C communication
+    TT_LOG_I(TAG, "=== Testing I2C data flow ===");
     uint8_t test_data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     TT_LOG_I(TAG, "Attempting to draw test bitmap (should turn pixels on)...");
     esp_err_t test_ret = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 8, 1, test_data);
@@ -138,22 +124,22 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
 }
 
 lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) {
-    TT_LOG_I(TAG, "=== Step 1: Creating LVGL port display config ===");
+    TT_LOG_I(TAG, "=== Creating LVGL port display config ===");
     TT_LOG_I(TAG, "  Buffer size: %u pixels (%u bytes at 1-bit)", 
         configuration->bufferSize,
         configuration->bufferSize / 8);
     TT_LOG_I(TAG, "  Resolution: %ux%u", configuration->horizontalResolution, configuration->verticalResolution);
-    TT_LOG_I(TAG, "  Monochrome: true");
-    TT_LOG_I(TAG, "  Color format: LV_COLOR_FORMAT_I1");
+    TT_LOG_I(TAG, "  Monochrome: true, Color format: I1");
     TT_LOG_I(TAG, "  IO Handle: %p", ioHandle);
     TT_LOG_I(TAG, "  Panel Handle: %p", panelHandle);
 
+    // esp_lcd framework handles flushing via esp_lcd_panel_draw_bitmap()
+    // LVGL will call lvgl_port_add_disp() which registers the panel with the display
     lvgl_port_display_cfg_t config = {
         .io_handle = ioHandle,
         .panel_handle = panelHandle,
         .control_handle = nullptr,
         .buffer_size = configuration->bufferSize,
-        .buffer = lvgl_disp_buffer,
         .double_buffer = false,
         .trans_size = 0,
         .hres = configuration->horizontalResolution,
@@ -171,18 +157,11 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
             .sw_rotate = false,
             .swap_bytes = false,
             .full_refresh = true,
-            .direct_mode = true
+            .direct_mode = false  // Let esp_lcd handle the drawing
         }
     };
 
-    // Set the flush callback
-    config.flush_callback = lvgl_flush_cb;
-    
-    // Pass the panel handle as user data to retrieve it in the flush callback
-    config.user_data = panelHandle;
-
-    TT_LOG_I(TAG, "LVGL config created. This will be passed to lvgl_port_add_disp()");
-    TT_LOG_I(TAG, "If LVGL display doesn't show up, check if lvgl_port_add_disp() succeeds");
+    TT_LOG_I(TAG, "LVGL config created. Will be passed to lvgl_port_add_disp()");
     
     return config;
 }
