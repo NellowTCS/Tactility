@@ -119,7 +119,7 @@ lvgl_port_display_cfg_t St7789Display::getLvglPortDisplayConfig(esp_lcd_panel_io
             .mirror_x = configuration->mirrorX,
             .mirror_y = configuration->mirrorY,
         },
-        .color_format = configuration->rgbElementOrder,
+        .color_format = LV_COLOR_FORMAT_RGB565,
         .flags = {
             .buff_dma = true,
             .buff_spiram = false,

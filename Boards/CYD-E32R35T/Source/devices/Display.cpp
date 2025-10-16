@@ -41,5 +41,5 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
 
     // Backlight control via PWM driver
     configuration->backlightDutyFunction = driver::pwmbacklight::setBacklightDuty;
-    return std::make_shared<St7789Display>(std::move(configuration));
+    return std::make_shared<St7796Display>(std::move(configuration));
 }
