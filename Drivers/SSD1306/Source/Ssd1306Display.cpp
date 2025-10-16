@@ -68,7 +68,9 @@ static esp_err_t ssd1306_i2c_write(i2c_port_t port, uint8_t addr, uint8_t contro
 
 bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
     TT_LOG_I(TAG, "Creating IO handle (manual I2C mode)");
-    outHandle = (esp_lcd_panel_io_handle_t)0x1;
+    // Create a valid dummy handle - use a static non-zero address
+    static uint32_t dummy_io_handle = 0xDEADBEEF;
+    outHandle = (esp_lcd_panel_io_handle_t)&dummy_io_handle;
     return true;
 }
 
