@@ -29,6 +29,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         GPIO_NUM_45,
         GPIO_NUM_NC,
         GPIO_NUM_NC,
+        GPIO_NUM_38,  // TE pin for synchronization
         320,
         480,
         touch,

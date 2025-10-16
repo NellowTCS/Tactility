@@ -108,14 +108,14 @@ jobs:
         with:
           board_id: cyd-jc8048w550c
           arch: esp32s3
-  cyd-jc8048w535c:
+  cyd-jc3248w535c:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: "Build"
         uses: ./.github/actions/build-firmware
         with:
-          board_id: cyd-jc8048w535c
+          board_id: cyd-jc3248w535c
           arch: esp32s3
   cyd-4848s040c:
     runs-on: ubuntu-latest

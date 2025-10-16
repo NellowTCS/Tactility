@@ -4,6 +4,7 @@
 
 #include <esp_lcd_axs15231b.h>
 #include <esp_lcd_panel_commands.h>
+#include <driver/gpio.h>
 
 constexpr const char* TAG = "AXS15231B";
 
@@ -43,6 +44,26 @@ static const axs15231b_lcd_init_cmd_t lcd_init_cmds[] = {
     {0x11, (uint8_t []){0x00}, 0, 120},
     {0x2C, (uint8_t []){0x00, 0x00, 0x00, 0x00}, 4, 0},
 };
+
+// Static storage for TE pin to be used in callback
+static gpio_num_t g_te_pin = GPIO_NUM_NC;
+
+// TE event callback for LVGL
+static void display_event_handler(lv_event_t *e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    
+    if (code == LV_EVENT_FLUSH_START && g_te_pin != GPIO_NUM_NC) {
+        // Poll for TE signal before LVGL flushes
+        uint32_t start_time = esp_log_timestamp();
+        while (gpio_get_level(g_te_pin) == 0) {
+            if (esp_log_timestamp() - start_time > TE_WAIT_TIMEOUT_MS) {
+                TT_LOG_W(TAG, "TE signal timeout");
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+    }
+}
 
 bool Axs15231bDisplay::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
     const esp_lcd_panel_io_spi_config_t panel_io_config = {
@@ -156,4 +177,27 @@ lvgl_port_display_cfg_t Axs15231bDisplay::getLvglPortDisplayConfig(esp_lcd_panel
             .direct_mode = false
         }
     };
+}
+
+void Axs15231bDisplay::registerTeSyncCallback(lv_display_t* display) {
+    if (configuration->tePin == GPIO_NUM_NC) {
+        TT_LOG_I(TAG, "TE pin not configured, skipping TE sync");
+        return;
+    }
+
+    // Configure TE pin as input
+    gpio_config_t io_conf = {};
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pin_bit_mask = (1ULL << configuration->tePin);
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+    gpio_config(&io_conf);
+
+    // Store TE pin globally for callback
+    g_te_pin = configuration->tePin;
+
+    // Register LVGL event callback
+    lv_display_add_event_cb(display, display_event_handler, LV_EVENT_FLUSH_START, nullptr);
+    TT_LOG_I(TAG, "TE sync enabled on pin %d", configuration->tePin);
 }

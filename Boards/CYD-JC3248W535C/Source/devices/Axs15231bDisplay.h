@@ -24,6 +24,7 @@ public:
             gpio_num_t csPin,
             gpio_num_t dcPin,
             gpio_num_t resetPin,
+            gpio_num_t tePin,
             unsigned int horizontalResolution,
             unsigned int verticalResolution,
             std::shared_ptr<tt::hal::touch::TouchDevice> touch,
@@ -37,6 +38,7 @@ public:
             csPin(csPin),
             dcPin(dcPin),
             resetPin(resetPin),
+            tePin(tePin),
             horizontalResolution(horizontalResolution),
             verticalResolution(verticalResolution),
             swapXY(swapXY),
@@ -56,6 +58,7 @@ public:
         gpio_num_t csPin;
         gpio_num_t dcPin;
         gpio_num_t resetPin;
+        gpio_num_t tePin;  // Tear Effect signal pin
         unsigned int pixelClockFrequency = 40'000'000; // Hertz
         size_t transactionQueueDepth = 10;
         unsigned int horizontalResolution;
@@ -73,12 +76,17 @@ public:
 private:
 
     std::unique_ptr<Configuration> configuration;
+    static constexpr int TE_WAIT_TIMEOUT_MS = 50;
 
     bool createIoHandle(esp_lcd_panel_io_handle_t& outHandle) override;
 
     bool createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t& panelHandle) override;
 
     lvgl_port_display_cfg_t getLvglPortDisplayConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) override;
+
+    void registerTeSyncCallback(lv_display_t* display);
+
+    void waitForTeSignal();
 
 public:
 
