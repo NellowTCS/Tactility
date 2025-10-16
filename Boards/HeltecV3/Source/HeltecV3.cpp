@@ -12,6 +12,19 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+static void enableOledPower() {
+    gpio_config_t io_conf;
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = (1ULL << HELTEC_LCD_PIN_POWER);
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    gpio_config(&io_conf);
+    gpio_set_level(HELTEC_LCD_PIN_POWER, 1); // Set HIGH to enable power
+    vTaskDelay(pdMS_TO_TICKS(100)); // Add a small delay for power to stabilize
+    ESP_LOGI("OLED_POWER", "OLED Vext power enabled on GPIO %d", HELTEC_LCD_PIN_POWER);
+}
+
 static void i2c_scan(i2c_port_t port) {
     ESP_LOGI("I2C_SCAN", "Scanning I2C port %d for devices...", port);
     bool found_any = false;
@@ -35,8 +48,10 @@ static void i2c_scan(i2c_port_t port) {
 }
 
 static bool initBoot() {
-    // Ensure the OLED module gets a proper reset pulse on boot.
-    // Some Heltec variants require toggling the reset line to wake the display.
+    // Enable power to the OLED before doing anything else
+    enableOledPower();
+
+    // Handle the OLED reset sequence
     if (HELTEC_LCD_PIN_RST != GPIO_NUM_NC) {
         gpio_set_direction(HELTEC_LCD_PIN_RST, GPIO_MODE_OUTPUT);
         gpio_set_level(HELTEC_LCD_PIN_RST, 0);
@@ -45,10 +60,7 @@ static bool initBoot() {
         vTaskDelay(pdMS_TO_TICKS(50)); // let it finish booting
     }
 
-    // Run a quick I2C scan on the configured I2C port.
-    // This helps quickly surface wiring/address issues for the OLED/touch devices.
-    // Note: if the I2C driver hasn't been initialized yet by the HAL, this will
-    // return no devices — that's okay. The log will indicate the result.
+    // Run the I2C scan to see if we can find the display
     i2c_scan(HELTEC_LCD_I2C_PORT);
 
     return true;
