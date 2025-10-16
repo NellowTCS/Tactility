@@ -13,8 +13,8 @@ static std::shared_ptr<tt::hal::touch::TouchDevice> createTouch() {
         (uint16_t)CYD_DISPLAY_HORIZONTAL_RESOLUTION,         // x max
         (uint16_t)CYD_DISPLAY_VERTICAL_RESOLUTION,           // y max
         false,                                               // swapXy
-        false,                                               // mirrorX
-        false                                                // mirrorY
+        true,                                               // mirrorX
+        true                                                // mirrorY
     );
 
     return std::make_shared<Xpt2046Touch>(std::move(config));
