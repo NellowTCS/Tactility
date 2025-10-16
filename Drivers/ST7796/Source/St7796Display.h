@@ -41,8 +41,9 @@ public:
             gapX(gapX),
             gapY(gapY),
             bufferSize(bufferSize),
-            rgbElementOrder(rgbElementOrder),
-            touch(std::move(touch)) {
+            touch(std::move(touch)),
+            rgbElementOrder(rgbElementOrder)
+        {
             if (this->bufferSize == 0) {
                 this->bufferSize = horizontalResolution * verticalResolution / 10;
             }
