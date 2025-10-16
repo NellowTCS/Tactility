@@ -84,6 +84,9 @@
 #elif defined(CONFIG_TT_BOARD_CYD_JC2432W328C)
 #include "JC2432W328C.h"
 #define TT_BOARD_HARDWARE &cyd_jc2432w328c_config
+#elif defined(CONFIG_TT_BOARD_CYD_JC3248W535C)
+#include "JC3248W535C.h"
+#define TT_BOARD_HARDWARE &cyd_jc3248w535c_config
 #elif defined(CONFIG_TT_BOARD_CYD_8048S043C)
 #include "CYD8048S043C.h"
 #define TT_BOARD_HARDWARE &cyd_8048s043c_config
