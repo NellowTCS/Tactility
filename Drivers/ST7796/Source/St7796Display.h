@@ -27,7 +27,8 @@ public:
             bool invertColor = false,
             unsigned int gapX = 0,
             unsigned int gapY = 0,
-            uint32_t bufferSize = 0 // Size in pixel count. 0 means default, which is 1/10 of the screen size
+            uint32_t bufferSize = 0, // Size in pixel count. 0 means default, which is 1/10 of the screen size
+            lcd_rgb_element_order_t rgbElementOrder = LCD_RGB_ELEMENT_ORDER_RGB
         ) : spiHostDevice(spiHostDevice),
             csPin(csPin),
             dcPin(dcPin),
@@ -40,6 +41,7 @@ public:
             gapX(gapX),
             gapY(gapY),
             bufferSize(bufferSize),
+            rgbElementOrder(rgbElementOrder),
             touch(std::move(touch)) {
             if (this->bufferSize == 0) {
                 this->bufferSize = horizontalResolution * verticalResolution / 10;
