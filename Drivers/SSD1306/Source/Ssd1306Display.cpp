@@ -6,6 +6,7 @@
 #include <esp_lcd_panel_dev.h>
 #include <esp_lcd_panel_ssd1306.h>
 #include <esp_lvgl_port.h>
+#include <esp_lcd_panel_ops.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -155,10 +156,20 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
             vTaskDelay(pdMS_TO_TICKS(120));
         }
 
-        // store detected offset in configuration and tell base class about it so driver uses it
+        // store detected offset in configuration
         configuration->columnOffset = chosen;
-        setDriverColumnOffset(chosen);
-        TT_LOG_I(TAG, "Selected column offset: %d", chosen);
+
+        // Apply the offset using esp_lcd_panel_set_gap so the panel driver will add it automatically
+        esp_err_t gap_ret = esp_lcd_panel_set_gap(panelHandle, configuration->columnOffset, 0);
+        if (gap_ret == ESP_OK) {
+            TT_LOG_I(TAG, "Set panel gap (column offset) to %d via esp_lcd_panel_set_gap()", configuration->columnOffset);
+        } else {
+            TT_LOG_W(TAG, "esp_lcd_panel_set_gap() failed: 0x%X (%s). Continuing with stored columnOffset for higher layers.", gap_ret, esp_err_to_name(gap_ret));
+            // If set_gap fails, higher layers can still apply columnOffset if needed.
+            setDriverColumnOffset(configuration->columnOffset);
+        }
+
+        TT_LOG_I(TAG, "Selected column offset: %d", configuration->columnOffset);
 
         heap_caps_free(full);
     }
