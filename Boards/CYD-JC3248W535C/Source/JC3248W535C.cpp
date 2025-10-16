@@ -25,8 +25,6 @@ static bool initBoot() {
 const Configuration cyd_jc3248w535c_config = {
     .initBoot = initBoot,
     .createDevices = createDevices,
-    .sdcard = createSdCard(),
-    .power = nullptr,
     .i2c = {
         //Touch
         i2c::Configuration {
