@@ -39,6 +39,9 @@
 #elif defined(CONFIG_TT_BOARD_CYD_E32R35T)
 #include "E32R35T.h"
 #define TT_BOARD_HARDWARE &cyd_e32r35t_config
+#elif defined(CONFIG_TT_BOARD_CYD_E32R40T)
+#include "E32R40T.h"
+#define TT_BOARD_HARDWARE &cyd_e32r40t_config
 #elif defined(CONFIG_TT_BOARD_CYD_2432S032C)
 #include "CYD2432S032C.h"
 #define TT_BOARD_HARDWARE &cyd_2432S032c_config

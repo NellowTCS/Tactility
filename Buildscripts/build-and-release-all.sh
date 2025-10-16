@@ -73,6 +73,9 @@ release cyd-e32r32p
 build cyd-e32r35t
 release cyd-e32r35t
 
+build cyd-e32r40t
+release cyd-e32r40t
+
 build cyd-jc2432w328c
 release cyd-jc2432w328c
 
