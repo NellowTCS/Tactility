@@ -142,21 +142,8 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
     };
 }
 
-// Override the LVGL port display registration to use our custom flush
-bool Ssd1306Display::startLvgl() {
-    TT_LOG_I(TAG, "Starting LVGL with custom SSD1306 driver");
-
-    if (!EspLcdDisplay::startLvgl()) {
-        TT_LOG_E(TAG, "Failed to start LVGL display");
-        return false;
-    }
-
-    // Store reference for flush callback
-    g_ssd1306_instance = this;
-
-    TT_LOG_I(TAG, "LVGL SSD1306 display started successfully");
-    return true;
-}
+// Static instance for callback initialized
+Ssd1306Display* Ssd1306Display::g_ssd1306_instance = nullptr;
 
 // Static instance for callback
 Ssd1306Display* Ssd1306Display::g_ssd1306_instance = nullptr;
@@ -201,9 +188,4 @@ void Ssd1306Display::lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, ui
     }
 
     lv_display_flush_ready(disp);
-}
-
-lv_display_t* Ssd1306Display::getLvglDisplay() const {
-    // This is handled by the base class EspLcdDisplay
-    return nullptr;  // Will be set by base class
 }
