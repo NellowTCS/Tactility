@@ -5,7 +5,7 @@
 #include "driver/spi_common.h"
 
 // Display
-#define HELTEC_LCD_I2C_ADDRESS 0x3c
+#define HELTEC_LCD_I2C_ADDRESS 0x3C
 #define HELTEC_LCD_I2C_SPEED 400000
 #define HELTEC_LCD_I2C_PORT I2C_NUM_0
 #define HELTEC_LCD_PIN_SDA GPIO_NUM_17

@@ -6,7 +6,7 @@
 using tt::hal::sdcard::SpiSdCardDevice;
 
 std::shared_ptr<SdCardDevice> createSdCard() {
-    auto* configuration = std::make_unique<SpiSdCardDevice::Config>(
+    auto configuration = std::make_unique<SpiSdCardDevice::Config>(
         GPIO_NUM_10,
         GPIO_NUM_NC,
         GPIO_NUM_NC,

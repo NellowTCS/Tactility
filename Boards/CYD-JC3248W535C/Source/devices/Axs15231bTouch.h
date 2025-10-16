@@ -60,7 +60,7 @@ private:
 
 public:
 
-    explicit Axs15231b(std::unique_ptr<Configuration> inConfiguration) : configuration(std::move(inConfiguration)) {
+    explicit Axs15231bTouch(std::unique_ptr<Configuration> inConfiguration) : configuration(std::move(inConfiguration)) {
         assert(configuration != nullptr);
     }
 

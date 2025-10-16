@@ -47,6 +47,7 @@ static const axs15231b_lcd_init_cmd_t lcd_init_cmds[] = {
 
 // Static storage for TE pin to be used in callback
 static gpio_num_t g_te_pin = GPIO_NUM_NC;
+static constexpr int TE_WAIT_TIMEOUT_MS = 50;
 
 // TE event callback for LVGL
 static void display_event_handler(lv_event_t *e) {
