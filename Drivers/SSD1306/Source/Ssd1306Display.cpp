@@ -4,6 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <driver/i2c.h>
+#include <cstring>
 
 constexpr auto TAG = "SSD1306";
 
@@ -40,6 +41,11 @@ constexpr auto TAG = "SSD1306";
 static esp_err_t ssd1306_i2c_write(i2c_port_t port, uint8_t addr, uint8_t control_byte, 
                                    const uint8_t *data, size_t len) {
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    if (cmd == nullptr) {
+        TT_LOG_E(TAG, "Failed to create I2C command handle");
+        return ESP_FAIL;
+    }
+
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, true);
     i2c_master_write_byte(cmd, control_byte, true);
@@ -53,7 +59,8 @@ static esp_err_t ssd1306_i2c_write(i2c_port_t port, uint8_t addr, uint8_t contro
     i2c_cmd_link_delete(cmd);
     
     if (ret != ESP_OK) {
-        TT_LOG_E(TAG, "I2C write failed: 0x%X (control=0x%02X, len=%zu)", ret, control_byte, len);
+        TT_LOG_E(TAG, "I2C write failed: 0x%X (addr=0x%02X, control=0x%02X, len=%zu)", 
+                 ret, addr, control_byte, len);
     }
     
     return ret;
@@ -87,7 +94,7 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         TT_LOG_I(TAG, "Hardware reset complete");
     }
 
-    // Init sequence - all commands at once
+    // Init sequence - send init commands (matching reference implementation)
     uint8_t display_mode = configuration->invertColor ? OLED_CMD_DISPLAY_INVERTED : OLED_CMD_DISPLAY_NORMAL;
     uint8_t init_cmds[] = {
         OLED_CMD_SET_CHARGE_PUMP,
@@ -166,24 +173,25 @@ void Ssd1306Display::lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, ui
     uint8_t row1 = area->y1 >> 3;  // Divide by 8 to get start page
     uint8_t row2 = area->y2 >> 3;  // Divide by 8 to get end page
 
-    // Log the flush operation for debugging
+    // Log the flush operation (sparse logging to avoid spam)
     static uint32_t flush_count = 0;
     flush_count++;
-    if (flush_count % 10 == 0) {  // Log every 10th flush to avoid spam
-        TT_LOG_I(TAG, "Flush #%lu: area=(%d,%d)-(%d,%d) pages=%d-%d",
-                 flush_count, area->x1, area->y1, area->x2, area->y2, row1, row2);
+    if (flush_count <= 5 || flush_count % 50 == 0) {
+        TT_LOG_I(TAG, "Flush #%lu: area=(%d,%d)-(%d,%d) pages=%d-%d data_bytes=%u",
+                 flush_count, area->x1, area->y1, area->x2, area->y2, row1, row2,
+                 cfg->horizontalResolution * (row2 - row1 + 1));
     }
 
-    // Prepare column and page range commands
+    // Prepare column and page range commands (matching reference implementation exactly)
     uint8_t range_cmd[] = {
         OLED_CMD_SET_MEMORY_ADDR_MODE,
         0x00,  // Horizontal addressing mode
         OLED_CMD_SET_COLUMN_RANGE,
         (uint8_t)area->x1,
-        (uint8_t)(area->x2 - 1),  // Column end (inclusive, so x2-1)
+        (uint8_t)area->x2,  // Use x2 directly (not x2-1) - matches reference
         OLED_CMD_SET_PAGE_RANGE,
         row1,
-        row2,  // Page end (inclusive)
+        row2,  // Page end (matches reference)
     };
 
     esp_err_t ret = ssd1306_i2c_write(cfg->port, cfg->deviceAddress,
@@ -193,8 +201,8 @@ void Ssd1306Display::lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, ui
         return;
     }
 
-    // Calculate data length: each page is horizontalResolution bytes
-    uint16_t data_len = cfg->horizontalResolution * (row2 - row1 + 1);
+    // Calculate data length: matches reference implementation exactly
+    uint16_t data_len = cfg->horizontalResolution * (1 + row2 - row1);
     
     // Send pixel data
     ret = ssd1306_i2c_write(cfg->port, cfg->deviceAddress,
