@@ -4,12 +4,10 @@
 #include <Tactility/hal/display/DisplayDevice.h>
 
 #include <driver/gpio.h>
-#include <driver/i2c.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_types.h>
+#include <functional>
 #include <lvgl.h>
-#include <memory>
-#include <string>
 
 class Ssd1306Display final : public EspLcdDisplay {
 
@@ -50,11 +48,6 @@ private:
 
     std::unique_ptr<Configuration> configuration;
 
-    // Static instance and callback for LVGL
-    static Ssd1306Display* g_ssd1306_instance;
-    static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
-
-    // Virtual methods from EspLcdDisplay
     bool createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) override;
 
     bool createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t& panelHandle) override;
@@ -64,26 +57,18 @@ private:
 public:
 
     explicit Ssd1306Display(std::unique_ptr<Configuration> inConfiguration) :
-        EspLcdDisplay(nullptr),
+        EspLcdDisplay(nullptr),  // Assuming no lock needed for I2C, adjust if necessary
         configuration(std::move(inConfiguration))
     {
         assert(configuration != nullptr);
         if (configuration->bufferSize == 0) {
             configuration->bufferSize = configuration->horizontalResolution * configuration->verticalResolution;
         }
-        // Register this instance for the static callback
-        g_ssd1306_instance = this;
-    }
-
-    ~Ssd1306Display() {
-        if (g_ssd1306_instance == this) {
-            g_ssd1306_instance = nullptr;
-        }
     }
 
     std::string getName() const override { return "SSD1306"; }
 
-    std::string getDescription() const override { return "SSD1306 monochrome OLED display via I2C"; }
+    std::string getDescription() const override { return "SSD1306 monochrome OLED display"; }
 
     std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable getTouchDevice() override { return configuration->touch; }
 
