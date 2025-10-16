@@ -71,6 +71,14 @@ public:
         if (configuration->bufferSize == 0) {
             configuration->bufferSize = configuration->horizontalResolution * configuration->verticalResolution;
         }
+        // Register this instance for the static callback
+        g_ssd1306_instance = this;
+    }
+
+    ~Ssd1306Display() {
+        if (g_ssd1306_instance == this) {
+            g_ssd1306_instance = nullptr;
+        }
     }
 
     std::string getName() const override { return "SSD1306"; }
