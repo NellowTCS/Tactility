@@ -18,9 +18,10 @@ static void enableOledPower() {
     io_conf.mode = GPIO_MODE_OUTPUT;
     io_conf.pin_bit_mask = (1ULL << HELTEC_LCD_PIN_POWER);
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE; // The board has an external pull-up
     gpio_config(&io_conf);
-    gpio_set_level(HELTEC_LCD_PIN_POWER, 1); // Set HIGH to enable power
+    gpio_set_level(HELTEC_LCD_PIN_POWER, 0); // Set LOW to enable power
+
     vTaskDelay(pdMS_TO_TICKS(100)); // Add a small delay for power to stabilize
     ESP_LOGI("OLED_POWER", "OLED Vext power enabled on GPIO %d", HELTEC_LCD_PIN_POWER);
 }
