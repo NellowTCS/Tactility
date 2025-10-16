@@ -1,4 +1,4 @@
-#include "E32R32P.h"
+#include "E32R35T.h"
 #include "devices/SdCard.h"
 #include "devices/Display.h"
 #include <Tactility/lvgl/LvglSync.h>

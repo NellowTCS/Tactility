@@ -65,6 +65,7 @@ public:
         uint32_t bufferSize = 0; // Size in pixel count. 0 means default, which is 1/10 of the screen size
         std::shared_ptr<tt::hal::touch::TouchDevice> touch;
         std::function<void(uint8_t)> _Nullable backlightDutyFunction = nullptr;
+        lcd_rgb_element_order_t rgbElementOrder = LCD_RGB_ELEMENT_ORDER_RGB;
     };
 
 private:
