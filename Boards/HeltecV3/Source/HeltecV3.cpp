@@ -52,15 +52,6 @@ static bool initBoot() {
     // Enable power to the OLED before doing anything else
     enableOledPower();
 
-    // Handle the OLED reset sequence
-    if (HELTEC_LCD_PIN_RST != GPIO_NUM_NC) {
-        gpio_set_direction(HELTEC_LCD_PIN_RST, GPIO_MODE_OUTPUT);
-        gpio_set_level(HELTEC_LCD_PIN_RST, 0);
-        vTaskDelay(pdMS_TO_TICKS(10)); // hold low
-        gpio_set_level(HELTEC_LCD_PIN_RST, 1);
-        vTaskDelay(pdMS_TO_TICKS(50)); // let it finish booting
-    }
-
     // Run the I2C scan to see if we can find the display
     i2c_scan(HELTEC_LCD_I2C_PORT);
 

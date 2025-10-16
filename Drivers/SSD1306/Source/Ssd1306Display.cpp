@@ -9,6 +9,18 @@
 
 constexpr auto TAG = "SSD1306";
 
+static uint8_t lvgl_disp_buffer[configuration->bufferSize / 8];
+static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* color_p) {
+    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)lv_display_get_user_data(disp);
+
+    // Call the esp_lcd function to draw the bitmap.
+    esp_lcd_panel_draw_bitmap(panel_handle, area->x1, area->y1, area->x2 + 1, area->y2 + 1, color_p);
+
+    // This is required to let LVGL know the flush is complete.
+    lv_display_flush_ready(disp);
+}
+
+
 bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
     TT_LOG_I(TAG, "Creating I2C IO handle");
     TT_LOG_I(TAG, "  I2C Port: %d", configuration->port);
@@ -141,6 +153,7 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         .panel_handle = panelHandle,
         .control_handle = nullptr,
         .buffer_size = configuration->bufferSize,
+        .buffer = lvgl_disp_buffer,
         .double_buffer = false,
         .trans_size = 0,
         .hres = configuration->horizontalResolution,
@@ -161,6 +174,12 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
             .direct_mode = true
         }
     };
+
+    // Set the flush callback
+    config.flush_callback = lvgl_flush_cb;
+    
+    // Pass the panel handle as user data to retrieve it in the flush callback
+    config.user_data = panelHandle;
 
     TT_LOG_I(TAG, "LVGL config created. This will be passed to lvgl_port_add_disp()");
     TT_LOG_I(TAG, "If LVGL display doesn't show up, check if lvgl_port_add_disp() succeeds");
