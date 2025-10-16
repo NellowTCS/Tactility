@@ -1,165 +1,128 @@
 #include "Ssd1306Display.h"
 
 #include <Tactility/Log.h>
-
-#include <esp_lcd_panel_commands.h>
-#include <esp_lcd_panel_dev.h>
-#include <esp_lcd_panel_ssd1306.h>
 #include <esp_lvgl_port.h>
-#include <esp_lcd_panel_ops.h>
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include <driver/i2c.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 constexpr auto TAG = "SSD1306";
 
-bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
-    TT_LOG_I(TAG, "Creating I2C IO handle");
-    TT_LOG_I(TAG, "  I2C Port: %d", configuration->port);
-    TT_LOG_I(TAG, "  Device Address: 0x%02X", configuration->deviceAddress);
+// SSD1306 Commands
+#define SSD1306_CMD_DISPLAY_OFF           0xAE
+#define SSD1306_CMD_DISPLAY_ON            0xAF
+#define SSD1306_CMD_SET_CLOCK_DIV         0xD5
+#define SSD1306_CMD_SET_MUX_RATIO         0xA8
+#define SSD1306_CMD_SET_DISPLAY_OFFSET    0xD3
+#define SSD1306_CMD_SET_START_LINE        0x40
+#define SSD1306_CMD_CHARGE_PUMP           0x8D
+#define SSD1306_CMD_MEM_ADDR_MODE         0x20
+#define SSD1306_CMD_SEG_REMAP             0xA1
+#define SSD1306_CMD_COM_SCAN_DEC          0xC8
+#define SSD1306_CMD_COM_PINS              0xDA
+#define SSD1306_CMD_SET_CONTRAST          0x81
+#define SSD1306_CMD_SET_PRECHARGE         0xD9
+#define SSD1306_CMD_SET_VCOMH             0xDB
+#define SSD1306_CMD_NORMAL_DISPLAY        0xA6
+#define SSD1306_CMD_COLUMN_ADDR           0x21
+#define SSD1306_CMD_PAGE_ADDR             0x22
 
-    // Small delay to ensure Vext/power is stable (some Heltec boards need a bit more time).
-    vTaskDelay(pdMS_TO_TICKS(200));
+// I2C control bytes
+#define I2C_CONTROL_BYTE_CMD_SINGLE       0x80
+#define I2C_CONTROL_BYTE_CMD_STREAM       0x00
+#define I2C_CONTROL_BYTE_DATA_STREAM      0x40
 
-    esp_lcd_panel_io_i2c_config_t panel_io_config = {
-        .dev_addr = configuration->deviceAddress,
-        .control_phase_bytes = 1,
-        .dc_bit_offset = 6,
-        .flags = {
-            .dc_low_on_data = false,
-            .disable_control_phase = false,
-        },
-    };
+static esp_err_t ssd1306_i2c_send_cmd(i2c_port_t port, uint8_t addr, uint8_t cmd) {
+    i2c_cmd_handle_t handle = i2c_cmd_link_create();
+    i2c_master_start(handle);
+    i2c_master_write_byte(handle, (addr << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_write_byte(handle, I2C_CONTROL_BYTE_CMD_SINGLE, true);
+    i2c_master_write_byte(handle, cmd, true);
+    i2c_master_stop(handle);
+    esp_err_t ret = i2c_master_cmd_begin(port, handle, pdMS_TO_TICKS(100));
+    i2c_cmd_link_delete(handle);
+    return ret;
+}
 
-    TT_LOG_I(TAG, "Calling esp_lcd_new_panel_io_i2c()...");
-    esp_err_t ret = esp_lcd_new_panel_io_i2c(
-        (esp_lcd_i2c_bus_handle_t)configuration->port, 
-        &panel_io_config, 
-        &outHandle
-    );
+static esp_err_t ssd1306_i2c_send_data(i2c_port_t port, uint8_t addr, const uint8_t *data, size_t len) {
+    i2c_cmd_handle_t handle = i2c_cmd_link_create();
+    i2c_master_start(handle);
+    i2c_master_write_byte(handle, (addr << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_write_byte(handle, I2C_CONTROL_BYTE_DATA_STREAM, true);
+    i2c_master_write(handle, (uint8_t *)data, len, true);
+    i2c_master_stop(handle);
+    esp_err_t ret = i2c_master_cmd_begin(port, handle, pdMS_TO_TICKS(100));
+    i2c_cmd_link_delete(handle);
+    return ret;
+}
+
+static esp_err_t ssd1306_i2c_init(i2c_port_t port, uint8_t addr) {
+    TT_LOG_I(TAG, "Sending SSD1306 init sequence...");
     
+    // Based on Heltec's SSD1306Wire library
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_DISPLAY_OFF);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_SET_CLOCK_DIV);
+    ssd1306_i2c_send_cmd(port, addr, 0xF0);  // High clock speed
+    
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_SET_MUX_RATIO);
+    ssd1306_i2c_send_cmd(port, addr, 0x3F);  // 64 MUX (0x3F for 64px height)
+    
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_SET_DISPLAY_OFFSET);
+    ssd1306_i2c_send_cmd(port, addr, 0x00);
+    
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_SET_START_LINE);  // 0x40
+    
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_CHARGE_PUMP);
+    ssd1306_i2c_send_cmd(port, addr, 0x14);  // Enable charge pump
+    
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_MEM_ADDR_MODE);
+    ssd1306_i2c_send_cmd(port, addr, 0x00);  // Horizontal addressing mode
+    
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_SEG_REMAP | 0x01);  // Remap columns
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_COM_SCAN_DEC);      // COM scan direction
+    
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_COM_PINS);
+    ssd1306_i2c_send_cmd(port, addr, 0x12);  // COM pins config
+    
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_SET_CONTRAST);
+    ssd1306_i2c_send_cmd(port, addr, 0xCF);  // Contrast
+    
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_SET_PRECHARGE);
+    ssd1306_i2c_send_cmd(port, addr, 0xF1);  // Precharge period
+    
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_SET_VCOMH);
+    ssd1306_i2c_send_cmd(port, addr, 0x40);  // VCOMH deselect level
+    
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_NORMAL_DISPLAY);
+    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_DISPLAY_ON);
+    
+    TT_LOG_I(TAG, "SSD1306 init complete");
+    return ESP_OK;
+}
+
+bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
+    TT_LOG_I(TAG, "Creating custom I2C IO (bypassing esp_lcd)");
+    
+    // Delay for power stabilization
+    vTaskDelay(pdMS_TO_TICKS(200));
+    
+    // Initialize the display with custom I2C commands
+    esp_err_t ret = ssd1306_i2c_init(configuration->port, configuration->deviceAddress);
     if (ret != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to create I2C panel IO. Error code: 0x%X (%s)", ret, esp_err_to_name(ret));
+        TT_LOG_E(TAG, "Failed to init SSD1306: 0x%X", ret);
         return false;
     }
-
-    TT_LOG_I(TAG, "I2C panel IO created successfully. Handle: %p", outHandle);
+    
+    // Return dummy handle (we're handling I2C manually)
+    outHandle = (esp_lcd_panel_io_handle_t)0xDEADBEEF;
     return true;
 }
 
 bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t& panelHandle) {
-    TT_LOG_I(TAG, "Creating SSD1306 panel handle");
-    TT_LOG_I(TAG, "  IO Handle: %p", ioHandle);
-    TT_LOG_I(TAG, "  Reset Pin: %d", configuration->resetPin);
-    TT_LOG_I(TAG, "  Resolution: %ux%u", configuration->horizontalResolution, configuration->verticalResolution);
-    TT_LOG_I(TAG, "  Invert Color: %s", configuration->invertColor ? "true" : "false");
-
-    esp_lcd_panel_ssd1306_config_t ssd1306_config = {
-        .height = static_cast<uint8_t>(configuration->verticalResolution)
-    };
-
-    TT_LOG_I(TAG, "SSD1306 config height: %u", ssd1306_config.height);
-
-    const esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = configuration->resetPin,
-        .color_space = ESP_LCD_COLOR_SPACE_MONOCHROME,
-        .bits_per_pixel = 1,
-        .flags = {
-            .reset_active_high = false
-        },
-        .vendor_config = &ssd1306_config
-    };
-
-    TT_LOG_I(TAG, "Calling esp_lcd_new_panel_ssd1306()...");
-    esp_err_t ret = esp_lcd_new_panel_ssd1306(ioHandle, &panel_config, &panelHandle);
-    
-    if (ret != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to create SSD1306 panel. Error code: 0x%X (%s)", ret, esp_err_to_name(ret));
-        return false;
-    }
-
-    TT_LOG_I(TAG, "SSD1306 panel created. Handle: %p", panelHandle);
-
-    TT_LOG_I(TAG, "Calling esp_lcd_panel_reset()...");
-    ret = esp_lcd_panel_reset(panelHandle);
-    if (ret != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to reset panel. Error code: 0x%X (%s)", ret, esp_err_to_name(ret));
-        return false;
-    }
-    TT_LOG_I(TAG, "Panel reset successful");
-
-    TT_LOG_I(TAG, "Calling esp_lcd_panel_init()...");
-    ret = esp_lcd_panel_init(panelHandle);
-    if (ret != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to init panel. Error code: 0x%X (%s)", ret, esp_err_to_name(ret));
-        return false;
-    }
-    TT_LOG_I(TAG, "Panel init successful");
-
-    TT_LOG_I(TAG, "Calling esp_lcd_panel_invert_color(invert=%s)...", configuration->invertColor ? "true" : "false");
-    ret = esp_lcd_panel_invert_color(panelHandle, configuration->invertColor);
-    if (ret != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to set panel invert color. Error code: 0x%X (%s)", ret, esp_err_to_name(ret));
-        return false;
-    }
-    TT_LOG_I(TAG, "Invert color set successfully");
-
-    TT_LOG_I(TAG, "Calling esp_lcd_panel_disp_on_off(true)...");
-    ret = esp_lcd_panel_disp_on_off(panelHandle, true);
-    if (ret != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to turn display on. Error code: 0x%X (%s)", ret, esp_err_to_name(ret));
-        return false;
-    }
-    TT_LOG_I(TAG, "Display turned on successfully");
-
-    // Small settle delay
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    // Test I2C communication with multiple patterns
-    TT_LOG_I(TAG, "=== Testing I2C data flow with multiple patterns ===");
-    
-    // Pattern 1: All ones (pixels ON) - full screen
-    TT_LOG_I(TAG, "Test 1: Sending 0xFF pattern (all pixels should be ON)...");
-    uint8_t pattern_all_on[128] = {};
-    memset(pattern_all_on, 0xFF, sizeof(pattern_all_on));
-    esp_err_t ret1 = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 127, 7, pattern_all_on);
-    TT_LOG_I(TAG, "  Result: 0x%X", ret1);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    
-    // Pattern 2: All zeros (pixels OFF)
-    TT_LOG_I(TAG, "Test 2: Sending 0x00 pattern (all pixels should be OFF)...");
-    uint8_t pattern_all_off[128] = {};
-    memset(pattern_all_off, 0x00, sizeof(pattern_all_off));
-    esp_err_t ret2 = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 127, 7, pattern_all_off);
-    TT_LOG_I(TAG, "  Result: 0x%X", ret2);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    
-    // Pattern 3: Alternating (checkerboard)
-    TT_LOG_I(TAG, "Test 3: Sending alternating pattern (checkerboard)...");
-    uint8_t pattern_checker[128] = {};
-    for(int i = 0; i < 128; i++) {
-        pattern_checker[i] = (i % 2) ? 0xAA : 0x55;  // 10101010 / 01010101
-    }
-    esp_err_t ret3 = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 127, 7, pattern_checker);
-    TT_LOG_I(TAG, "  Result: 0x%X", ret3);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    
-    // Pattern 4: First half ON, second half OFF
-    TT_LOG_I(TAG, "Test 4: Sending split pattern (left ON, right OFF)...");
-    uint8_t pattern_split[128] = {};
-    memset(pattern_split, 0xFF, 64);
-    memset(pattern_split + 64, 0x00, 64);
-    esp_err_t ret4 = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 127, 7, pattern_split);
-    TT_LOG_I(TAG, "  Result: 0x%X", ret4);
-    
-    if (ret1 != ESP_OK || ret2 != ESP_OK || ret3 != ESP_OK || ret4 != ESP_OK) {
-        TT_LOG_W(TAG, "One or more test draws failed");
-    } else {
-        TT_LOG_I(TAG, "All test patterns sent successfully via I2C");
-        TT_LOG_I(TAG, "If you see ANY changes on the display, I2C is working");
-        TT_LOG_I(TAG, "If nothing changes, the display may need different initialization");
-    }
-
+    TT_LOG_I(TAG, "Creating panel handle (custom I2C mode, no esp_lcd panel)");
+    panelHandle = (esp_lcd_panel_handle_t)0xCAFEBABE;
     return true;
 }
 
@@ -169,9 +132,6 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         configuration->bufferSize,
         configuration->bufferSize / 8);
     TT_LOG_I(TAG, "  Resolution: %ux%u", configuration->horizontalResolution, configuration->verticalResolution);
-    TT_LOG_I(TAG, "  Monochrome: true, Color format: I1");
-    TT_LOG_I(TAG, "  IO Handle: %p", ioHandle);
-    TT_LOG_I(TAG, "  Panel Handle: %p", panelHandle);
 
     lvgl_port_display_cfg_t config = {
         .io_handle = ioHandle,
@@ -199,7 +159,5 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         }
     };
 
-    TT_LOG_I(TAG, "LVGL config ready. Will be passed to lvgl_port_add_disp()");
-    
     return config;
 }
