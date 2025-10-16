@@ -160,7 +160,7 @@ bool Ssd1306Display::startLvgl() {
 // Static instance for callback
 Ssd1306Display* Ssd1306Display::g_ssd1306_instance = nullptr;
 
-// LVGL flush callback - called whenever LVGL needs to update the display
+// LVGL flush callback called whenever LVGL needs to update the display
 void Ssd1306Display::lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
     if (g_ssd1306_instance == nullptr) {
         return;
@@ -207,19 +207,4 @@ void Ssd1306Display::lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, ui
 lv_display_t* Ssd1306Display::getLvglDisplay() const {
     // This is handled by the base class EspLcdDisplay
     return nullptr;  // Will be set by base class
-}
-
-std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
-    auto config = std::make_unique<Ssd1306Display::Configuration>(
-        HELTEC_LCD_I2C_PORT,
-        HELTEC_LCD_I2C_ADDRESS,
-        HELTEC_LCD_PIN_RST,
-        HELTEC_LCD_HORIZONTAL_RESOLUTION,
-        HELTEC_LCD_VERTICAL_RESOLUTION,
-        nullptr,  // no touch
-        false     // no invert
-    );
-
-    auto display = std::make_shared<Ssd1306Display>(std::move(config));
-    return display;
 }
