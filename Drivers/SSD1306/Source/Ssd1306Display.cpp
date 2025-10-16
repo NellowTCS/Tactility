@@ -5,7 +5,7 @@
 #include <freertos/task.h>
 #include <driver/i2c.h>
 
-constexpr auto TAG = "SSD1306_LVGL";
+constexpr auto TAG = "SSD1306";
 
 // I2C control bytes
 #define OLED_CONTROL_BYTE_CMD_SINGLE  0x80
@@ -51,13 +51,16 @@ static esp_err_t ssd1306_i2c_write(i2c_port_t port, uint8_t addr, uint8_t contro
     i2c_master_stop(cmd);
     esp_err_t ret = i2c_master_cmd_begin(port, cmd, pdMS_TO_TICKS(100));
     i2c_cmd_link_delete(cmd);
+    
+    if (ret != ESP_OK) {
+        TT_LOG_E(TAG, "I2C write failed: 0x%X (control=0x%02X, len=%zu)", ret, control_byte, len);
+    }
+    
     return ret;
 }
 
 bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
-    TT_LOG_I(TAG, "SSD1306 I2C setup (not using esp_lcd panel IO)");
-    // We're handling I2C manually, so we don't need an esp_lcd IO handle
-    // Return a dummy non-null value so the base class doesn't complain
+    TT_LOG_I(TAG, "Creating IO handle (manual I2C mode)");
     outHandle = (esp_lcd_panel_io_handle_t)0x1;
     return true;
 }
@@ -67,6 +70,7 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
 
     // Hardware reset
     if (configuration->resetPin != GPIO_NUM_NC) {
+        TT_LOG_I(TAG, "Performing hardware reset on GPIO %d", configuration->resetPin);
         gpio_config_t rst_cfg = {
             .pin_bit_mask = 1ULL << configuration->resetPin,
             .mode = GPIO_MODE_OUTPUT,
@@ -80,6 +84,7 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         vTaskDelay(pdMS_TO_TICKS(10));
         gpio_set_level(configuration->resetPin, 1);
         vTaskDelay(pdMS_TO_TICKS(100));
+        TT_LOG_I(TAG, "Hardware reset complete");
     }
 
     // Init sequence - all commands at once
@@ -95,6 +100,9 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         OLED_CMD_DISPLAY_ON
     };
 
+    TT_LOG_I(TAG, "Sending init sequence to device at 0x%02X on port %d", 
+             configuration->deviceAddress, configuration->port);
+
     esp_err_t ret = ssd1306_i2c_write(configuration->port, configuration->deviceAddress,
                                        OLED_CONTROL_BYTE_CMD_STREAM, init_cmds, sizeof(init_cmds));
     if (ret != ESP_OK) {
@@ -104,7 +112,6 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
 
     TT_LOG_I(TAG, "SSD1306 initialized successfully");
     
-    // Return a dummy non-null handle
     panelHandle = (esp_lcd_panel_handle_t)0x1;
     return true;
 }
@@ -114,6 +121,7 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
     TT_LOG_I(TAG, "Creating LVGL display config");
     TT_LOG_I(TAG, "  Resolution: %ux%u", configuration->horizontalResolution, configuration->verticalResolution);
     TT_LOG_I(TAG, "  Buffer: %u pixels", configuration->bufferSize);
+    TT_LOG_I(TAG, "  Monochrome: true, Color format: I1");
 
     return lvgl_port_display_cfg_t {
         .io_handle = ioHandle,
@@ -147,26 +155,35 @@ Ssd1306Display* Ssd1306Display::g_ssd1306_instance = nullptr;
 
 void Ssd1306Display::lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
     if (g_ssd1306_instance == nullptr) {
+        TT_LOG_E(TAG, "lvgl_flush_cb: instance is null!");
         return;
     }
 
-    auto cfg = g_ssd1306_instance->configuration.get();  // Get pointer from unique_ptr
-    
-    // Convert pixel coordinates to SSD1306 pages
-    // SSD1306 uses 8-pixel vertical pages
-    uint8_t row1 = area->y1 >> 3;  // Divide by 8
-    uint8_t row2 = area->y2 >> 3;
+    auto cfg = g_ssd1306_instance->configuration.get();
 
-    // Send column and page range commands
+    // Convert pixel coordinates to SSD1306 pages
+    // SSD1306 uses 8-pixel vertical pages (page 0 = rows 0-7, page 1 = rows 8-15, etc.)
+    uint8_t row1 = area->y1 >> 3;  // Divide by 8 to get start page
+    uint8_t row2 = area->y2 >> 3;  // Divide by 8 to get end page
+
+    // Log the flush operation for debugging
+    static uint32_t flush_count = 0;
+    flush_count++;
+    if (flush_count % 10 == 0) {  // Log every 10th flush to avoid spam
+        TT_LOG_I(TAG, "Flush #%lu: area=(%d,%d)-(%d,%d) pages=%d-%d",
+                 flush_count, area->x1, area->y1, area->x2, area->y2, row1, row2);
+    }
+
+    // Prepare column and page range commands
     uint8_t range_cmd[] = {
         OLED_CMD_SET_MEMORY_ADDR_MODE,
         0x00,  // Horizontal addressing mode
         OLED_CMD_SET_COLUMN_RANGE,
         (uint8_t)area->x1,
-        (uint8_t)area->x2,
+        (uint8_t)(area->x2 - 1),  // Column end (inclusive, so x2-1)
         OLED_CMD_SET_PAGE_RANGE,
         row1,
-        row2,
+        row2,  // Page end (inclusive)
     };
 
     esp_err_t ret = ssd1306_i2c_write(cfg->port, cfg->deviceAddress,
@@ -176,12 +193,14 @@ void Ssd1306Display::lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, ui
         return;
     }
 
+    // Calculate data length: each page is horizontalResolution bytes
+    uint16_t data_len = cfg->horizontalResolution * (row2 - row1 + 1);
+    
     // Send pixel data
-    uint16_t data_len = cfg->horizontalResolution * (1 + row2 - row1);
     ret = ssd1306_i2c_write(cfg->port, cfg->deviceAddress,
                             OLED_CONTROL_BYTE_DATA_STREAM, px_map, data_len);
     if (ret != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to send pixel data: 0x%X", ret);
+        TT_LOG_E(TAG, "Failed to send pixel data (%u bytes): 0x%X", data_len, ret);
         return;
     }
 
