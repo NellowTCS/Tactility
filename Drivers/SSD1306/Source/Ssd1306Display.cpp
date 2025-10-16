@@ -145,8 +145,6 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
 // Static instance for callback initialized
 Ssd1306Display* Ssd1306Display::g_ssd1306_instance = nullptr;
 
-// Static instance for callback
-Ssd1306Display* Ssd1306Display::g_ssd1306_instance = nullptr;
 void Ssd1306Display::lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
     if (g_ssd1306_instance == nullptr) {
         return;
