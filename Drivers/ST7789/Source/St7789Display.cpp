@@ -48,7 +48,7 @@ bool St7789Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_lc
 
     const esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = configuration->resetPin,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
+        .rgb_ele_order = configuration->rgbElementOrder,
         .data_endian = LCD_RGB_DATA_ENDIAN_LITTLE,
         .bits_per_pixel = 16,
         .flags = {
@@ -119,7 +119,7 @@ lvgl_port_display_cfg_t St7789Display::getLvglPortDisplayConfig(esp_lcd_panel_io
             .mirror_x = configuration->mirrorX,
             .mirror_y = configuration->mirrorY,
         },
-        .color_format = LV_COLOR_FORMAT_RGB565,
+        .color_format = configuration->rgbElementOrder,
         .flags = {
             .buff_dma = true,
             .buff_spiram = false,
