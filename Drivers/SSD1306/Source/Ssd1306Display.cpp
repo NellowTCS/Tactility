@@ -10,8 +10,6 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include <cstring>
-#include <memory>
 
 constexpr auto TAG = "SSD1306";
 
@@ -21,10 +19,8 @@ bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
     TT_LOG_I(TAG, "  Device Address: 0x%02X", configuration->deviceAddress);
 
     // Small delay to ensure Vext/power is stable (some Heltec boards need a bit more time).
-    TT_LOG_I(TAG, "Delay before creating I2C IO to allow OLED power to stabilize");
     vTaskDelay(pdMS_TO_TICKS(200));
 
-    // Use standard panel IO config
     esp_lcd_panel_io_i2c_config_t panel_io_config = {
         .dev_addr = configuration->deviceAddress,
         .control_phase_bytes = 1,
@@ -88,13 +84,7 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
     ret = esp_lcd_panel_reset(panelHandle);
     if (ret != ESP_OK) {
         TT_LOG_E(TAG, "Failed to reset panel. Error code: 0x%X (%s)", ret, esp_err_to_name(ret));
-        // try a small extra delay and a second reset attempt
-        vTaskDelay(pdMS_TO_TICKS(50));
-        ret = esp_lcd_panel_reset(panelHandle);
-        if (ret != ESP_OK) {
-            TT_LOG_E(TAG, "Second panel reset attempt failed: 0x%X (%s)", ret, esp_err_to_name(ret));
-            return false;
-        }
+        return false;
     }
     TT_LOG_I(TAG, "Panel reset successful");
 
@@ -122,71 +112,52 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
     }
     TT_LOG_I(TAG, "Display turned on successfully");
 
-    // Small settle delay for the panel after display-on command
+    // Small settle delay
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    // Diagnostic: try a small set of candidate column offsets and record the first one that returns ESP_OK
-    // This helps with boards that map visible columns with an offset (e.g. +32 used by some Heltec variants).
-    TT_LOG_I(TAG, "=== Attempting column offset detection (heuristic) ===");
-    const int candidates[] = { 0, 32, 2, 4 };
-    const size_t candidate_count = sizeof(candidates) / sizeof(candidates[0]);
-
-    const size_t bytes = (configuration->horizontalResolution * configuration->verticalResolution) / 8;
-    uint8_t* full = (uint8_t*)heap_caps_malloc(bytes, MALLOC_CAP_8BIT);
-    if (!full) {
-        TT_LOG_W(TAG, "OOM allocating diagnostic buffer (%u bytes)", (unsigned)bytes);
-    } else {
-        memset(full, 0xFF, bytes); // all pixels on
-
-        int chosen = 0; // default 0
-        for (size_t i = 0; i < candidate_count; ++i) {
-            int off = candidates[i];
-            // compute end x using offset. keep it within reasonable bounds (esp_lcd may clip)
-            int x_end = off + (int)configuration->horizontalResolution - 1;
-            TT_LOG_I(TAG, "Trying column offset %d (draw to x=%d..%d)", off, off, x_end);
-            esp_err_t draw_ret = esp_lcd_panel_draw_bitmap(panelHandle, off, 0, x_end, (int)configuration->verticalResolution - 1, full);
-            if (draw_ret == ESP_OK) {
-                TT_LOG_I(TAG, "Draw returned ESP_OK for offset %d", off);
-                // Heuristic: accept this offset as the selected one and stop trying further offsets
-                chosen = off;
-                break;
-            } else {
-                TT_LOG_W(TAG, "Draw failed for offset %d: 0x%X (%s)", off, draw_ret, esp_err_to_name(draw_ret));
-            }
-            vTaskDelay(pdMS_TO_TICKS(120));
-        }
-
-        // store detected offset in configuration
-        configuration->columnOffset = chosen;
-
-        // Apply the offset using esp_lcd_panel_set_gap so the panel driver will add it automatically
-        esp_err_t gap_ret = esp_lcd_panel_set_gap(panelHandle, configuration->columnOffset, 0);
-        if (gap_ret == ESP_OK) {
-            TT_LOG_I(TAG, "Set panel gap (column offset) to %d via esp_lcd_panel_set_gap()", configuration->columnOffset);
-        } else {
-            TT_LOG_W(TAG, "esp_lcd_panel_set_gap() failed: 0x%X (%s). Continuing with stored columnOffset for higher layers.", gap_ret, esp_err_to_name(gap_ret));
-            // If set_gap fails, higher layers can still apply columnOffset if needed.
-            setDriverColumnOffset(configuration->columnOffset);
-        }
-
-        TT_LOG_I(TAG, "Selected column offset: %d", configuration->columnOffset);
-
-        heap_caps_free(full);
+    // Test I2C communication with multiple patterns
+    TT_LOG_I(TAG, "=== Testing I2C data flow with multiple patterns ===");
+    
+    // Pattern 1: All ones (pixels ON) - full screen
+    TT_LOG_I(TAG, "Test 1: Sending 0xFF pattern (all pixels should be ON)...");
+    uint8_t pattern_all_on[128] = {};
+    memset(pattern_all_on, 0xFF, sizeof(pattern_all_on));
+    esp_err_t ret1 = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 127, 7, pattern_all_on);
+    TT_LOG_I(TAG, "  Result: 0x%X", ret1);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    
+    // Pattern 2: All zeros (pixels OFF)
+    TT_LOG_I(TAG, "Test 2: Sending 0x00 pattern (all pixels should be OFF)...");
+    uint8_t pattern_all_off[128] = {};
+    memset(pattern_all_off, 0x00, sizeof(pattern_all_off));
+    esp_err_t ret2 = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 127, 7, pattern_all_off);
+    TT_LOG_I(TAG, "  Result: 0x%X", ret2);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    
+    // Pattern 3: Alternating (checkerboard)
+    TT_LOG_I(TAG, "Test 3: Sending alternating pattern (checkerboard)...");
+    uint8_t pattern_checker[128] = {};
+    for(int i = 0; i < 128; i++) {
+        pattern_checker[i] = (i % 2) ? 0xAA : 0x55;  // 10101010 / 01010101
     }
-
-    // Test I2C communication with the original small test
-    TT_LOG_I(TAG, "=== Testing I2C data flow (original small test) ===");
-    uint8_t test_data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    TT_LOG_I(TAG, "Attempting to draw test bitmap (should turn pixels on)...");
-    esp_err_t test_ret = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 8, 1, test_data);
-
-    if (test_ret != ESP_OK) {
-        TT_LOG_E(TAG, "Test draw_bitmap failed. Error code: 0x%X (%s)", test_ret, esp_err_to_name(test_ret));
-        TT_LOG_W(TAG, "This means I2C communication might not be working!");
+    esp_err_t ret3 = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 127, 7, pattern_checker);
+    TT_LOG_I(TAG, "  Result: 0x%X", ret3);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    
+    // Pattern 4: First half ON, second half OFF
+    TT_LOG_I(TAG, "Test 4: Sending split pattern (left ON, right OFF)...");
+    uint8_t pattern_split[128] = {};
+    memset(pattern_split, 0xFF, 64);
+    memset(pattern_split + 64, 0x00, 64);
+    esp_err_t ret4 = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, 127, 7, pattern_split);
+    TT_LOG_I(TAG, "  Result: 0x%X", ret4);
+    
+    if (ret1 != ESP_OK || ret2 != ESP_OK || ret3 != ESP_OK || ret4 != ESP_OK) {
+        TT_LOG_W(TAG, "One or more test draws failed");
     } else {
-        TT_LOG_I(TAG, "Test draw_bitmap succeeded! I2C communication appears to be working.");
-        TT_LOG_I(TAG, "If I see pixels on the display now, rendering is the issue.");
-        TT_LOG_I(TAG, "If I see nothing, the issue is with LVGL rendering pipeline or panel column offsets.");
+        TT_LOG_I(TAG, "All test patterns sent successfully via I2C");
+        TT_LOG_I(TAG, "If you see ANY changes on the display, I2C is working");
+        TT_LOG_I(TAG, "If nothing changes, the display may need different initialization");
     }
 
     return true;
@@ -202,8 +173,6 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
     TT_LOG_I(TAG, "  IO Handle: %p", ioHandle);
     TT_LOG_I(TAG, "  Panel Handle: %p", panelHandle);
 
-    // esp_lcd framework handles flushing via esp_lcd_panel_draw_bitmap()
-    // LVGL will call lvgl_port_add_disp() which registers the panel with the display
     lvgl_port_display_cfg_t config = {
         .io_handle = ioHandle,
         .panel_handle = panelHandle,
@@ -226,11 +195,11 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
             .sw_rotate = false,
             .swap_bytes = false,
             .full_refresh = true,
-            .direct_mode = false  // Let esp_lcd handle the drawing
+            .direct_mode = false
         }
     };
 
-    TT_LOG_I(TAG, "LVGL config created. Will be passed to lvgl_port_add_disp()");
+    TT_LOG_I(TAG, "LVGL config ready. Will be passed to lvgl_port_add_disp()");
     
     return config;
 }
