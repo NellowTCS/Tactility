@@ -35,7 +35,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         false,                                   // invertColor
         0,                                       // bufferSize (0 -> default 1/10 screen)
         0,                                       // gapX
-        0                                        // gapY
+        0,                                       // gapY
         LCD_RGB_ELEMENT_ORDER_BGR                // colorOrder
     );
 
