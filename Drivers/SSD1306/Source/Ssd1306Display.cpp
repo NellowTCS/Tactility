@@ -83,6 +83,7 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
     }
 
     // Init sequence - all commands at once
+    uint8_t display_mode = configuration->invertColor ? OLED_CMD_DISPLAY_INVERTED : OLED_CMD_DISPLAY_NORMAL;
     uint8_t init_cmds[] = {
         OLED_CMD_SET_CHARGE_PUMP,
         0x14,
@@ -90,7 +91,7 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         OLED_CMD_SET_COM_SCAN_MODE_REMAP,
         OLED_CMD_SET_CONTRAST,
         0xFF,
-        configuration->invertColor ? OLED_CMD_DISPLAY_INVERTED : OLED_CMD_DISPLAY_NORMAL,
+        display_mode,
         OLED_CMD_DISPLAY_ON
     };
 
@@ -159,14 +160,12 @@ bool Ssd1306Display::startLvgl() {
 
 // Static instance for callback
 Ssd1306Display* Ssd1306Display::g_ssd1306_instance = nullptr;
-
-// LVGL flush callback called whenever LVGL needs to update the display
 void Ssd1306Display::lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
     if (g_ssd1306_instance == nullptr) {
         return;
     }
 
-    auto cfg = g_ssd1306_instance->configuration;
+    auto cfg = g_ssd1306_instance->configuration.get();  // Get pointer from unique_ptr
     
     // Convert pixel coordinates to SSD1306 pages
     // SSD1306 uses 8-pixel vertical pages

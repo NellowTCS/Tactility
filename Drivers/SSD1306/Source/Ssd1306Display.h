@@ -79,10 +79,6 @@ public:
 
     std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable getTouchDevice() override { return configuration->touch; }
 
-    bool startLvgl() override;
-
-    lv_display_t* _Nullable getLvglDisplay() const override;
-
     void setBacklightDuty(uint8_t backlightDuty) override {
         // SSD1306 does not have backlight control
     }
