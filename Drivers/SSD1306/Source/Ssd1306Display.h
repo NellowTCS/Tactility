@@ -42,6 +42,9 @@ public:
         bool invertColor = false;
         std::shared_ptr<tt::hal::touch::TouchDevice> touch;
         uint32_t bufferSize = 0; // Size in pixel count. 0 means default, which is full screen for monochrome
+
+        // Column offset used for this display (in pixels). 0 for no offset.
+        int columnOffset = 0;
     };
 
 private:
