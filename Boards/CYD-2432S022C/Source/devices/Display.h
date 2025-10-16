@@ -24,7 +24,7 @@ public:
         gpio_num_t backlightPin;
         unsigned int pixelClockFrequency = 16 * 1000 * 1000;   // higher = better, but max 40MHz for ST7789
         size_t transactionQueueDepth = 40;
-        size_t bufferSize = 240 * 10;
+        size_t bufferSize = 240 * 34 * 2; // 34 lines of 240 pixels in RGB565
 
         Configuration(gpio_num_t cs, gpio_num_t dc, gpio_num_t wr, gpio_num_t rd,
                       std::array<gpio_num_t, 8> data, gpio_num_t rst, gpio_num_t bl)
