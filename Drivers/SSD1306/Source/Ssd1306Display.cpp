@@ -174,8 +174,10 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
 }
 
 lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) {
-    esp_lcd_panel_set_gap(panelHandle, 0, 0);
-    TT_LOG_I(TAG, "Column/page gap set.");
+    TT_LOG_I(TAG, "LVGL config: %ux%u buffer=%u", 
+        configuration->horizontalResolution, 
+        configuration->verticalResolution,
+        configuration->bufferSize);
 
     lvgl_port_display_cfg_t config = {
         .io_handle = ioHandle,
