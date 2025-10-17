@@ -45,8 +45,8 @@ static std::vector<std::shared_ptr<Device>> createDevices() {
 }
 
 extern const Configuration heltec_v3 = {
-    .uiScale = UiScale::Smallest,
     .initBoot = initBoot,
+    .uiScale = UiScale::Smallest,
     .createDevices = createDevices,
     .i2c = {
         tt::hal::i2c::Configuration {
