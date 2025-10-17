@@ -48,7 +48,7 @@ static esp_err_t ssd1306_i2c_send_cmd(i2c_port_t port, uint8_t addr, uint8_t cmd
     return ret;
 }
 
-static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr) {
+static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr, const Ssd1306Display::Configuration *config) {
     TT_LOG_I(TAG, "Sending SSD1306 init sequence...");
     
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_DISPLAY_OFF);
@@ -73,13 +73,13 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr) {
     
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_COLUMN_ADDR); // 0x21
     ssd1306_i2c_send_cmd(port, addr, 0x00); // Start Column (0)
-    ssd1306_i2c_send_cmd(port, addr, configuration->horizontalResolution - 1); // End Column (e.g., 127)
+    ssd1306_i2c_send_cmd(port, addr, config->horizontalResolution - 1); // End Column (e.g., 127)
 
     // Set Page Address (Start and End)
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_PAGE_ADDR); // 0x22
     ssd1306_i2c_send_cmd(port, addr, 0x00); // Start Page (0)
     // End Page: Vertical Resolution / 8 - 1 (e.g., 64/8 - 1 = 7)
-    ssd1306_i2c_send_cmd(port, addr, (configuration->verticalResolution / 8) - 1);
+    ssd1306_i2c_send_cmd(port, addr, (config->verticalResolution / 8) - 1);
 
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_SEG_REMAP | 0x01);
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_COM_SCAN_DEC);
