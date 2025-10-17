@@ -20,40 +20,15 @@ static void enableOledPower() {
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE; // The board has an external pull-up
     gpio_config(&io_conf);
-    gpio_set_level(HELTEC_LCD_PIN_POWER, 1); // test high
+    gpio_set_level(HELTEC_LCD_PIN_POWER, 0); // Active low
 
     vTaskDelay(pdMS_TO_TICKS(500)); // Add a small delay for power to stabilize
     ESP_LOGI("OLED_POWER", "OLED Vext power enabled on GPIO %d", HELTEC_LCD_PIN_POWER);
 }
 
-static void i2c_scan(i2c_port_t port) {
-    ESP_LOGI("I2C_SCAN", "Scanning I2C port %d for devices...", port);
-    bool found_any = false;
-    for (int addr = 1; addr < 127; ++addr) {
-        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-        i2c_master_start(cmd);
-        i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, true);
-        i2c_master_stop(cmd);
-        esp_err_t ret = i2c_master_cmd_begin(port, cmd, pdMS_TO_TICKS(50));
-        i2c_cmd_link_delete(cmd);
-        if (ret == ESP_OK) {
-            ESP_LOGI("I2C_SCAN", "Found device at 0x%02X", addr);
-            found_any = true;
-        }
-    }
-    if (!found_any) {
-        ESP_LOGW("I2C_SCAN", "No I2C devices found on port %d (try different address/pins/pull-ups)", port);
-    } else {
-        ESP_LOGI("I2C_SCAN", "I2C scan complete");
-    }
-}
-
 static bool initBoot() {
     // Enable power to the OLED before doing anything else
     enableOledPower();
-
-    // Run the I2C scan to see if we can find the display
-    i2c_scan(HELTEC_LCD_I2C_PORT);
 
     return true;
 }
