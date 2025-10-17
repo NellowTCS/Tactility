@@ -192,7 +192,7 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
             .mirror_x = false,
             .mirror_y = false,
         },
-        .color_format = LV_COLOR_FORMAT_L8,
+        .color_format = LV_COLOR_FORMAT_I2,
         .flags = {
             .buff_dma = false,
             .buff_spiram = false,
