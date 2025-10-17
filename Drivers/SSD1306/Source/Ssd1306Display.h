@@ -65,7 +65,7 @@ public:
     {
         assert(configuration != nullptr);
         if (configuration->bufferSize == 0) {
-            configuration->bufferSize = configuration->horizontalResolution * configuration->verticalResolution;
+            configuration->bufferSize = (configuration->horizontalResolution * configuration->verticalResolution) / 8;
         }
     }
 
