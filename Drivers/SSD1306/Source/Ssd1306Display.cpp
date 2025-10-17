@@ -22,7 +22,7 @@ constexpr auto TAG = "SSD1306";
 #define SSD1306_CMD_CHARGE_PUMP           0x8D
 #define SSD1306_CMD_MEM_ADDR_MODE         0x20
 #define SSD1306_CMD_SEG_REMAP             0xA0
-#define SSD1306_CMD_COM_SCAN_DEC          0xC0
+#define SSD1306_CMD_COM_SCAN_DEC          0xC8
 #define SSD1306_CMD_COM_PINS              0xDA
 #define SSD1306_CMD_SET_CONTRAST          0x81
 #define SSD1306_CMD_SET_PRECHARGE         0xD9
