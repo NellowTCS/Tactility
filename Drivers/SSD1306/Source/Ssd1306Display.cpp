@@ -177,8 +177,8 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
     }
     
     // Send our custom init sequence via I2C
-    ssd1306_send_init_sequence(configuration->port, configuration->deviceAddress);
-    
+    ssd1306_send_init_sequence(configuration->port, configuration->deviceAddress, configuration.get());
+
     TT_LOG_I(TAG, "Panel initialization complete");
     return true;
 }
