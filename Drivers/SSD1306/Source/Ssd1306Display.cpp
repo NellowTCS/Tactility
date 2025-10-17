@@ -21,8 +21,8 @@ constexpr auto TAG = "SSD1306";
 #define SSD1306_CMD_SET_START_LINE        0x40
 #define SSD1306_CMD_CHARGE_PUMP           0x8D
 #define SSD1306_CMD_MEM_ADDR_MODE         0x20
-#define SSD1306_CMD_SEG_REMAP             0xA1
-#define SSD1306_CMD_COM_SCAN_DEC          0xC8
+#define SSD1306_CMD_SEG_REMAP             0xA0
+#define SSD1306_CMD_COM_SCAN_DEC          0xC0
 #define SSD1306_CMD_COM_PINS              0xDA
 #define SSD1306_CMD_SET_CONTRAST          0x81
 #define SSD1306_CMD_SET_PRECHARGE         0xD9
@@ -88,9 +88,6 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr) {
     
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_NORMAL_DISPLAY);
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_DISPLAY_ON);
-  
-    ssd1306_i2c_send_cmd(port, addr, 0xA0);  // Segment remap normal
-    ssd1306_i2c_send_cmd(port, addr, 0xC0);  // COM scan normal (not remapped)
 
     TT_LOG_I(TAG, "Init sequence complete");
     return ESP_OK;
