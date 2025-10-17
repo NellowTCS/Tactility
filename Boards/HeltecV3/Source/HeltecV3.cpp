@@ -1,5 +1,6 @@
 #include <Tactility/hal/Configuration.h>
 #include <Tactility/lvgl/LvglSync.h>
+#include <ButtonControl.h>
 
 #include "HeltecV3.h"
 #include "devices/Display.h"
@@ -23,7 +24,7 @@ static void enableOledPower() {
     gpio_set_level(HELTEC_LCD_PIN_POWER, 0); // Active low
 
     vTaskDelay(pdMS_TO_TICKS(500)); // Add a small delay for power to stabilize
-    ESP_LOGI("OLED_POWER", "OLED Vext power enabled on GPIO %d", HELTEC_LCD_PIN_POWER);
+    ESP_LOGI("OLED_POWER", "OLED power enabled");
 }
 
 static bool initBoot() {
@@ -38,16 +39,18 @@ using namespace tt::hal;
 static std::vector<std::shared_ptr<Device>> createDevices() {
     return {
         createPower(),
+        ButtonControl::createOneButtonControl(0),
         createDisplay()
     };
 }
 
 extern const Configuration heltec_v3 = {
+    .uiScale = UiScale::Smallest,
     .initBoot = initBoot,
     .createDevices = createDevices,
     .i2c = {
         tt::hal::i2c::Configuration {
-            .name = "Touch",
+            .name = "SSD1306_I2C",
             .port = HELTEC_LCD_I2C_PORT,
             .initMode = tt::hal::i2c::InitMode::ByTactility,
             .isMutable = true,

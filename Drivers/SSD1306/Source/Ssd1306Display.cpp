@@ -49,7 +49,7 @@ static esp_err_t ssd1306_i2c_send_cmd(i2c_port_t port, uint8_t addr, uint8_t cmd
 }
 
 static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr) {
-    TT_LOG_I(TAG, "Sending Heltec-compatible SSD1306 init sequence...");
+    TT_LOG_I(TAG, "Sending SSD1306 init sequence...");
     
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_DISPLAY_OFF);
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -95,8 +95,6 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr) {
 
 bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
     TT_LOG_I(TAG, "Creating I2C IO handle");
-    TT_LOG_I(TAG, "  I2C Port: %d", configuration->port);
-    TT_LOG_I(TAG, "  Device Address: 0x%02X", configuration->deviceAddress);
 
     vTaskDelay(pdMS_TO_TICKS(200));
 
@@ -110,7 +108,6 @@ bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
         },
     };
 
-    TT_LOG_I(TAG, "Calling esp_lcd_new_panel_io_i2c()...");
     esp_err_t ret = esp_lcd_new_panel_io_i2c(
         (esp_lcd_i2c_bus_handle_t)configuration->port, 
         &panel_io_config, 
@@ -122,15 +119,12 @@ bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
         return false;
     }
 
-    TT_LOG_I(TAG, "I2C panel IO created successfully. Handle: %p", outHandle);
+    TT_LOG_I(TAG, "I2C panel IO created successfully");
     return true;
 }
 
 bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t& panelHandle) {
     TT_LOG_I(TAG, "Creating SSD1306 panel handle");
-    TT_LOG_I(TAG, "  IO Handle: %p", ioHandle);
-    TT_LOG_I(TAG, "  Reset Pin: %d", configuration->resetPin);
-    TT_LOG_I(TAG, "  Resolution: %ux%u", configuration->horizontalResolution, configuration->verticalResolution);
 
     esp_lcd_panel_ssd1306_config_t ssd1306_config = {
         .height = static_cast<uint8_t>(configuration->verticalResolution)
@@ -146,7 +140,6 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         .vendor_config = &ssd1306_config
     };
 
-    TT_LOG_I(TAG, "Calling esp_lcd_new_panel_ssd1306()...");
     esp_err_t ret = esp_lcd_new_panel_ssd1306(ioHandle, &panel_config, &panelHandle);
     
     if (ret != ESP_OK) {
@@ -154,11 +147,8 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         return false;
     }
 
-    TT_LOG_I(TAG, "SSD1306 panel created. Handle: %p", panelHandle);
+    TT_LOG_I(TAG, "SSD1306 panel created");
 
-    // Don't use esp_lcd's reset/init. Instead, use our Heltec-compatible sequence
-    TT_LOG_I(TAG, "Skipping esp_lcd init, using Heltec-compatible init...");
-    
     // Hardware reset manually
     if (configuration->resetPin != GPIO_NUM_NC) {
         gpio_config_t rst_cfg = {
@@ -184,14 +174,8 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
 }
 
 lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) {
-    TT_LOG_I(TAG, "=== Creating LVGL port display config ===");
-    TT_LOG_I(TAG, "  Buffer size: %u pixels (%u bytes at 1-bit)", 
-        configuration->bufferSize,
-        configuration->bufferSize / 8);
-    TT_LOG_I(TAG, "  Resolution: %ux%u", configuration->horizontalResolution, configuration->verticalResolution);
-
-    esp_lcd_panel_set_gap(panelHandle, 4, 0);
-    TT_LOG_I(TAG, "Column/page gap set to (4, 0). If display has offset, adjust here.");
+    esp_lcd_panel_set_gap(panelHandle, 32, 0);
+    TT_LOG_I(TAG, "Column/page gap set.");
 
     lvgl_port_display_cfg_t config = {
         .io_handle = ioHandle,
