@@ -69,11 +69,23 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr, const
     ssd1306_i2c_send_cmd(port, addr, 0x14);
     
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_MEM_ADDR_MODE);
-    ssd1306_i2c_send_cmd(port, addr, 0x02);  // Page addressing
+    ssd1306_i2c_send_cmd(port, addr, 0x00);
     
+    // Set Column Address (Start and End)
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_COLUMN_ADDR); // 0x21
-    ssd1306_i2c_send_cmd(port, addr, 0x00); // Start Column (0)
-    ssd1306_i2c_send_cmd(port, addr, config->horizontalResolution - 1); // End Column (e.g., 127)
+    
+    // Apply the column offset here.
+    int start_column = 0 + config->columnOffset;
+    if (start_column < 0) {
+        // Handle wrapping if necessary, though SSD1306 usually has extra internal columns.
+        start_column = 256 + start_column;
+    }
+    
+    // Set the start column based on the calculated offset.
+    ssd1306_i2c_send_cmd(port, addr, start_column);
+    
+    // End column is still the full resolution minus one.
+    ssd1306_i2c_send_cmd(port, addr, config->horizontalResolution - 1 + config->columnOffset);
 
     // Set Page Address (Start and End)
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_PAGE_ADDR); // 0x22
