@@ -190,6 +190,9 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         configuration->bufferSize / 8);
     TT_LOG_I(TAG, "  Resolution: %ux%u", configuration->horizontalResolution, configuration->verticalResolution);
 
+    esp_lcd_panel_set_gap(panelHandle, 4, 0);
+    TT_LOG_I(TAG, "Column/page gap set to (4, 0). If display has offset, adjust here.");
+
     lvgl_port_display_cfg_t config = {
         .io_handle = ioHandle,
         .panel_handle = panelHandle,
