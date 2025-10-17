@@ -69,7 +69,7 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr, const
     ssd1306_i2c_send_cmd(port, addr, 0x14);
     
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_MEM_ADDR_MODE);
-    ssd1306_i2c_send_cmd(port, addr, 0x00);  // Horizontal mode
+    ssd1306_i2c_send_cmd(port, addr, 0x02);  // Page addressing
     
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_COLUMN_ADDR); // 0x21
     ssd1306_i2c_send_cmd(port, addr, 0x00); // Start Column (0)
