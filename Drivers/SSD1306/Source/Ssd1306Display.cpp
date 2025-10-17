@@ -48,7 +48,7 @@ static esp_err_t ssd1306_i2c_send_cmd(i2c_port_t port, uint8_t addr, uint8_t cmd
     return ret;
 }
 
-static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr, const Ssd1306Display::Configuration *config) {
+static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr) {
     TT_LOG_I(TAG, "Sending SSD1306 init sequence...");
     
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_DISPLAY_OFF);
@@ -69,30 +69,8 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr, const
     ssd1306_i2c_send_cmd(port, addr, 0x14);
     
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_MEM_ADDR_MODE);
-    ssd1306_i2c_send_cmd(port, addr, 0x00);
+    ssd1306_i2c_send_cmd(port, addr, 0x00);  // Horizontal mode
     
-    // Set Column Address (Start and End)
-    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_COLUMN_ADDR); // 0x21
-    
-    // Apply the column offset here.
-    int start_column = 0 + config->columnOffset;
-    if (start_column < 0) {
-        // Handle wrapping if necessary, though SSD1306 usually has extra internal columns.
-        start_column = 256 + start_column;
-    }
-    
-    // Set the start column based on the calculated offset.
-    ssd1306_i2c_send_cmd(port, addr, start_column);
-    
-    // End column is still the full resolution minus one.
-    ssd1306_i2c_send_cmd(port, addr, config->horizontalResolution - 1 + config->columnOffset);
-
-    // Set Page Address (Start and End)
-    ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_PAGE_ADDR); // 0x22
-    ssd1306_i2c_send_cmd(port, addr, 0x00); // Start Page (0)
-    // End Page: Vertical Resolution / 8 - 1 (e.g., 64/8 - 1 = 7)
-    ssd1306_i2c_send_cmd(port, addr, (config->verticalResolution / 8) - 1);
-
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_SEG_REMAP | 0x01);
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_COM_SCAN_DEC);
     
@@ -189,8 +167,8 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
     }
     
     // Send our custom init sequence via I2C
-    ssd1306_send_init_sequence(configuration->port, configuration->deviceAddress, configuration.get());
-
+    ssd1306_send_init_sequence(configuration->port, configuration->deviceAddress);
+    
     TT_LOG_I(TAG, "Panel initialization complete");
     return true;
 }
