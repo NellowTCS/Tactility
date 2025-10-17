@@ -9,6 +9,7 @@
 #include <driver/i2c.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <cstring>
 
 constexpr auto TAG = "SSD1306";
 
@@ -35,6 +36,9 @@ constexpr auto TAG = "SSD1306";
 #define I2C_CONTROL_BYTE_CMD_SINGLE       0x80
 #define I2C_CONTROL_BYTE_CMD_STREAM       0x00
 #define I2C_CONTROL_BYTE_DATA_STREAM      0x40
+
+// Full-width buffer to handle partial updates from LVGL
+static uint8_t ssd1306_full_buffer[128 * 64 / 8] = {0};
 
 static esp_err_t ssd1306_i2c_send_cmd(i2c_port_t port, uint8_t addr, uint8_t cmd) {
     i2c_cmd_handle_t handle = i2c_cmd_link_create();
@@ -91,6 +95,59 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr) {
 
     TT_LOG_I(TAG, "Init sequence complete");
     return ESP_OK;
+}
+
+static void ssd1306_custom_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
+    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)lv_display_get_user_data(disp);
+    
+    if (panel_handle == nullptr) {
+        TT_LOG_E(TAG, "Panel handle is null in flush callback");
+        lv_display_flush_ready(disp);
+        return;
+    }
+    
+    // Get the partial area dimensions
+    int x_start = area->x1;
+    int y_start = area->y1;
+    int x_end = area->x2 + 1;    // LVGL uses inclusive end, display uses exclusive
+    int y_end = area->y2 + 1;
+    
+    int width = x_end - x_start;
+    int height = y_end - y_start;
+    
+    // Calculate byte dimensions (1 bit per pixel)
+    int row_bytes = width / 8;
+    if (width % 8) row_bytes++;  // Round up for partial bytes
+    
+    // Copy partial update data into the correct position in full buffer
+    // SSD1306 uses pages (8 pixels tall)
+    for (int y = 0; y < height; y++) {
+        int src_offset = y * row_bytes;
+        int page_offset = (y_start + y) / 8;
+        int col_offset = x_start / 8;
+        int dst_offset = page_offset * (128 / 8) + col_offset;
+        
+        if (dst_offset + row_bytes <= sizeof(ssd1306_full_buffer)) {
+            memcpy(&ssd1306_full_buffer[dst_offset], &px_map[src_offset], row_bytes);
+        }
+    }
+    
+    // Calculate affected pages
+    int page_start = y_start / 8;
+    int page_end = (y_end - 1) / 8;
+    
+    // Send full-width rows for the affected pages to avoid column wraparound
+    // Always use full 128-pixel width to prevent partial update issues
+    esp_lcd_panel_draw_bitmap(
+        panel_handle, 
+        0,                                      // Always start at column 0
+        page_start * 8,                         // Start row
+        127,                                    // Always end at column 127 (full width)
+        (page_end + 1) * 8 - 1,                // End row
+        &ssd1306_full_buffer[page_start * (128 / 8)]
+    );
+    
+    lv_display_flush_ready(disp);
 }
 
 bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
@@ -204,6 +261,14 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
             .direct_mode = false
         }
     };
+    
+    // Register our custom flush callback to fix partial update issues
+    lv_display_t *disp = lv_display_get_default();
+    if (disp != nullptr) {
+        lv_display_set_user_data(disp, panelHandle);
+        lv_display_set_flush_cb(disp, ssd1306_custom_flush_cb);
+        TT_LOG_I(TAG, "Custom flush callback registered");
+    }
 
     TT_LOG_I(TAG, "LVGL config ready");
     return config;
