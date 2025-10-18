@@ -31,6 +31,11 @@ constexpr auto TAG = "SSD1306";
 #define SSD1306_CMD_COLUMN_ADDR           0x21
 #define SSD1306_CMD_PAGE_ADDR             0x22
 
+// Page-mode helper commands
+#define SSD1306_CMD_PAGE_START_BASE       0xB0    // 0xB0 | page
+#define SSD1306_CMD_COL_LOW_BASE          0x00    // lower nibble of column
+#define SSD1306_CMD_COL_HIGH_BASE         0x10    // higher nibble of column
+
 // I2C control bytes
 #define I2C_CONTROL_BYTE_CMD_SINGLE       0x80
 #define I2C_CONTROL_BYTE_DATA_STREAM      0x40
@@ -69,8 +74,9 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr, uint8
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_CHARGE_PUMP);
     ssd1306_i2c_send_cmd(port, addr, 0x14);
     
+    // Use page addressing mode here (0x02) so writes using 0xB0|page work reliably.
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_MEM_ADDR_MODE);
-    ssd1306_i2c_send_cmd(port, addr, 0x00);  // Horizontal mode
+    ssd1306_i2c_send_cmd(port, addr, 0x02);  // Page addressing mode
     
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_SEG_REMAP | 0x01);
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_COM_SCAN_DEC);
@@ -90,43 +96,8 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr, uint8
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_NORMAL_DISPLAY);
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_DISPLAY_ON);
 
-    TT_LOG_I(TAG, "Init sequence complete");
+    TT_LOG_I(TAG, "Init sequence complete (page addressing mode)");
     return ESP_OK;
-}
-
-// write a simple checkerboard directly to the panel (full-screen, 8 pages x 128 bytes)
-static void ssd1306_write_checkerboard(i2c_port_t port, uint8_t addr, uint8_t height, uint8_t width) {
-    const uint8_t bytes_per_page = width / 8;
-    for (uint8_t page = 0; page < (height / 8); ++page) {
-        // set page and full column addr in single sequence (commands separated here for clarity)
-        ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_PAGE_ADDR);
-        ssd1306_i2c_send_cmd(port, addr, page);
-        ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_COLUMN_ADDR);
-        ssd1306_i2c_send_cmd(port, addr, 0);
-        ssd1306_i2c_send_cmd(port, addr, width - 1);
-
-        // build page buffer: alternate 0xFF/0x00 per column block to create visible bands
-        uint8_t buf[128];
-        for (int i = 0; i < bytes_per_page; ++i) {
-            // simple pattern: every other byte is 0xFF to produce vertical stripes
-            buf[i] = ( (i + page) & 1 ) ? 0xFF : 0x00;
-        }
-
-        // send data
-        i2c_cmd_handle_t h = i2c_cmd_link_create();
-        if (!h) return;
-        i2c_master_start(h);
-        i2c_master_write_byte(h, (addr << 1) | I2C_MASTER_WRITE, true);
-        i2c_master_write_byte(h, I2C_CONTROL_BYTE_DATA_STREAM, true);
-        i2c_master_write(h, buf, bytes_per_page, true);
-        i2c_master_stop(h);
-        esp_err_t ret = i2c_master_cmd_begin(port, h, pdMS_TO_TICKS(100));
-        i2c_cmd_link_delete(h);
-        if (ret != ESP_OK) {
-            TT_LOG_E(TAG, "Checkerboard write failed on page %u: %s", page, esp_err_to_name(ret));
-            return;
-        }
-    }
 }
 
 // Custom LVGL flush callback
@@ -211,17 +182,10 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     
-    // Send our custom init sequence via I2C
+    // Send our custom init sequence via I2C (now uses page addressing)
     ssd1306_send_init_sequence(configuration->port, configuration->deviceAddress, 
                                configuration->verticalResolution);
     
-
-    // Quick test: draw a checkerboard to validate panel/I2C independent of LVGL
-    TT_LOG_I(TAG, "SSD1306: performing checkerboard hardware test");
-    ssd1306_write_checkerboard(configuration->port, configuration->deviceAddress,
-                               configuration->verticalResolution, configuration->horizontalResolution);
-    vTaskDelay(pdMS_TO_TICKS(500)); // visible pause
-
     TT_LOG_I(TAG, "Panel initialization complete");
     return true;
 }
@@ -318,24 +282,21 @@ void Ssd1306Display::flushDirect(const lv_area_t *area, uint8_t *px_map) {
     }
 
     for (uint8_t page = page_start; page < page_end; page++) {
-        // Set page address (single-byte commands)
-        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_PAGE_ADDR);
-        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, page);
-        
-        // Set column address to full range (0..127)
-        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_COLUMN_ADDR);
-        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, 0);
-        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, configuration->horizontalResolution - 1);
-        
+        // Page addressing: select page with 0xB0 | page
+        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_PAGE_START_BASE | page);
+
+        // Set column start to 0 using column low/high nibble commands (page mode)
+        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_COL_LOW_BASE | (0 & 0x0F));
+        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_COL_HIGH_BASE | ((0 >> 4) & 0x0F));
+
         // Calculate data offset for this page INSIDE px_map
-        // px_map is expected to contain pages in order starting from page_start,
-        // so offset is (page - page_start) * bytes_per_page
         uint16_t offset = (page - page_start) * bytes_per_page;
 
         // Extra debug per-page (first 16 bytes of this page)
         if (configuration->debugDumpPxMap) {
             int snippet_len = bytes_per_page < 16 ? bytes_per_page : 16;
-            log_pxmap_snippet(("page_snippet_" + std::to_string(page)).c_str(), px_map + offset, snippet_len);
+            std::string sn = "page_snippet_" + std::to_string(page);
+            log_pxmap_snippet(sn.c_str(), px_map + offset, snippet_len);
         }
         
         // Write data bytes for this page (always full-width rows per page)
