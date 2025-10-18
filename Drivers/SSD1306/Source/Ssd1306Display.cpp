@@ -38,10 +38,28 @@ constexpr auto TAG = "SSD1306";
 
 static esp_err_t ssd1306_i2c_send_cmd(i2c_port_t port, uint8_t addr, uint8_t cmd) {
     i2c_cmd_handle_t handle = i2c_cmd_link_create();
+    if (!handle) return ESP_ERR_NO_MEM;
+    
     i2c_master_start(handle);
     i2c_master_write_byte(handle, (addr << 1) | I2C_MASTER_WRITE, true);
     i2c_master_write_byte(handle, I2C_CONTROL_BYTE_CMD_SINGLE, true);
     i2c_master_write_byte(handle, cmd, true);
+    i2c_master_stop(handle);
+    esp_err_t ret = i2c_master_cmd_begin(port, handle, pdMS_TO_TICKS(100));
+    i2c_cmd_link_delete(handle);
+    return ret;
+}
+
+static esp_err_t ssd1306_i2c_send_two_cmds(i2c_port_t port, uint8_t addr, uint8_t cmd1, uint8_t cmd2) {
+    i2c_cmd_handle_t handle = i2c_cmd_link_create();
+    if (!handle) return ESP_ERR_NO_MEM;
+    
+    i2c_master_start(handle);
+    i2c_master_write_byte(handle, (addr << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_write_byte(handle, I2C_CONTROL_BYTE_CMD_SINGLE, true);
+    i2c_master_write_byte(handle, cmd1, true);
+    i2c_master_write_byte(handle, I2C_CONTROL_BYTE_CMD_SINGLE, true);
+    i2c_master_write_byte(handle, cmd2, true);
     i2c_master_stop(handle);
     esp_err_t ret = i2c_master_cmd_begin(port, handle, pdMS_TO_TICKS(100));
     i2c_cmd_link_delete(handle);
@@ -91,6 +109,20 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr) {
 
     TT_LOG_I(TAG, "Init sequence complete");
     return ESP_OK;
+}
+
+// Custom flush callback that sends data directly via I2C
+static void ssd1306_flush_direct(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
+    Ssd1306Display *display = (Ssd1306Display *)lv_display_get_user_data(disp);
+    if (!display) {
+        lv_display_flush_ready(disp);
+        return;
+    }
+    
+    if (display->flushDirect(area, px_map) != ESP_OK) {
+        TT_LOG_E(TAG, "Flush failed");
+    }
+    lv_display_flush_ready(disp);
 }
 
 bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
@@ -205,14 +237,88 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         }
     };
 
-    vTaskDelay(pdMS_TO_TICKS(100));  // Allow some time before setting render mode
+    vTaskDelay(pdMS_TO_TICKS(100));
 
-    // Set full render mode to avoid partial update issues
+    // Register custom flush callback to bypass esp_lcd's broken monochrome driver
     lv_display_t *disp = lv_display_get_default();
     if (disp != nullptr) {
         lv_display_set_render_mode(disp, LV_DISPLAY_RENDER_MODE_FULL);
+        lv_display_set_user_data(disp, this);
+        lv_display_set_flush_cb(disp, ssd1306_flush_direct);
+        TT_LOG_I(TAG, "Custom flush callback registered");
     }
 
     TT_LOG_I(TAG, "LVGL config ready");
     return config;
+}
+
+esp_err_t Ssd1306Display::flushDirect(const lv_area_t *area, uint8_t *px_map) {
+    if (!area || !px_map) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint16_t x1 = area->x1;
+    uint16_t y1 = area->y1;
+    uint16_t x2 = area->x2 + 1;
+    uint16_t y2 = area->y2 + 1;
+    
+    // Clamp to display bounds
+    if (x1 >= configuration->horizontalResolution || y1 >= configuration->verticalResolution) {
+        return ESP_OK;
+    }
+    x2 = (x2 > configuration->horizontalResolution) ? configuration->horizontalResolution : x2;
+    y2 = (y2 > configuration->verticalResolution) ? configuration->verticalResolution : y2;
+    
+    // SSD1306 uses pages (8 pixels high)
+    uint16_t page_start = y1 / 8;
+    uint16_t page_end = (y2 + 7) / 8;
+    uint16_t width = x2 - x1;
+    
+    for (uint16_t page = page_start; page < page_end; page++) {
+        // Set page address
+        esp_err_t ret = ssd1306_i2c_send_two_cmds(configuration->port, configuration->deviceAddress, 
+                                                   SSD1306_CMD_PAGE_ADDR, page);
+        if (ret != ESP_OK) {
+            TT_LOG_E(TAG, "Failed to set page address");
+            return ret;
+        }
+        
+        // Set column address range
+        ret = ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_COLUMN_ADDR);
+        if (ret != ESP_OK) return ret;
+        ret = ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, x1);
+        if (ret != ESP_OK) return ret;
+        ret = ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, x2 - 1);
+        if (ret != ESP_OK) return ret;
+        
+        // Send data for this page
+        i2c_cmd_handle_t handle = i2c_cmd_link_create();
+        if (!handle) {
+            TT_LOG_E(TAG, "Failed to create I2C command handle");
+            return ESP_ERR_NO_MEM;
+        }
+        
+        i2c_master_start(handle);
+        i2c_master_write_byte(handle, (configuration->deviceAddress << 1) | I2C_MASTER_WRITE, true);
+        i2c_master_write_byte(handle, I2C_CONTROL_BYTE_DATA_STREAM, true);
+        
+        // Calculate offset in px_map for this page
+        uint16_t offset = (page - page_start) * configuration->horizontalResolution / 8;
+        uint16_t data_len = width / 8;
+        
+        if (data_len > 0) {
+            i2c_master_write(handle, px_map + offset + (x1 / 8), data_len, true);
+        }
+        
+        i2c_master_stop(handle);
+        esp_err_t ret2 = i2c_master_cmd_begin(configuration->port, handle, pdMS_TO_TICKS(100));
+        i2c_cmd_link_delete(handle);
+        
+        if (ret2 != ESP_OK) {
+            TT_LOG_E(TAG, "I2C data transfer failed");
+            return ret2;
+        }
+    }
+    
+    return ESP_OK;
 }
