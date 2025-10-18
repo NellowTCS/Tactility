@@ -89,8 +89,6 @@ public:
 
     // Direct I2C flush callback for bypassing esp_lcd's broken monochrome driver
     esp_err_t flushDirect(const lv_area_t *area, uint8_t *px_map);
-
-    friend void ssd1306_flush_direct(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
 };
 
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay();

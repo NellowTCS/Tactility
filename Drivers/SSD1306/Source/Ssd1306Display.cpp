@@ -12,6 +12,10 @@
 
 constexpr auto TAG = "SSD1306";
 
+// Forward declaration
+class Ssd1306Display;
+static void ssd1306_flush_direct(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
+
 // SSD1306 Commands
 #define SSD1306_CMD_DISPLAY_OFF           0xAE
 #define SSD1306_CMD_DISPLAY_ON            0xAF
