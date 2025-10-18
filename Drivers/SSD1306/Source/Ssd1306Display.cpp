@@ -94,6 +94,18 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr) {
     return ESP_OK;
 }
 
+// Custom draw_bitmap that wraps esp_lcd's version but fixes the data length for monochrome
+static esp_err_t ssd1306_draw_bitmap_fixed(esp_lcd_panel_t *panel, int x_start, int y_start, 
+                                            int x_end, int y_end, const void *color_data) {
+    // Call original draw_bitmap, but we need to patch the data length calculation
+    // The esp_lcd driver calculates: len = (y_end - y_start) * (x_end - x_start) / 8
+    // But for monochrome SSD1306, we need full 128-byte rows per page
+    
+    // We can't easily intercept the original, so instead we'll do direct I2C like the old driver
+    Ssd1306Display *display = (Ssd1306Display *)panel;
+    return display->drawBitmapFixed(panel, x_start, y_start, x_end, y_end, color_data);
+}
+
 bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
     TT_LOG_I(TAG, "Creating I2C IO handle");
 
@@ -170,6 +182,9 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
     // Send our custom init sequence via I2C
     ssd1306_send_init_sequence(configuration->port, configuration->deviceAddress);
     
+    // Replace the draw_bitmap function with our fixed version
+    panelHandle->draw_bitmap = ssd1306_draw_bitmap_fixed;
+    
     TT_LOG_I(TAG, "Panel initialization complete");
     return true;
 }
@@ -216,4 +231,49 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
 
     TT_LOG_I(TAG, "LVGL config ready");
     return config;
+}
+
+// Fixed draw_bitmap implementation that sends full 128-byte rows per page
+esp_err_t Ssd1306Display::drawBitmapFixed(esp_lcd_panel_t *panel, int x_start, int y_start, 
+                                           int x_end, int y_end, const void *color_data) {
+    if (!color_data) return ESP_OK;
+    
+    uint8_t page_start = y_start / 8;
+    uint8_t page_end = (y_end + 7) / 8;
+    const uint8_t *data = (const uint8_t *)color_data;
+    
+    // For monochrome, always send full 128-byte rows per page, regardless of x_start/x_end
+    for (uint8_t page = page_start; page < page_end; page++) {
+        // Set page address
+        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_PAGE_ADDR);
+        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, page);
+        
+        // Set column address to full range
+        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_COLUMN_ADDR);
+        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, 0);
+        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, 127);
+        
+        // Calculate data offset for this page
+        uint16_t offset = (page - page_start) * configuration->horizontalResolution / 8;
+        
+        // Send 128 bytes of data
+        i2c_cmd_handle_t handle = i2c_cmd_link_create();
+        if (!handle) return ESP_ERR_NO_MEM;
+        
+        i2c_master_start(handle);
+        i2c_master_write_byte(handle, (configuration->deviceAddress << 1) | I2C_MASTER_WRITE, true);
+        i2c_master_write_byte(handle, I2C_CONTROL_BYTE_DATA_STREAM, true);
+        i2c_master_write(handle, (uint8_t *)(data + offset), configuration->horizontalResolution / 8, true);
+        i2c_master_stop(handle);
+        
+        esp_err_t ret = i2c_master_cmd_begin(configuration->port, handle, pdMS_TO_TICKS(100));
+        i2c_cmd_link_delete(handle);
+        
+        if (ret != ESP_OK) {
+            TT_LOG_E(TAG, "I2C transfer failed on page %d", page);
+            return ret;
+        }
+    }
+    
+    return ESP_OK;
 }

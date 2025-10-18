@@ -87,6 +87,10 @@ public:
 
     uint8_t getGammaCurveCount() const override { return 0; }
 
+    // Fixed draw_bitmap implementation for monochrome SSD1306
+    esp_err_t drawBitmapFixed(esp_lcd_panel_t *panel, int x_start, int y_start, 
+                              int x_end, int y_end, const void *color_data);
+
     // Direct I2C flush callback for bypassing esp_lcd's broken monochrome driver
     esp_err_t flushDirect(const lv_area_t *area, uint8_t *px_map);
 };
