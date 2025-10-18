@@ -28,12 +28,9 @@ constexpr auto TAG = "SSD1306";
 #define SSD1306_CMD_SET_PRECHARGE         0xD9
 #define SSD1306_CMD_SET_VCOMH             0xDB
 #define SSD1306_CMD_NORMAL_DISPLAY        0xA6
-#define SSD1306_CMD_COLUMN_ADDR           0x21
-#define SSD1306_CMD_PAGE_ADDR             0x22
 
 // I2C control bytes
 #define I2C_CONTROL_BYTE_CMD_SINGLE       0x80
-#define I2C_CONTROL_BYTE_DATA_STREAM      0x40
 
 static esp_err_t ssd1306_i2c_send_cmd(i2c_port_t port, uint8_t addr, uint8_t cmd) {
     i2c_cmd_handle_t handle = i2c_cmd_link_create();
@@ -92,15 +89,6 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr, uint8
 
     TT_LOG_I(TAG, "Init sequence complete");
     return ESP_OK;
-}
-
-// Custom LVGL flush callback
-static void ssd1306_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
-    Ssd1306Display *display = (Ssd1306Display *)lv_display_get_user_data(disp);
-    if (display) {
-        display->flushDirect(area, px_map);
-    }
-    lv_display_flush_ready(disp);
 }
 
 bool Ssd1306Display::createIoHandle(esp_lcd_panel_io_handle_t& outHandle) {
@@ -211,73 +199,11 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
             .buff_spiram = false,
             .sw_rotate = false,
             .swap_bytes = false,
-            .full_refresh = true,
+            .full_refresh = false,
             .direct_mode = false
         }
     };
 
     TT_LOG_I(TAG, "LVGL config ready");
     return config;
-}
-
-void Ssd1306Display::registerFlushCallback() {
-    lv_display_t *disp = getLvglDisplay();
-    if (disp != nullptr) {
-        lv_display_set_user_data(disp, this);
-        lv_display_set_flush_cb(disp, ssd1306_flush_callback);
-        TT_LOG_I(TAG, "Custom flush callback registered");
-    } else {
-        TT_LOG_E(TAG, "Failed to get LVGL display for callback registration");
-    }
-}
-    if (!area || !px_map) return;
-    
-    uint16_t y1 = area->y1;
-    uint16_t y2 = area->y2 + 1;
-    
-    uint8_t page_start = y1 / 8;
-    uint8_t page_end = (y2 + 7) / 8;
-    
-    const uint16_t bytes_per_page = configuration->horizontalResolution / 8;
-    const uint16_t pages_in_area = (page_end > page_start) ? (page_end - page_start) : 0;
-
-    if (configuration->debugDumpPxMap) {
-        TT_LOG_I(TAG, "flushDirect: area x1=%d y1=%d x2=%d y2=%d", area->x1, area->y1, area->x2, area->y2);
-        TT_LOG_I(TAG, "flushDirect: page_start=%u page_end=%u pages=%u", 
-                 page_start, page_end, (unsigned)pages_in_area);
-    }
-
-    for (uint8_t page = page_start; page < page_end; page++) {
-        // Set page address
-        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_PAGE_ADDR);
-        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, page);
-        
-        // Set column address to full range
-        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_COLUMN_ADDR);
-        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, 0);
-        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, configuration->horizontalResolution - 1);
-        
-        // Calculate data offset for this page
-        uint16_t offset = (page - page_start) * bytes_per_page;
-        
-        // Send 128 bytes of data
-        i2c_cmd_handle_t handle = i2c_cmd_link_create();
-        if (!handle) {
-            TT_LOG_E(TAG, "Failed to create I2C handle");
-            continue;
-        }
-        
-        i2c_master_start(handle);
-        i2c_master_write_byte(handle, (configuration->deviceAddress << 1) | I2C_MASTER_WRITE, true);
-        i2c_master_write_byte(handle, I2C_CONTROL_BYTE_DATA_STREAM, true);
-        i2c_master_write(handle, px_map + offset, bytes_per_page, true);
-        i2c_master_stop(handle);
-        
-        esp_err_t ret = i2c_master_cmd_begin(configuration->port, handle, pdMS_TO_TICKS(100));
-        i2c_cmd_link_delete(handle);
-        
-        if (ret != ESP_OK) {
-            TT_LOG_E(TAG, "I2C transfer failed on page %d: %s", page, esp_err_to_name(ret));
-        }
-    }
 }
