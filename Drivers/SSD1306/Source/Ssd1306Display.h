@@ -45,6 +45,14 @@ public:
 
         // Column offset used for this display (in pixels). 0 for no offset.
         int columnOffset = 0;
+
+        // Debug helpers (runtime toggles)
+        // When true, driver prints a hex dump of the px_map passed to flushDirect
+        bool debugDumpPxMap = true;
+
+        // When true, driver will always send full 128-byte rows for each page in the flush area
+        // (this is already the default behavior for monochrome, but keep option for clarity)
+        bool debugForceFullPageWrites = false;
     };
 
 private:
