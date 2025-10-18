@@ -287,15 +287,15 @@ esp_err_t Ssd1306Display::flushDirect(const lv_area_t *area, uint8_t *px_map) {
             return ret;
         }
         
-        // Set column address range
+        // Set column address to full width (0-127)
         ret = ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_COLUMN_ADDR);
         if (ret != ESP_OK) return ret;
-        ret = ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, x1);
+        ret = ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, 0);
         if (ret != ESP_OK) return ret;
-        ret = ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, x2 - 1);
+        ret = ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, 127);
         if (ret != ESP_OK) return ret;
         
-        // Send data for this page
+        // Send full 128-byte row for this page
         i2c_cmd_handle_t handle = i2c_cmd_link_create();
         if (!handle) {
             TT_LOG_E(TAG, "Failed to create I2C command handle");
@@ -306,13 +306,9 @@ esp_err_t Ssd1306Display::flushDirect(const lv_area_t *area, uint8_t *px_map) {
         i2c_master_write_byte(handle, (configuration->deviceAddress << 1) | I2C_MASTER_WRITE, true);
         i2c_master_write_byte(handle, I2C_CONTROL_BYTE_DATA_STREAM, true);
         
-        // Calculate offset in px_map for this page
+        // Calculate offset in px_map for this page - always send full 128 bytes per page
         uint16_t offset = (page - page_start) * configuration->horizontalResolution / 8;
-        uint16_t data_len = width / 8;
-        
-        if (data_len > 0) {
-            i2c_master_write(handle, px_map + offset + (x1 / 8), data_len, true);
-        }
+        i2c_master_write(handle, px_map + offset, configuration->horizontalResolution / 8, true);
         
         i2c_master_stop(handle);
         esp_err_t ret2 = i2c_master_cmd_begin(configuration->port, handle, pdMS_TO_TICKS(100));
