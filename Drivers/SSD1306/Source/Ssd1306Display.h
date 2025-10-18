@@ -43,12 +43,11 @@ public:
         std::shared_ptr<tt::hal::touch::TouchDevice> touch;
         uint32_t bufferSize = 0; // Size in pixel count. 0 means default, which is full screen for monochrome
 
-        // Debug helpers (runtime toggles)
-        // When true, driver prints a hex dump of the px_map passed to flushDirect
-        bool debugDumpPxMap = true;
+        // Column offset used for this display (in pixels). 0 for no offset.
+        int columnOffset = 0;
 
-        // When true, driver will always send full 128-byte rows for each page in the flush area
-        // (this is already the default behavior for monochrome, but keep option for clarity)
+        // Debug helpers (runtime toggles)
+        bool debugDumpPxMap = true;
         bool debugForceFullPageWrites = false;
     };
 
@@ -91,6 +90,9 @@ public:
     }
 
     uint8_t getGammaCurveCount() const override { return 0; }
+
+    // Override startLvgl to register custom flush callback after display creation
+    bool startLvgl() override;
 
     // Direct I2C flush for monochrome SSD1306
     void flushDirect(const lv_area_t *area, uint8_t *px_map);

@@ -252,6 +252,15 @@ void Ssd1306Display::flushDirect(const lv_area_t *area, uint8_t *px_map) {
     uint8_t page_start = y1 / 8;
     uint8_t page_end = (y2 + 7) / 8;
     
+    const uint16_t bytes_per_page = configuration->horizontalResolution / 8;
+    const uint16_t pages_in_area = (page_end > page_start) ? (page_end - page_start) : 0;
+
+    if (configuration->debugDumpPxMap) {
+        TT_LOG_I(TAG, "flushDirect: area x1=%d y1=%d x2=%d y2=%d", area->x1, area->y1, area->x2, area->y2);
+        TT_LOG_I(TAG, "flushDirect: page_start=%u page_end=%u pages=%u", 
+                 page_start, page_end, (unsigned)pages_in_area);
+    }
+
     for (uint8_t page = page_start; page < page_end; page++) {
         // Set page address
         ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_PAGE_ADDR);
@@ -260,10 +269,10 @@ void Ssd1306Display::flushDirect(const lv_area_t *area, uint8_t *px_map) {
         // Set column address to full range
         ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_COLUMN_ADDR);
         ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, 0);
-        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, 127);
+        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, configuration->horizontalResolution - 1);
         
         // Calculate data offset for this page
-        uint16_t offset = (page - page_start) * configuration->horizontalResolution / 8;
+        uint16_t offset = (page - page_start) * bytes_per_page;
         
         // Send 128 bytes of data
         i2c_cmd_handle_t handle = i2c_cmd_link_create();
@@ -275,7 +284,7 @@ void Ssd1306Display::flushDirect(const lv_area_t *area, uint8_t *px_map) {
         i2c_master_start(handle);
         i2c_master_write_byte(handle, (configuration->deviceAddress << 1) | I2C_MASTER_WRITE, true);
         i2c_master_write_byte(handle, I2C_CONTROL_BYTE_DATA_STREAM, true);
-        i2c_master_write(handle, px_map + offset, configuration->horizontalResolution / 8, true);
+        i2c_master_write(handle, px_map + offset, bytes_per_page, true);
         i2c_master_stop(handle);
         
         esp_err_t ret = i2c_master_cmd_begin(configuration->port, handle, pdMS_TO_TICKS(100));
