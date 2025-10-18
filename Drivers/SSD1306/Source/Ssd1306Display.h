@@ -42,9 +42,8 @@ public:
         bool invertColor = false;
         std::shared_ptr<tt::hal::touch::TouchDevice> touch;
         uint32_t bufferSize = 0; // Size in pixel count. 0 means default, which is full screen for monochrome
-
-        // Column offset used for this display (in pixels). 0 for no offset.
-        int columnOffset = 0;
+        int gapX = 0;
+        int gapY = 0;
 
         // Debug helpers (runtime toggles)
         bool debugDumpPxMap = true;
@@ -71,6 +70,9 @@ public:
         if (configuration->bufferSize == 0) {
             configuration->bufferSize = configuration->horizontalResolution * configuration->verticalResolution;
         }
+
+        // Apply gap offsets to the driver
+        setDriverColumnOffset(configuration->gapX);
     }
 
     std::string getName() const override { return "SSD1306"; }
