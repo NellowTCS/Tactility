@@ -94,6 +94,41 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr, uint8
     return ESP_OK;
 }
 
+// write a simple checkerboard directly to the panel (full-screen, 8 pages x 128 bytes)
+static void ssd1306_write_checkerboard(i2c_port_t port, uint8_t addr, uint8_t height, uint8_t width) {
+    const uint8_t bytes_per_page = width / 8;
+    for (uint8_t page = 0; page < (height / 8); ++page) {
+        // set page and full column addr in single sequence (commands separated here for clarity)
+        ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_PAGE_ADDR);
+        ssd1306_i2c_send_cmd(port, addr, page);
+        ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_COLUMN_ADDR);
+        ssd1306_i2c_send_cmd(port, addr, 0);
+        ssd1306_i2c_send_cmd(port, addr, width - 1);
+
+        // build page buffer: alternate 0xFF/0x00 per column block to create visible bands
+        uint8_t buf[128];
+        for (int i = 0; i < bytes_per_page; ++i) {
+            // simple pattern: every other byte is 0xFF to produce vertical stripes
+            buf[i] = ( (i + page) & 1 ) ? 0xFF : 0x00;
+        }
+
+        // send data
+        i2c_cmd_handle_t h = i2c_cmd_link_create();
+        if (!h) return;
+        i2c_master_start(h);
+        i2c_master_write_byte(h, (addr << 1) | I2C_MASTER_WRITE, true);
+        i2c_master_write_byte(h, I2C_CONTROL_BYTE_DATA_STREAM, true);
+        i2c_master_write(h, buf, bytes_per_page, true);
+        i2c_master_stop(h);
+        esp_err_t ret = i2c_master_cmd_begin(port, h, pdMS_TO_TICKS(100));
+        i2c_cmd_link_delete(h);
+        if (ret != ESP_OK) {
+            TT_LOG_E(TAG, "Checkerboard write failed on page %u: %s", page, esp_err_to_name(ret));
+            return;
+        }
+    }
+}
+
 // Custom LVGL flush callback
 static void ssd1306_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
     Ssd1306Display *display = (Ssd1306Display *)lv_display_get_user_data(disp);
@@ -180,6 +215,13 @@ bool Ssd1306Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
     ssd1306_send_init_sequence(configuration->port, configuration->deviceAddress, 
                                configuration->verticalResolution);
     
+
+    // Quick test: draw a checkerboard to validate panel/I2C independent of LVGL
+    TT_LOG_I(TAG, "SSD1306: performing checkerboard hardware test");
+    ssd1306_write_checkerboard(configuration->port, configuration->deviceAddress,
+                               configuration->verticalResolution, configuration->horizontalResolution);
+    vTaskDelay(pdMS_TO_TICKS(500)); // visible pause
+
     TT_LOG_I(TAG, "Panel initialization complete");
     return true;
 }
