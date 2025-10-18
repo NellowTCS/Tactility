@@ -91,8 +91,8 @@ public:
 
     uint8_t getGammaCurveCount() const override { return 0; }
 
-    // Override startLvgl to register custom flush callback after display creation
-    bool startLvgl(lv_display_t* display) override;
+    // Call this after startLvgl() completes to register the custom flush callback
+    void registerFlushCallback();
 
     // Direct I2C flush for monochrome SSD1306
     void flushDirect(const lv_area_t *area, uint8_t *px_map);

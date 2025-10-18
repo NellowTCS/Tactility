@@ -216,34 +216,20 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         }
     };
 
-    vTaskDelay(pdMS_TO_TICKS(100));
-
     TT_LOG_I(TAG, "LVGL config ready");
     return config;
 }
 
-bool Ssd1306Display::startLvgl() {
-    // Call parent class to create and add the display to LVGL
-    if (!EspLcdDisplay::startLvgl()) {
-        TT_LOG_E(TAG, "Failed to start LVGL display");
-        return false;
-    }
-
-    // NOW the display exists, so we can get it and register our custom flush callback
+void Ssd1306Display::registerFlushCallback() {
     lv_display_t *disp = getLvglDisplay();
     if (disp != nullptr) {
         lv_display_set_user_data(disp, this);
         lv_display_set_flush_cb(disp, ssd1306_flush_callback);
-        TT_LOG_I(TAG, "Custom flush callback registered after display creation");
+        TT_LOG_I(TAG, "Custom flush callback registered");
     } else {
         TT_LOG_E(TAG, "Failed to get LVGL display for callback registration");
-        return false;
     }
-
-    return true;
 }
-
-void Ssd1306Display::flushDirect(const lv_area_t *area, uint8_t *px_map) {
     if (!area || !px_map) return;
     
     uint16_t y1 = area->y1;
