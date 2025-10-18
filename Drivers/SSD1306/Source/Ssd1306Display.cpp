@@ -218,85 +218,54 @@ lvgl_port_display_cfg_t Ssd1306Display::getLvglPortDisplayConfig(esp_lcd_panel_i
 
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    lv_display_t *disp = lv_display_get_default();
-    if (disp != nullptr) {
-        lv_display_set_render_mode(disp, LV_DISPLAY_RENDER_MODE_FULL);
-        lv_display_set_user_data(disp, this);
-        lv_display_set_flush_cb(disp, ssd1306_flush_callback);
-        TT_LOG_I(TAG, "Custom flush callback registered");
-    }
-
     TT_LOG_I(TAG, "LVGL config ready");
     return config;
 }
 
-static void log_pxmap_snippet(const char *tag, const uint8_t *buf, int len) {
-    // Print up to len bytes, in hex, 16 bytes per line
-    const int perline = 16;
-    int printed = 0;
-    while (printed < len) {
-        int chunk = (len - printed) > perline ? perline : (len - printed);
-        char line[perline * 3 + 1];
-        int pos = 0;
-        for (int i = 0; i < chunk; ++i) {
-            pos += snprintf(&line[pos], sizeof(line) - pos, "%02X ", buf[printed + i]);
-        }
-        TT_LOG_I(TAG, "%s: %s", tag, line);
-        printed += chunk;
+bool Ssd1306Display::startLvgl() {
+    // Call parent class to create and add the display to LVGL
+    if (!EspLcdDisplay::startLvgl()) {
+        TT_LOG_E(TAG, "Failed to start LVGL display");
+        return false;
     }
+
+    // NOW the display exists, so we can get it and register our custom flush callback
+    lv_display_t *disp = getLvglDisplay();
+    if (disp != nullptr) {
+        lv_display_set_user_data(disp, this);
+        lv_display_set_flush_cb(disp, ssd1306_flush_callback);
+        TT_LOG_I(TAG, "Custom flush callback registered after display creation");
+    } else {
+        TT_LOG_E(TAG, "Failed to get LVGL display for callback registration");
+        return false;
+    }
+
+    return true;
 }
 
 void Ssd1306Display::flushDirect(const lv_area_t *area, uint8_t *px_map) {
     if (!area || !px_map) return;
     
     uint16_t y1 = area->y1;
-    uint16_t y2 = area->y2 + 1; // convert to half-open range (exclusive)
+    uint16_t y2 = area->y2 + 1;
     
     uint8_t page_start = y1 / 8;
-    uint8_t page_end = (y2 + 7) / 8; // exclusive end page index
+    uint8_t page_end = (y2 + 7) / 8;
     
-    const uint16_t bytes_per_page = configuration->horizontalResolution / 8;
-    const uint16_t pages_in_area = (page_end > page_start) ? (page_end - page_start) : 0;
-    const uint32_t expected_bytes = pages_in_area * bytes_per_page;
-
-    // Debug dump: area + basic counts
-    if (configuration->debugDumpPxMap) {
-        TT_LOG_I(TAG, "flushDirect: area x1=%d y1=%d x2=%d y2=%d", area->x1, area->y1, area->x2, area->y2);
-        TT_LOG_I(TAG, "flushDirect: page_start=%u page_end=%u pages=%u bytes_per_page=%u expected_bytes=%u",
-                 page_start, page_end, (unsigned)pages_in_area, (unsigned)bytes_per_page, (unsigned)expected_bytes);
-
-        // Print a small snippet of the incoming px_map (first up to 64 bytes or expected_bytes)
-        int dump_len = (int)expected_bytes;
-        if (dump_len > 64) dump_len = 64;
-        if (dump_len > 0) {
-            log_pxmap_snippet("px_map_first_bytes", px_map, dump_len);
-        } else {
-            TT_LOG_I(TAG, "px_map: expected_bytes == 0, nothing to dump");
-        }
-    }
-
     for (uint8_t page = page_start; page < page_end; page++) {
-        // Set page address (single-byte commands)
+        // Set page address
         ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_PAGE_ADDR);
         ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, page);
         
-        // Set column address to full range (0..127)
+        // Set column address to full range
         ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, SSD1306_CMD_COLUMN_ADDR);
         ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, 0);
-        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, configuration->horizontalResolution - 1);
+        ssd1306_i2c_send_cmd(configuration->port, configuration->deviceAddress, 127);
         
-        // Calculate data offset for this page INSIDE px_map
-        // px_map is expected to contain pages in order starting from page_start,
-        // so offset is (page - page_start) * bytes_per_page
-        uint16_t offset = (page - page_start) * bytes_per_page;
-
-        // Extra debug per-page (first 16 bytes of this page)
-        if (configuration->debugDumpPxMap) {
-            int snippet_len = bytes_per_page < 16 ? bytes_per_page : 16;
-            log_pxmap_snippet(("page_snippet_" + std::to_string(page)).c_str(), px_map + offset, snippet_len);
-        }
+        // Calculate data offset for this page
+        uint16_t offset = (page - page_start) * configuration->horizontalResolution / 8;
         
-        // Write data bytes for this page (always full-width rows per page)
+        // Send 128 bytes of data
         i2c_cmd_handle_t handle = i2c_cmd_link_create();
         if (!handle) {
             TT_LOG_E(TAG, "Failed to create I2C handle");
@@ -306,7 +275,7 @@ void Ssd1306Display::flushDirect(const lv_area_t *area, uint8_t *px_map) {
         i2c_master_start(handle);
         i2c_master_write_byte(handle, (configuration->deviceAddress << 1) | I2C_MASTER_WRITE, true);
         i2c_master_write_byte(handle, I2C_CONTROL_BYTE_DATA_STREAM, true);
-        i2c_master_write(handle, px_map + offset, bytes_per_page, true);
+        i2c_master_write(handle, px_map + offset, configuration->horizontalResolution / 8, true);
         i2c_master_stop(handle);
         
         esp_err_t ret = i2c_master_cmd_begin(configuration->port, handle, pdMS_TO_TICKS(100));

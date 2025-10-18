@@ -43,9 +43,6 @@ public:
         std::shared_ptr<tt::hal::touch::TouchDevice> touch;
         uint32_t bufferSize = 0; // Size in pixel count. 0 means default, which is full screen for monochrome
 
-        // Column offset used for this display (in pixels). 0 for no offset.
-        int columnOffset = 0;
-
         // Debug helpers (runtime toggles)
         // When true, driver prints a hex dump of the px_map passed to flushDirect
         bool debugDumpPxMap = true;
@@ -68,7 +65,7 @@ private:
 public:
 
     explicit Ssd1306Display(std::unique_ptr<Configuration> inConfiguration) :
-        EspLcdDisplay(nullptr),  // Assuming no lock needed for I2C, adjust if necessary
+        EspLcdDisplay(nullptr),
         configuration(std::move(inConfiguration))
     {
         assert(configuration != nullptr);
