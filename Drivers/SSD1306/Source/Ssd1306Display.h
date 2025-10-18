@@ -85,8 +85,10 @@ public:
         // SSD1306 does not support gamma curves
     }
 
-    // Direct I2C flush callback for bypassing esp_lcd's broken monochrome driver
-    esp_err_t flushDirect(const lv_area_t *area, uint8_t *px_map);
+    uint8_t getGammaCurveCount() const override { return 0; }
+
+    // Direct I2C flush for monochrome SSD1306
+    void flushDirect(const lv_area_t *area, uint8_t *px_map);
 };
 
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay();
