@@ -34,6 +34,10 @@ private:
         bool pressState = false;
         bool triggerShortPress = false;
         bool triggerLongPress = false;
+
+        // keep LVGL press/release across consecutive reads so we return
+        // pressed once and released on the next read.
+        bool pendingLvglRelease = false;
     };
 
     lv_indev_t* _Nullable deviceHandle = nullptr;
