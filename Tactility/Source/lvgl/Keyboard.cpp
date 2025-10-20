@@ -7,6 +7,17 @@ namespace tt::lvgl {
 
 static lv_indev_t* keyboard_device = nullptr;
 
+static void keyboard_hide_focus_timer_cb(lv_timer_t* t) {
+    lv_group_t* g = static_cast<lv_group_t*>(t->user_data);
+    if (g != nullptr) {
+        // Only advance if we're no longer in editing mode
+        if (!lv_group_get_editing(g)) {
+            lv_group_focus_next(g);
+        }
+    }
+    lv_timer_del(t); // single-shot
+}
+
 void software_keyboard_show(lv_obj_t* textarea) {
     auto gui_service = service::gui::findService();
     if (gui_service != nullptr) {
@@ -21,13 +32,14 @@ void software_keyboard_hide() {
     }
 
     // Ensure LVGL leaves "group editing" mode when the software keyboard is hidden.
-    // On LVGL v9 the encoder/group navigation is ignored while the group is in editing mode,
-    // so explicitly turn editing off and advance focus so the user can continue tabbing.
+    // Schedule a short single-shot timer to advance focus once, avoiding races and double-advances.
     lv_group_t* g = lv_group_get_default();
     if (g != nullptr) {
         if (lv_group_get_editing(g)) {
             lv_group_set_editing(g, false);
-            lv_group_focus_next(g);
+            // schedule a single-shot timer (100 ms) to do the focus change
+            lv_timer_t* t = lv_timer_create(keyboard_hide_focus_timer_cb, 100, g);
+            (void)t;
         }
     }
 }

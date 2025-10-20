@@ -66,16 +66,17 @@ void ButtonControl::readCallback(lv_indev_t* indev, lv_indev_data_t* data) {
                         state.pendingLvglRelease = true;
                         break;
                     case Action::AppClose:
-                        // If the UI is currently in "editing" mode (e.g. focused textarea with keyboard),
-                        // stop editing and move focus to the next object so the user can tab.
+                        // Just clear editing here, don't advance focus here to avoid
+                        //  double-advancing if software_keyboard_hide also advances focus.
                         if (lv_group_get_default() != nullptr) {
                             lv_group_t* g = lv_group_get_default();
                             if (lv_group_get_editing(g)) {
                                 lv_group_set_editing(g, false);
-                                lv_group_focus_next(g);
+                                // Don't call lv_group_focus_next(g) here
                             }
                         }
                         break;
+
                 }
             }
         }
