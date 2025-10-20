@@ -8,7 +8,7 @@ namespace tt::lvgl {
 static lv_indev_t* keyboard_device = nullptr;
 
 static void keyboard_hide_focus_timer_cb(lv_timer_t* t) {
-    lv_group_t* g = static_cast<lv_group_t*>(t->user_data);
+    lv_group_t* g = static_cast<lv_group_t*>(lv_timer_get_user_data(t));
     if (g != nullptr) {
         // Only advance if we're no longer in editing mode
         if (!lv_group_get_editing(g)) {
