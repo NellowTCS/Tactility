@@ -53,22 +53,37 @@ static std::string getApPropertiesFilePath(const std::string& ssid) {
 }
 
 static bool encrypt(const std::string& ssidInput, std::string& ssidOutput) {
-    uint8_t iv[16];
+    if (ssidInput.empty()) {
+        ssidOutput.clear();
+        return true;
+    }
+
     const auto length = ssidInput.size();
     constexpr size_t chunk_size = 16;
     const auto encrypted_length = ((length / chunk_size) + (length % chunk_size ? 1 : 0)) * chunk_size;
 
-    auto* buffer = static_cast<uint8_t*>(malloc(encrypted_length));
+    auto* padded = static_cast<uint8_t*>(malloc(encrypted_length));
+    if (!padded) return false;
+    memset(padded, 0, encrypted_length);
+    memcpy(padded, ssidInput.data(), length);
 
+    auto* buffer = static_cast<uint8_t*>(malloc(encrypted_length));
+    if (!buffer) {
+        free(padded);
+        return false;
+    }
+
+    uint8_t iv[16];
     crypt::getIv(ssidInput.c_str(), ssidInput.size(), iv);
-    if (crypt::encrypt(iv, reinterpret_cast<const uint8_t*>(ssidInput.c_str()), buffer, encrypted_length) != 0) {
-        TT_LOG_E(TAG, "Failed to encrypt");
+    if (crypt::encrypt(iv, padded, buffer, encrypted_length) != 0) {
         free(buffer);
+        free(padded);
         return false;
     }
 
     ssidOutput = toHexString(buffer, encrypted_length);
     free(buffer);
+    free(padded);
 
     return true;
 }
