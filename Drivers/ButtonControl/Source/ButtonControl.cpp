@@ -1,4 +1,3 @@
- url=https://github.com/NellowTCS/Tactility/blob/main/Drivers/ButtonControl/Source/ButtonControl.cpp
 #include "ButtonControl.h"
 
 #include <Tactility/Log.h>
