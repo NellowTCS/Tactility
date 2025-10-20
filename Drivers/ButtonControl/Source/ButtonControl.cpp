@@ -32,20 +32,38 @@ void ButtonControl::readCallback(lv_indev_t* indev, lv_indev_data_t* data) {
         for (int i = 0; i < self->pinConfigurations.size(); i++) {
             const auto& config = self->pinConfigurations[i];
             std::vector<PinState>::reference state = self->pinStates[i];
+
+            // If we already delivered a pressed to LVGL on a previous read,
+            // deliver the released now and clear the pending flag.
+            if (state.pendingLvglRelease) {
+                // Ensure we report releasd (some widgets expect a full press-release)
+                data->state = LV_INDEV_STATE_RELEASED;
+                state.pendingLvglRelease = false;
+                // We clear only the pending flag here and continue to process other pins
+                // so encoder diffs from other pins can accumulate in the same read.
+                continue;
+            }
+
             const bool trigger = (config.event == Event::ShortPress && state.triggerShortPress) ||
                 (config.event == Event::LongPress && state.triggerLongPress);
-            state.triggerShortPress = false;
-            state.triggerLongPress = false;
+
             if (trigger) {
+                // Consume triggers only when translating them to LVGL events
+                state.triggerShortPress = false;
+                state.triggerLongPress = false;
+
                 switch (config.action) {
                     case Action::UiSelectNext:
-                        data->enc_diff = 1;
+                        // accumulate encoder diffs instead of overwriting
+                        data->enc_diff += 1;
                         break;
                     case Action::UiSelectPrevious:
-                        data->enc_diff = -1;
+                        data->enc_diff += -1;
                         break;
                     case Action::UiPressSelected:
+                        // produce a pressed now and schedule a released for next read
                         data->state = LV_INDEV_STATE_PRESSED;
+                        state.pendingLvglRelease = true;
                         break;
                     case Action::AppClose:
                         // TODO: implement
