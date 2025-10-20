@@ -6,7 +6,6 @@
 namespace tt::lvgl {
 
 static lv_indev_t* keyboard_device = nullptr;
-static lv_group_t* previous_group = nullptr;
 
 void software_keyboard_show(lv_obj_t* textarea) {
     auto gui_service = service::gui::findService();
@@ -33,17 +32,13 @@ bool software_keyboard_is_enabled() {
 
 void software_keyboard_activate(lv_group_t* group) {
     if (keyboard_device != nullptr) {
-        if (previous_group == nullptr) {  // Save original group
-            previous_group = lv_indev_get_group(keyboard_device);
-        }
         lv_indev_set_group(keyboard_device, group);
     }
 }
 
 void software_keyboard_deactivate() {
     if (keyboard_device != nullptr) {
-        lv_indev_set_group(keyboard_device, previous_group);  // Restore original
-        previous_group = nullptr;
+        lv_indev_set_group(keyboard_device, nullptr);
     }
 }
 

@@ -44,7 +44,6 @@ void GuiService::softwareKeyboardHide() {
 
     if (isStarted && keyboard != nullptr) {
         lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
-        lvgl::software_keyboard_deactivate();
     }
 
     unlock();
@@ -64,6 +63,7 @@ void GuiService::keyboardAddTextArea(lv_obj_t* textarea) {
             // lv_obj_t auto-remove themselves from the group when they are destroyed (last checked in LVGL 8.3)
             lv_group_add_obj(keyboardGroup, textarea);
 
+            lvgl::software_keyboard_activate(keyboardGroup);
         }
 
         lvgl::unlock();
