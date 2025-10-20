@@ -38,7 +38,8 @@ void software_keyboard_activate(lv_group_t* group) {
 
 void software_keyboard_deactivate() {
     if (keyboard_device != nullptr) {
-        lv_indev_set_group(keyboard_device, nullptr);
+        // Always restore to the app's default group
+        lv_indev_set_group(keyboard_device, lv_group_get_default());
     }
 }
 
