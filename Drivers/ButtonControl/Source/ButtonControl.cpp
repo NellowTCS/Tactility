@@ -66,13 +66,13 @@ void ButtonControl::readCallback(lv_indev_t* indev, lv_indev_data_t* data) {
                         state.pendingLvglRelease = true;
                         break;
                     case Action::AppClose:
-                        // Check if the default LVGL group is in editing mode (for example, textarea focused)
-                        lv_group_t* default_group = lv_group_get_default();
-                        if (default_group != nullptr && lv_group_get_editing(default_group)) {
+                        // Check if the current LVGL group (assigned to this indev) is in editing mode
+                        lv_group_t* current_group = lv_indev_get_group(indev);
+                        if (current_group != nullptr && lv_group_get_editing(current_group)) {
                             // Disable editing mode (exits keyboard/text input)
-                            lv_group_set_editing(default_group, false);
+                            lv_group_set_editing(current_group, false);
                             // Move focus to the next object in the group
-                            lv_group_focus_next(default_group);
+                            lv_group_focus_next(current_group);
                         } else {
                             // If not editing, perform app close
                             // TODO: Add app close logic here
