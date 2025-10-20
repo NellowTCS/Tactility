@@ -1,3 +1,4 @@
+ url=https://github.com/NellowTCS/Tactility/blob/main/Drivers/ButtonControl/Source/ButtonControl.cpp
 #include "ButtonControl.h"
 
 #include <Tactility/Log.h>
@@ -66,7 +67,15 @@ void ButtonControl::readCallback(lv_indev_t* indev, lv_indev_data_t* data) {
                         state.pendingLvglRelease = true;
                         break;
                     case Action::AppClose:
-                        // TODO: implement
+                        // If the UI is currently in "editing" mode (e.g. focused textarea with keyboard),
+                        // stop editing and move focus to the next object so the user can tab.
+                        if (lv_group_get_default() != nullptr) {
+                            lv_group_t* g = lv_group_get_default();
+                            if (lv_group_get_editing(g)) {
+                                lv_group_set_editing(g, false);
+                                lv_group_focus_next(g);
+                            }
+                        }
                         break;
                 }
             }
@@ -81,7 +90,7 @@ void ButtonControl::updatePin(std::vector<PinConfiguration>::const_reference con
             // check time for long press trigger
             auto time_passed = tt::kernel::getMillis() - state.pressStartTime;
             if (time_passed > 500) {
-                // state.triggerLongPress = true;
+                state.triggerLongPress = true; // re-enable long press trigger
             }
         } else {
             state.pressStartTime = tt::kernel::getMillis();

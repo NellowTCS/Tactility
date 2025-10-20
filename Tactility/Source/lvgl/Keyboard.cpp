@@ -19,6 +19,17 @@ void software_keyboard_hide() {
     if (gui_service != nullptr) {
         gui_service->softwareKeyboardHide();
     }
+
+    // Ensure LVGL leaves "group editing" mode when the software keyboard is hidden.
+    // On LVGL v9 the encoder/group navigation is ignored while the group is in editing mode,
+    // so explicitly turn editing off and advance focus so the user can continue tabbing.
+    lv_group_t* g = lv_group_get_default();
+    if (g != nullptr) {
+        if (lv_group_get_editing(g)) {
+            lv_group_set_editing(g, false);
+            lv_group_focus_next(g);
+        }
+    }
 }
 
 bool software_keyboard_is_enabled() {
