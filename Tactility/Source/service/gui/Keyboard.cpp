@@ -44,6 +44,7 @@ void GuiService::softwareKeyboardHide() {
 
     if (isStarted && keyboard != nullptr) {
         lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+        lvgl::software_keyboard_deactivate();
     }
 
     unlock();
