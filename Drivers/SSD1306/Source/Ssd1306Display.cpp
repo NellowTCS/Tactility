@@ -28,6 +28,8 @@ constexpr auto TAG = "SSD1306";
 #define SSD1306_CMD_SET_PRECHARGE         0xD9
 #define SSD1306_CMD_SET_VCOMH             0xDB
 #define SSD1306_CMD_NORMAL_DISPLAY        0xA6
+#define SSD1306_CMD_DISPLAYALLON_RESUME   0xA4
+#define SSD1306_CMD_DEACTIVATE_SCROLL     0x2E
 
 // I2C control bytes
 #define I2C_CONTROL_BYTE_CMD_SINGLE       0x80
@@ -53,7 +55,7 @@ static esp_err_t ssd1306_send_init_sequence(i2c_port_t port, uint8_t addr, uint8
     vTaskDelay(pdMS_TO_TICKS(10));
     
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_SET_CLOCK_DIV);
-    ssd1306_i2c_send_cmd(port, addr, 0xF0);
+    ssd1306_i2c_send_cmd(port, addr, 0x80);
     
     ssd1306_i2c_send_cmd(port, addr, SSD1306_CMD_SET_MUX_RATIO);
     ssd1306_i2c_send_cmd(port, addr, height - 1);
