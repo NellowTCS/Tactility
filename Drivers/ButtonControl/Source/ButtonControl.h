@@ -66,9 +66,6 @@ private:
     std::queue<PendingAction> actionQueue;
     bool deliveredPress = false;  // Track if we need to send release next
 
-    // ISR callbacks - one per pin
-    std::vector<std::function<void()>> isrCallbacks;
-
     void handleGpioEvent(const GpioEvent& event);
     void processEventQueue();
     void deliverActionsToLvgl(lv_indev_data_t* data);

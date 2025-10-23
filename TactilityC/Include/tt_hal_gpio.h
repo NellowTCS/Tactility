@@ -30,6 +30,27 @@ enum GpioMode {
     GpioModeInputOutputOpenDrain
 };
 
+/** GPIO interrupt modes.
+ * @warning The order must match tt::hal::gpio::InterruptMode
+ */
+enum GpioInterruptMode {
+    /** Interrupt disabled. */
+    GpioInterruptModeDisable = 0,
+    /** Trigger on rising edge (low to high). */
+    GpioInterruptModeRisingEdge,
+    /** Trigger on falling edge (high to low). */
+    GpioInterruptModeFallingEdge,
+    /** Trigger on any edge (rising or falling). */
+    GpioInterruptModeAnyEdge,
+    /** Trigger when pin is low. */
+    GpioInterruptModeLowLevel,
+    /** Trigger when pin is high. */
+    GpioInterruptModeHighLevel
+};
+
+/** GPIO interrupt handler callback type */
+typedef void (*GpioInterruptHandler)(void* user_data);
+
 /** Configure a single GPIO pin.
  * @param[in] pin      GPIO number to configure.
  * @param[in] mode     Desired I/O mode for the pin.
@@ -76,6 +97,39 @@ bool tt_hal_gpio_set_level(GpioPin pin, bool level);
  * @return The count of valid GPIO pins.
  */
 int tt_hal_gpio_get_pin_count();
+
+/** Install the GPIO interrupt service.
+ * Must be called before attaching any interrupt handlers.
+ * @return true on success, false if installation failed.
+ */
+bool tt_hal_gpio_install_interrupt_service();
+
+/** Attach an interrupt handler to a GPIO pin.
+ * @param[in] pin       The GPIO pin to attach the interrupt to.
+ * @param[in] mode      The interrupt trigger mode.
+ * @param[in] handler   The callback function to invoke when the interrupt fires.
+ * @param[in] user_data User data pointer passed to the handler.
+ * @return true on success, false if attachment failed.
+ */
+bool tt_hal_gpio_attach_interrupt(GpioPin pin, GpioInterruptMode mode, GpioInterruptHandler handler, void* user_data);
+
+/** Detach an interrupt handler from a GPIO pin.
+ * @param[in] pin The GPIO pin to detach from.
+ * @return true on success, false if detachment failed.
+ */
+bool tt_hal_gpio_detach_interrupt(GpioPin pin);
+
+/** Enable interrupts on a GPIO pin.
+ * @param[in] pin The GPIO pin.
+ * @return true on success, false if enable failed.
+ */
+bool tt_hal_gpio_enable_interrupt(GpioPin pin);
+
+/** Disable interrupts on a GPIO pin.
+ * @param[in] pin The GPIO pin.
+ * @return true on success, false if disable failed.
+ */
+bool tt_hal_gpio_disable_interrupt(GpioPin pin);
 
 #ifdef __cplusplus
 }

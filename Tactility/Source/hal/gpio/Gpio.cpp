@@ -2,6 +2,8 @@
 
 #ifdef ESP_PLATFORM
 #include <driver/gpio.h>
+#include <map>
+#include <esp_log.h>
 #endif
 
 namespace tt::hal::gpio {
@@ -25,6 +27,37 @@ constexpr gpio_mode_t toEspGpioMode(Mode mode) {
         case Mode::Disable:
         default:
             return GPIO_MODE_DISABLE;
+    }
+}
+
+constexpr gpio_int_type_t toEspInterruptMode(InterruptMode mode) {
+    switch (mode) {
+        case InterruptMode::RisingEdge:
+            return GPIO_INTR_POSEDGE;
+        case InterruptMode::FallingEdge:
+            return GPIO_INTR_NEGEDGE;
+        case InterruptMode::AnyEdge:
+            return GPIO_INTR_ANYEDGE;
+        case InterruptMode::LowLevel:
+            return GPIO_INTR_LOW_LEVEL;
+        case InterruptMode::HighLevel:
+            return GPIO_INTR_HIGH_LEVEL;
+        case InterruptMode::Disable:
+        default:
+            return GPIO_INTR_DISABLE;
+    }
+}
+
+// Storage for interrupt handlers (protected by ESP-IDF's ISR context)
+static std::map<Pin, InterruptHandler> interruptHandlers;
+static bool isrServiceInstalled = false;
+
+// Trampoline function that ESP-IDF calls, which then calls our C++ handler
+static void IRAM_ATTR gpioIsrTrampoline(void* arg) {
+    Pin pin = reinterpret_cast<Pin>(arg);
+    auto it = interruptHandlers.find(pin);
+    if (it != interruptHandlers.end() && it->second) {
+        it->second();
     }
 }
 
@@ -82,6 +115,86 @@ bool setMode(Pin pin, Mode mode) {
     return gpio_set_direction(toEspPin(pin), toEspGpioMode(mode)) == ESP_OK;
 #endif
     return true;
+}
+
+bool installInterruptService() {
+#ifdef ESP_PLATFORM
+    if (isrServiceInstalled) {
+        return true;
+    }
+    esp_err_t err = gpio_install_isr_service(0);
+    if (err == ESP_OK || err == ESP_ERR_INVALID_STATE) {
+        // ESP_ERR_INVALID_STATE means it's already installed (which is fine)
+        isrServiceInstalled = true;
+        return true;
+    }
+    return false;
+#else
+    return true;
+#endif
+}
+
+bool attachInterrupt(Pin pin, InterruptMode mode, InterruptHandler handler) {
+#ifdef ESP_PLATFORM
+    if (!isrServiceInstalled) {
+        if (!installInterruptService()) {
+            return false;
+        }
+    }
+
+    // Store the handler
+    interruptHandlers[pin] = handler;
+
+    // Configure interrupt type
+    if (gpio_set_intr_type(toEspPin(pin), toEspInterruptMode(mode)) != ESP_OK) {
+        interruptHandlers.erase(pin);
+        return false;
+    }
+
+    // Add ISR handler with pin as argument
+    if (gpio_isr_handler_add(toEspPin(pin), gpioIsrTrampoline, reinterpret_cast<void*>(pin)) != ESP_OK) {
+        interruptHandlers.erase(pin);
+        gpio_set_intr_type(toEspPin(pin), GPIO_INTR_DISABLE);
+        return false;
+    }
+
+    return true;
+#else
+    return true;
+#endif
+}
+
+bool detachInterrupt(Pin pin) {
+#ifdef ESP_PLATFORM
+    // Disable interrupt first
+    gpio_set_intr_type(toEspPin(pin), GPIO_INTR_DISABLE);
+    
+    // Remove ISR handler
+    gpio_isr_handler_remove(toEspPin(pin));
+    
+    // Remove from our map
+    interruptHandlers.erase(pin);
+    
+    return true;
+#else
+    return true;
+#endif
+}
+
+bool enableInterrupt(Pin pin) {
+#ifdef ESP_PLATFORM
+    return gpio_intr_enable(toEspPin(pin)) == ESP_OK;
+#else
+    return true;
+#endif
+}
+
+bool disableInterrupt(Pin pin) {
+#ifdef ESP_PLATFORM
+    return gpio_intr_disable(toEspPin(pin)) == ESP_OK;
+#else
+    return true;
+#endif
 }
 
 }

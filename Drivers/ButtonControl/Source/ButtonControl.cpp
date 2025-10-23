@@ -8,34 +8,21 @@ ButtonControl::ButtonControl(const std::vector<PinConfiguration>& pinConfigurati
     : pinConfigurations(pinConfigurations) {
     
     pinStates.resize(pinConfigurations.size());
-    isrCallbacks.resize(pinConfigurations.size());
     
     // Configure each pin and set up interrupt
     for (size_t i = 0; i < pinConfigurations.size(); i++) {
         const auto& config = pinConfigurations[i];
         
-        // Configure as input with pull-down (assuming active-high buttons)
+        // Configure using Tactility HAL
         tt::hal::gpio::configure(config.pin, tt::hal::gpio::Mode::Input, false, true);
         
-        // Create ISR callback that captures the pin index
-        isrCallbacks[i] = [this, i]() {
-            GpioEvent event;
-            event.pinIndex = i;
-            event.pressed = tt::hal::gpio::getLevel(pinConfigurations[i].pin);
-            event.timestamp = tt::kernel::getMillis();
-            
-            // Queue event from ISR context (keep ISR fast!)
-            if (queueMutex.lock(0)) {  // Non-blocking in ISR
-                eventQueue.push(event);
-                queueMutex.unlock();
-            }
-        };
-        
-        // Attach interrupt for both edges (press and release)
-        tt::hal::gpio::attachInterrupt(
-            config.pin,
-            tt::hal::gpio::InterruptMode::AnyEdge,
-            isrCallbacks[i]
+        // Configure ESP-IDF GPIO interrupt
+        gpio_set_intr_type(static_cast<gpio_num_t>(config.pin), GPIO_INTR_ANYEDGE);
+        gpio_install_isr_service(0);
+        gpio_isr_handler_add(
+            static_cast<gpio_num_t>(config.pin),
+            gpioIsrHandler,
+            this
         );
     }
     
@@ -43,9 +30,9 @@ ButtonControl::ButtonControl(const std::vector<PinConfiguration>& pinConfigurati
 }
 
 ButtonControl::~ButtonControl() {
-    // Detach all interrupts
-    for (size_t i = 0; i < pinConfigurations.size(); i++) {
-        tt::hal::gpio::detachInterrupt(pinConfigurations[i].pin);
+    // Remove all interrupt handlers
+    for (const auto& config : pinConfigurations) {
+        gpio_isr_handler_remove(static_cast<gpio_num_t>(config.pin));
     }
 }
 
