@@ -9,20 +9,33 @@ ButtonControl::ButtonControl(const std::vector<PinConfiguration>& pinConfigurati
     
     pinStates.resize(pinConfigurations.size());
     
+    // Install interrupt service once
+    tt::hal::gpio::installInterruptService();
+    
     // Configure each pin and set up interrupt
     for (size_t i = 0; i < pinConfigurations.size(); i++) {
         const auto& config = pinConfigurations[i];
         
-        // Configure using Tactility HAL
+        // Configure as input with pull-down (assuming active-high buttons)
         tt::hal::gpio::configure(config.pin, tt::hal::gpio::Mode::Input, false, true);
         
-        // Configure ESP-IDF GPIO interrupt
-        gpio_set_intr_type(static_cast<gpio_num_t>(config.pin), GPIO_INTR_ANYEDGE);
-        gpio_install_isr_service(0);
-        gpio_isr_handler_add(
-            static_cast<gpio_num_t>(config.pin),
-            gpioIsrHandler,
-            this
+        // Attach interrupt handler (lambda captures pin index)
+        tt::hal::gpio::attachInterrupt(
+            config.pin,
+            tt::hal::gpio::InterruptMode::AnyEdge,
+            [this, i]() {
+                // ISR context - keep it fast!
+                GpioEvent event;
+                event.pinIndex = i;
+                event.pressed = tt::hal::gpio::getLevel(this->pinConfigurations[i].pin);
+                event.timestamp = tt::kernel::getMillis();
+                
+                // Try to queue (non-blocking for ISR safety)
+                if (queueMutex.lock(0)) {
+                    eventQueue.push(event);
+                    queueMutex.unlock();
+                }
+            }
         );
     }
     
@@ -32,7 +45,7 @@ ButtonControl::ButtonControl(const std::vector<PinConfiguration>& pinConfigurati
 ButtonControl::~ButtonControl() {
     // Remove all interrupt handlers
     for (const auto& config : pinConfigurations) {
-        gpio_isr_handler_remove(static_cast<gpio_num_t>(config.pin));
+        tt::hal::gpio::detachInterrupt(config.pin);
     }
 }
 
