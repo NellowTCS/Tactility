@@ -56,6 +56,8 @@ ButtonControl::ButtonControl(const std::vector<PinConfiguration>& pinConfigurati
                 queuePush(event);
             }
         );
+        
+        TT_LOG_I(TAG, "Attached interrupt to pin %d", config.pin);
     }
     
     TT_LOG_I(TAG, "Initialized with %d button(s)", pinConfigurations.size());

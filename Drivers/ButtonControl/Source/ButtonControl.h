@@ -65,6 +65,9 @@ private:
     volatile size_t queueHead = 0;
     volatile size_t queueTail = 0;
     
+    // Debug counter (remove after testing)
+    volatile uint32_t isrCounter = 0;
+    
     // Pending actions to deliver to LVGL
     std::queue<PendingAction> actionQueue;
     bool deliveredPress = false;  // Track if we need to send release next

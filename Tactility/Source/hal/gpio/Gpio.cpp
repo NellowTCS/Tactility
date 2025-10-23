@@ -138,26 +138,32 @@ bool attachInterrupt(Pin pin, InterruptMode mode, InterruptHandler handler) {
 #ifdef ESP_PLATFORM
     if (!isrServiceInstalled) {
         if (!installInterruptService()) {
+            ESP_LOGE("GPIO", "Failed to install ISR service");
             return false;
         }
     }
 
-    // Store the handler
-    interruptHandlers[pin] = handler;
+    // Store the handler before configuring hardware
+    interruptHandlers[pin] = std::move(handler);
 
     // Configure interrupt type
-    if (gpio_set_intr_type(toEspPin(pin), toEspInterruptMode(mode)) != ESP_OK) {
+    esp_err_t err = gpio_set_intr_type(toEspPin(pin), toEspInterruptMode(mode));
+    if (err != ESP_OK) {
+        ESP_LOGE("GPIO", "Failed to set interrupt type for pin %d: %d", pin, err);
         interruptHandlers.erase(pin);
         return false;
     }
 
     // Add ISR handler with pin as argument
-    if (gpio_isr_handler_add(toEspPin(pin), gpioIsrTrampoline, reinterpret_cast<void*>(pin)) != ESP_OK) {
+    err = gpio_isr_handler_add(toEspPin(pin), gpioIsrTrampoline, reinterpret_cast<void*>(pin));
+    if (err != ESP_OK) {
+        ESP_LOGE("GPIO", "Failed to add ISR handler for pin %d: %d", pin, err);
         interruptHandlers.erase(pin);
         gpio_set_intr_type(toEspPin(pin), GPIO_INTR_DISABLE);
         return false;
     }
 
+    ESP_LOGI("GPIO", "Attached interrupt to pin %d, mode %d", pin, static_cast<int>(mode));
     return true;
 #else
     return true;
