@@ -3,6 +3,8 @@
 #include <Tactility/hal/encoder/EncoderDevice.h>
 #include <Tactility/hal/gpio/Gpio.h>
 #include <Tactility/TactilityCore.h>
+#include <queue>
+#include <memory>
 
 class ButtonControl final : public tt::hal::encoder::EncoderDevice {
 
@@ -28,50 +30,65 @@ public:
 
 private:
 
-    struct PinState {
-        long pressStartTime = 0;
-        long pressReleaseTime = 0;
-        bool pressState = false;
-        bool triggerShortPress = false;
-        bool triggerLongPress = false;
-
-        // keep LVGL press/release across consecutive reads so we return
-        // pressed once and released on the next read.
-        bool pendingLvglRelease = false;
+    // Internal event structure for queueing GPIO events
+    struct GpioEvent {
+        size_t pinIndex;
+        bool pressed;
+        uint32_t timestamp;
     };
 
+    // Track state of each physical pin
+    struct PinState {
+        uint32_t pressStartTime = 0;
+        bool isPressed = false;
+        bool debouncing = false;
+        uint32_t lastTransitionTime = 0;
+    };
+
+    // Track pending LVGL actions
+    struct PendingAction {
+        Action action;
+        bool needsRelease;  // For UiPressSelected which needs press+release cycle
+    };
+
+    static constexpr uint32_t DEBOUNCE_MS = 50;
+    static constexpr uint32_t LONG_PRESS_MS = 500;
+
     lv_indev_t* _Nullable deviceHandle = nullptr;
-    std::shared_ptr<tt::Thread> driverThread;
-    bool interruptDriverThread = false;
-    tt::Mutex mutex;
     std::vector<PinConfiguration> pinConfigurations;
     std::vector<PinState> pinStates;
+    
+    // Thread-safe event queue for ISR -> main thread communication
+    std::queue<GpioEvent> eventQueue;
+    tt::Mutex queueMutex;
+    
+    // Pending actions to deliver to LVGL
+    std::queue<PendingAction> actionQueue;
+    bool deliveredPress = false;  // Track if we need to send release next
 
-    bool shouldInterruptDriverThread() const;
+    // ISR callbacks - one per pin
+    std::vector<std::function<void()>> isrCallbacks;
 
-    static void updatePin(std::vector<PinConfiguration>::const_reference value, std::vector<PinState>::reference pin_state);
-
-    void driverThreadMain();
-
+    void handleGpioEvent(const GpioEvent& event);
+    void processEventQueue();
+    void deliverActionsToLvgl(lv_indev_data_t* data);
+    
     static void readCallback(lv_indev_t* indev, lv_indev_data_t* data);
-
-    void startThread();
-    void stopThread();
 
 public:
 
     explicit ButtonControl(const std::vector<PinConfiguration>& pinConfigurations);
-
     ~ButtonControl() override;
 
     std::string getName() const override { return "ButtonControl"; }
-    std::string getDescription() const override { return "ButtonControl input driver"; }
+    std::string getDescription() const override { return "Interrupt-driven button input"; }
 
     bool startLvgl(lv_display_t* display) override;
     bool stopLvgl() override;
 
     lv_indev_t* _Nullable getLvglIndev() override { return deviceHandle; }
 
+    // Factory methods
     static std::shared_ptr<ButtonControl> createOneButtonControl(tt::hal::gpio::Pin pin) {
         return std::make_shared<ButtonControl>(std::vector {
             PinConfiguration {
@@ -87,7 +104,10 @@ public:
         });
     }
 
-    static std::shared_ptr<ButtonControl> createTwoButtonControl(tt::hal::gpio::Pin primaryPin, tt::hal::gpio::Pin secondaryPin) {
+    static std::shared_ptr<ButtonControl> createTwoButtonControl(
+        tt::hal::gpio::Pin primaryPin, 
+        tt::hal::gpio::Pin secondaryPin
+    ) {
         return std::make_shared<ButtonControl>(std::vector {
             PinConfiguration {
                 .pin = primaryPin,
