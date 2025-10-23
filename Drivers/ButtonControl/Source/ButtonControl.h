@@ -58,9 +58,12 @@ private:
     std::vector<PinConfiguration> pinConfigurations;
     std::vector<PinState> pinStates;
     
-    // Thread-safe event queue for ISR -> main thread communication
-    std::queue<GpioEvent> eventQueue;
-    tt::Mutex queueMutex;
+    // ISR-safe event queue for ISR -> main thread communication
+    // Using a simple ring buffer instead of std::queue + mutex
+    static constexpr size_t EVENT_QUEUE_SIZE = 16;
+    GpioEvent eventQueue[EVENT_QUEUE_SIZE];
+    volatile size_t queueHead = 0;
+    volatile size_t queueTail = 0;
     
     // Pending actions to deliver to LVGL
     std::queue<PendingAction> actionQueue;
@@ -69,6 +72,10 @@ private:
     void handleGpioEvent(const GpioEvent& event);
     void processEventQueue();
     void deliverActionsToLvgl(lv_indev_data_t* data);
+    
+    // ISR-safe queue operations
+    bool queuePush(const GpioEvent& event);
+    bool queuePop(GpioEvent& event);
     
     static void readCallback(lv_indev_t* indev, lv_indev_data_t* data);
 

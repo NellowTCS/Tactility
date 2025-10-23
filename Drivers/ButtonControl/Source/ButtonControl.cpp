@@ -4,6 +4,28 @@
 
 constexpr auto* TAG = "ButtonControl";
 
+// ISR-safe queue operations (lock-free ring buffer)
+bool ButtonControl::queuePush(const GpioEvent& event) {
+    size_t next = (queueHead + 1) % EVENT_QUEUE_SIZE;
+    if (next == queueTail) {
+        // Queue full
+        return false;
+    }
+    eventQueue[queueHead] = event;
+    queueHead = next;
+    return true;
+}
+
+bool ButtonControl::queuePop(GpioEvent& event) {
+    if (queueHead == queueTail) {
+        // Queue empty
+        return false;
+    }
+    event = eventQueue[queueTail];
+    queueTail = (queueTail + 1) % EVENT_QUEUE_SIZE;
+    return true;
+}
+
 ButtonControl::ButtonControl(const std::vector<PinConfiguration>& pinConfigurations) 
     : pinConfigurations(pinConfigurations) {
     
@@ -24,17 +46,14 @@ ButtonControl::ButtonControl(const std::vector<PinConfiguration>& pinConfigurati
             config.pin,
             tt::hal::gpio::InterruptMode::AnyEdge,
             [this, i]() {
-                // ISR context - keep it fast!
+                // ISR context - keep it fast and lock-free!
                 GpioEvent event;
                 event.pinIndex = i;
                 event.pressed = tt::hal::gpio::getLevel(this->pinConfigurations[i].pin);
                 event.timestamp = tt::kernel::getMillis();
                 
-                // Try to queue (non-blocking for ISR safety)
-                if (queueMutex.lock(0)) {
-                    eventQueue.push(event);
-                    queueMutex.unlock();
-                }
+                // Push to lock-free queue
+                queuePush(event);
             }
         );
     }
@@ -93,17 +112,10 @@ void ButtonControl::handleGpioEvent(const GpioEvent& event) {
 
 void ButtonControl::processEventQueue() {
     // Process all queued GPIO events
-    queueMutex.lock();
-    while (!eventQueue.empty()) {
-        GpioEvent event = eventQueue.front();
-        eventQueue.pop();
-        queueMutex.unlock();
-        
+    GpioEvent event;
+    while (queuePop(event)) {
         handleGpioEvent(event);
-        
-        queueMutex.lock();
     }
-    queueMutex.unlock();
 }
 
 void ButtonControl::deliverActionsToLvgl(lv_indev_data_t* data) {
@@ -184,11 +196,8 @@ bool ButtonControl::startLvgl(lv_display_t* display) {
     lv_indev_set_read_cb(deviceHandle, readCallback);
     
     // Clear any startup glitches
-    queueMutex.lock();
-    while (!eventQueue.empty()) {
-        eventQueue.pop();
-    }
-    queueMutex.unlock();
+    queueHead = 0;
+    queueTail = 0;
     
     return true;
 }
@@ -205,14 +214,11 @@ bool ButtonControl::stopLvgl() {
     deviceHandle = nullptr;
     
     // Clear queues
-    queueMutex.lock();
-    while (!eventQueue.empty()) {
-        eventQueue.pop();
-    }
+    queueHead = 0;
+    queueTail = 0;
     while (!actionQueue.empty()) {
         actionQueue.pop();
     }
-    queueMutex.unlock();
     
     deliveredPress = false;
     
