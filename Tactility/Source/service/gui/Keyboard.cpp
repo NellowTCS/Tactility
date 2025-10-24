@@ -21,12 +21,6 @@ static void hide_keyboard(TT_UNUSED lv_event_t* event) {
     auto service = findService();
     if (service != nullptr) {
         service->softwareKeyboardHide();
-        // Exit editing mode for the textarea's group
-        lv_obj_t* target = lv_event_get_current_target_obj(event);
-        lv_group_t* group = lv_obj_get_group(target);
-        if (group != nullptr) {
-            lv_group_set_editing(group, false);
-        }
     }
 }
 
