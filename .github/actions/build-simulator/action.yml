@@ -41,9 +41,11 @@ runs:
       uses: mymindstorm/setup-emsdk@v14
       with:
         version: latest
-    - name: "Configure Project"
+    - name: Setup cmake
       if: ${{ inputs.os_name != 'wasm' }}
-      uses: threeal/cmake-action@v1.3.0
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: '3.31.x'
     - name: "Prepare Project"
       if: ${{ inputs.os_name != 'wasm' }}
       shell: bash
@@ -51,7 +53,7 @@ runs:
     - name: "Build Tests"
       if: ${{ inputs.os_name != 'wasm' }}
       shell: bash
-      run: cmake --build buildsim --target AppSim
+      run: cmake --build buildsim --target FirmwareSim
     - name: "Build WASM"
       if: ${{ inputs.os_name == 'wasm' }}
       shell: bash
