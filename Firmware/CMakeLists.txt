@@ -11,7 +11,7 @@ if (DEFINED ENV{ESP_IDF_VERSION})
     idf_component_register(
         SRCS ${SOURCE_FILES}
         REQUIRES ${BOARD_COMPONENTS}
-        REQUIRES Tactility TactilityC ${TACTILITY_BOARD_PROJECT}
+        REQUIRES Tactility TactilityC ${TACTILITY_BOARD_PROJECT} esp_http_client json
     )
 else ()
 
@@ -25,4 +25,12 @@ else ()
 
     add_definitions(-D_Nullable=)
     add_definitions(-D_Nonnull=)
+
+    if (CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+        # Bundle system and data partitions into the virtual filesystem so assets/settings are available at runtime
+        target_link_options(AppSim PRIVATE
+            "--preload-file=${CMAKE_SOURCE_DIR}/Data/system@/system"
+            "--preload-file=${CMAKE_SOURCE_DIR}/Data/data@/data"
+        )
+    endif ()
 endif ()

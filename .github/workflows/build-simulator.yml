@@ -1,4 +1,3 @@
-# Disabled because of issue: https://github.com/libsdl-org/setup-sdl/issues/23
 name: Build Simulator
 on:
   push:
@@ -26,5 +25,14 @@ jobs:
         with:
           os_name: macos
           platform_name: aarch64
-          # macOS simulator currently fails due to main thread requirement for rendering
-          publish: false
+          publish: true
+  Build-Simulator-WASM:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Build"
+        uses: ./.github/actions/build-simulator
+        with:
+          os_name: wasm
+          platform_name: web
+          publish: true

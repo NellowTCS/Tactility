@@ -135,6 +135,28 @@ void Thread::start() {
 
     setState(State::Starting);
 
+#ifdef __EMSCRIPTEN__
+    // For WASM, we can't create actual threads
+    // Instead, run the thread function on the main dispatcher after initialization
+    TT_LOG_I(TAG, "WASM mode: Scheduling thread '%s' on main dispatcher", name.c_str());
+    taskHandle = (TaskHandle_t)this; // Fake handle for getId()
+    setState(State::Running);
+    
+    // Dispatch the thread function to run asynchronously
+    // Declared in simulator namespace (Boards/Simulator/Source/Main.cpp)
+    extern void scheduleWasmThreadFunction(MainFunction function);
+    scheduleWasmThreadFunction([this]() -> int32_t {
+        TT_LOG_I(TAG, "Starting %s (WASM)", name.c_str());
+        int32_t result = mainFunction();
+        callbackResult = result;
+        setState(State::Stopped);
+        TT_LOG_I(TAG, "Stopped %s (WASM)", name.c_str());
+        taskHandle = nullptr;
+        return result;
+    });
+    return;
+#endif
+
     uint32_t stack_depth = stackSize / sizeof(StackType_t);
 
     BaseType_t result;
@@ -207,6 +229,13 @@ Thread* Thread::getCurrent() {
 }
 
 uint32_t Thread::setFlags(ThreadId threadId, uint32_t flags) {
+#ifdef __EMSCRIPTEN__
+    // For WASM, thread flags don't work since we don't have real threads
+    // Just return success - the thread will poll for work instead of waiting for flags
+    (void)threadId;
+    (void)flags;
+    return 0;
+#else
     auto hTask = (TaskHandle_t)threadId;
     uint32_t rflags;
     BaseType_t yield;
@@ -232,6 +261,7 @@ uint32_t Thread::setFlags(ThreadId threadId, uint32_t flags) {
     }
     /* Return flags after setting */
     return (rflags);
+#endif
 }
 
 uint32_t Thread::clearFlags(uint32_t flags) {
@@ -282,6 +312,14 @@ uint32_t Thread::getFlags() {
 }
 
 uint32_t Thread::awaitFlags(uint32_t flags, uint32_t options, uint32_t timeout) {
+#ifdef __EMSCRIPTEN__
+    // For WASM, we can't wait on thread flags since we don't have real threads
+    // Return timeout error so the caller can handle it gracefully
+    (void)flags;
+    (void)options;
+    (void)timeout;
+    return (uint32_t)EventFlag::ErrorTimeout;
+#else
     uint32_t rflags, nval;
     uint32_t clear;
     TickType_t t0, td, tout;
@@ -349,6 +387,7 @@ uint32_t Thread::awaitFlags(uint32_t flags, uint32_t options, uint32_t timeout) 
 
     /* Return flags before clearing */
     return (rflags);
+#endif
 }
 
 uint32_t Thread::getStackSpace(ThreadId threadId) {

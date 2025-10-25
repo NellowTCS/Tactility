@@ -32,6 +32,12 @@ release elecrow-crowpanel-basic-35
 build elecrow-crowpanel-basic-50
 release elecrow-crowpanel-basic-50
 
+build heltec-wifi-lora-32-v3
+release heltec-wifi-lora-32-v3
+
+build lilygo-tdisplay-s3
+release lilygo-tdisplay-s3
+
 build lilygo-tdeck
 release lilygo-tdeck
 
@@ -61,8 +67,20 @@ release cyd-8048s043c
 build cyd-e32r28t
 release cyd-e32r28t
 
+build cyd-e32r32p
+release cyd-e32r32p
+
+build cyd-e32r35t
+release cyd-e32r35t
+
+build cyd-e32r40t
+release cyd-e32r40t
+
 build cyd-jc2432w328c
 release cyd-jc2432w328c
+
+build cyd-jc3248w535c
+release cyd-jc3248w535c
 
 build cyd-jc8048w550c
 release cyd-jc8048w550c

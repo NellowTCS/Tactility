@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Simulator.js</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 20px;
+        background: #1e1e1e;
+        color: #fff;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+      h1 {
+        margin: 0 0 20px 0;
+      }
+      #canvas {
+        border: 2px solid #333;
+        display: block;
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>
+      eruda.init();
+    </script>
+  </head>
+  <body>
+    <h1>Simulator.js</h1>
+    <canvas id="canvas"></canvas>
+    <div id="output"></div>
+    <script>
+      // Configure Emscripten Module before loading AppSim.js
+      var Module = {
+        canvas: document.getElementById("canvas"),
+        print: function (text) {
+          console.log(text);
+        },
+        printErr: function (text) {
+          console.error(text);
+        },
+        onRuntimeInitialized: function () {
+          console.log("Emscripten runtime initialized");
+          var canvas = document.getElementById("canvas");
+          canvas.width = 640;
+          canvas.height = 480;
+          // Scale eventual CSS size too:
+          canvas.style.width = "640px";
+          canvas.style.height = "480px";
+        },
+      };
+    </script>
+    <script src="./AppSim.js"></script>
+  </body>
+</html>

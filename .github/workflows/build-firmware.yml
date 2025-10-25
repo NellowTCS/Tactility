@@ -9,6 +9,15 @@ on:
 permissions: read-all
 
 jobs:
+  cyd-2432s022c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Build"
+        uses: ./.github/actions/build-firmware
+        with:
+          board_id: cyd-2432s022c
+          arch: esp32
   cyd-2432s024c:
     runs-on: ubuntu-latest
     steps:
@@ -35,6 +44,33 @@ jobs:
         uses: ./.github/actions/build-firmware
         with:
           board_id: cyd-e32r28t
+          arch: esp32
+  cyd-e32r32p:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Build"
+        uses: ./.github/actions/build-firmware
+        with:
+          board_id: cyd-e32r32p
+          arch: esp32
+  cyd-e32r35t:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Build"
+        uses: ./.github/actions/build-firmware
+        with:
+          board_id: cyd-e32r35t
+          arch: esp32
+  cyd-e32r40t:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Build"
+        uses: ./.github/actions/build-firmware
+        with:
+          board_id: cyd-e32r40t
           arch: esp32
   cyd-2432s032c:
     runs-on: ubuntu-latest
@@ -71,6 +107,15 @@ jobs:
         uses: ./.github/actions/build-firmware
         with:
           board_id: cyd-jc8048w550c
+          arch: esp32s3
+  cyd-jc3248w535c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Build"
+        uses: ./.github/actions/build-firmware
+        with:
+          board_id: cyd-jc3248w535c
           arch: esp32s3
   cyd-4848s040c:
     runs-on: ubuntu-latest
@@ -135,6 +180,15 @@ jobs:
         with:
           board_id: elecrow-crowpanel-basic-50
           arch: esp32s3
+  heltec-wifi-lora-32-v3:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Build"
+        uses: ./.github/actions/build-firmware
+        with:
+          board_id: heltec-wifi-lora-32-v3
+          arch: esp32s3
   lilygo-tdeck:
     runs-on: ubuntu-latest
     steps:
@@ -143,6 +197,15 @@ jobs:
         uses: ./.github/actions/build-firmware
         with:
           board_id: lilygo-tdeck
+          arch: esp32s3
+  lilygo-tdisplay-s3:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Build"
+        uses: ./.github/actions/build-firmware
+        with:
+          board_id: lilygo-tdisplay-s3
           arch: esp32s3
   lilygo-tdongle-s3:
     runs-on: ubuntu-latest
