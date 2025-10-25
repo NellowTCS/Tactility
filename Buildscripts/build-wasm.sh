@@ -66,8 +66,8 @@ if [[ $CLEAN -eq 1 ]]; then
     echo "Configuring with CMake..."
     emcmake cmake -B build-sim-wasm -DCMAKE_BUILD_TYPE=Debug
 
-    echo "Building AppSim..."
-    cmake --build build-sim-wasm --target AppSim -j$(nproc)
+    echo "Building FirmwareSim..."
+    cmake --build build-sim-wasm --target FirmwareSim -j$(nproc)
 else
     # If not cleaning, ensure CMake is configured if build dir was just created
     if [ ! -f build-sim-wasm/Makefile ] && [ ! -f build-sim-wasm/build.ninja ]; then
@@ -75,11 +75,11 @@ else
         emcmake cmake -B build-sim-wasm -DCMAKE_BUILD_TYPE=Debug
     fi
 
-    echo "Building AppSim..."
-    cmake --build build-sim-wasm --target AppSim -j$(nproc)
+    echo "Building FirmwareSim..."
+    cmake --build build-sim-wasm --target FirmwareSim -j$(nproc)
 fi
 
 echo "Copying built files to Boards/WebSimulator/..."
-cp build-sim-wasm/Firmware/AppSim.* Boards/WebSimulator/
+cp build-sim-wasm/Firmware/FirmwareSim.* Boards/WebSimulator/
 
 echo "Build complete!"
