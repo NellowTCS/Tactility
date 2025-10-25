@@ -101,26 +101,28 @@ namespace app {
 
 // List of all apps excluding Boot app (as Boot app calls this function indirectly)
 static void registerInternalApps() {
-    addApp(app::alertdialog::manifest);
-    addApp(app::appdetails::manifest);
-    addApp(app::applist::manifest);
-    addApp(app::appsettings::manifest);
-    addApp(app::display::manifest);
-    addApp(app::files::manifest);
-    addApp(app::fileselection::manifest);
-    addApp(app::imageviewer::manifest);
-    addApp(app::inputdialog::manifest);
-    addApp(app::launcher::manifest);
-    addApp(app::localesettings::manifest);
-    addApp(app::notes::manifest);
-    addApp(app::settings::manifest);
-    addApp(app::selectiondialog::manifest);
-    addApp(app::systeminfo::manifest);
-    addApp(app::timedatesettings::manifest);
-    addApp(app::timezone::manifest);
-    addApp(app::wifiapsettings::manifest);
-    addApp(app::wificonnect::manifest);
-    addApp(app::wifimanage::manifest);
+    addAppManifest(app::alertdialog::manifest);
+    addAppManifest(app::appdetails::manifest);
+    addAppManifest(app::apphub::manifest);
+    addAppManifest(app::apphubdetails::manifest);
+    addAppManifest(app::applist::manifest);
+    addAppManifest(app::appsettings::manifest);
+    addAppManifest(app::display::manifest);
+    addAppManifest(app::files::manifest);
+    addAppManifest(app::fileselection::manifest);
+    addAppManifest(app::imageviewer::manifest);
+    addAppManifest(app::inputdialog::manifest);
+    addAppManifest(app::launcher::manifest);
+    addAppManifest(app::localesettings::manifest);
+    addAppManifest(app::notes::manifest);
+    addAppManifest(app::settings::manifest);
+    addAppManifest(app::selectiondialog::manifest);
+    addAppManifest(app::systeminfo::manifest);
+    addAppManifest(app::timedatesettings::manifest);
+    addAppManifest(app::timezone::manifest);
+    addAppManifest(app::wifiapsettings::manifest);
+    addAppManifest(app::wificonnect::manifest);
+    addAppManifest(app::wifimanage::manifest);
 
 #if defined(CONFIG_TINYUSB_MSC_ENABLED) && CONFIG_TINYUSB_MSC_ENABLED
     addAppManifest(app::usbsettings::manifest);
