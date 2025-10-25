@@ -33,6 +33,31 @@ bool Dispatcher::dispatch(Function function, TickType_t timeout) {
 }
 
 uint32_t Dispatcher::consume(TickType_t timeout) {
+#ifdef __EMSCRIPTEN__
+    (void)timeout;
+
+    uint32_t consumed = 0;
+
+    while (true) {
+        if (!mutex.lock(0)) {
+            break;
+        }
+
+        if (queue.empty()) {
+            mutex.unlock();
+            break;
+        }
+
+        auto function = queue.front();
+        queue.pop();
+        mutex.unlock();
+
+        consumed++;
+        function();
+    }
+
+    return consumed;
+#else
     // Wait for signal
     uint32_t result = eventFlag.wait(WAIT_FLAG, EventFlag::WaitAny, timeout);
     if (result & EventFlag::Error) {
@@ -65,6 +90,7 @@ uint32_t Dispatcher::consume(TickType_t timeout) {
     } while (processing);
 
     return consumed;
+#endif
 }
 
 } // namespace

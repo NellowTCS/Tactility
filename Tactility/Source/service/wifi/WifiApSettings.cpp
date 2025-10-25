@@ -169,16 +169,14 @@ bool save(const WifiApSettings& apSettings) {
 
     std::map<std::string, std::string> map;
 
-    std::string password_encrypted;
     if (!apSettings.password.empty()) {
+        std::string password_encrypted;
         if (!encrypt(apSettings.password, password_encrypted)) {
             return false;
         }
-    } else {
-        password_encrypted = "";
+        map[AP_PROPERTIES_KEY_PASSWORD] = password_encrypted;
     }
 
-    map[AP_PROPERTIES_KEY_PASSWORD] = password_encrypted;
     map[AP_PROPERTIES_KEY_SSID] = apSettings.ssid;
     map[AP_PROPERTIES_KEY_AUTO_CONNECT] = apSettings.autoConnect ? "true" : "false";
     map[AP_PROPERTIES_KEY_CHANNEL] = std::to_string(apSettings.channel);

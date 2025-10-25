@@ -4,6 +4,11 @@
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/Mutex.h>
 #include <Tactility/Thread.h>
+#include <Tactility/Tactility.h>
+
+#ifdef __EMSCRIPTEN__
+#include <Tactility/DispatcherThread.h>
+#endif
 
 #include <lvgl.h>
 
@@ -61,6 +66,15 @@ void lvgl_task_start() {
 
     tt::lvgl::syncSet(&lvgl_lock, &lvgl_unlock);
 
+#ifdef __EMSCRIPTEN__
+    // For WASM, display is already created in Main.cpp before this is called
+    TT_LOG_I(TAG, "WASM mode: display already created, marking task as running");
+    task_set_running(true);
+#elif defined(__APPLE__)
+    // For macOS, display is already created in Main.cpp before this is called
+    TT_LOG_I(TAG, "macOS mode: display already created, marking task as running");
+    task_set_running(true);
+#else
     // Create the main app loop, like ESP-IDF
     BaseType_t task_result = xTaskCreate(
         lvgl_task,
@@ -72,6 +86,7 @@ void lvgl_task_start() {
     );
 
     assert(task_result == pdTRUE);
+#endif
 }
 
 static void lvgl_task(TT_UNUSED void* arg) {
@@ -105,3 +120,24 @@ static void lvgl_task(TT_UNUSED void* arg) {
     vTaskDelete(nullptr);
 }
 
+#if defined(__EMSCRIPTEN__) || defined(__APPLE__)
+// For WASM and macOS, this is called repeatedly in the main loop
+void lvgl_task_tick() {
+    if (!lvgl_task_is_running() || !displayHandle) {
+        return;
+    }
+
+    // Handle LVGL updates
+    if (lvgl_lock(10)) {
+        lv_timer_handler();
+        lvgl_unlock();
+    }
+    
+    // Process main dispatcher with non-blocking timeout (0 = poll, don't wait)
+    tt::getMainDispatcher().consume(0);
+
+#ifdef __EMSCRIPTEN__
+    tt::DispatcherThread::pumpAll();
+#endif
+}
+#endif

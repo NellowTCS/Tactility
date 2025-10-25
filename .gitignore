@@ -4,6 +4,7 @@
 build/
 buildsim/
 build-sim/
+build-sim-wasm/
 cmake-build-*/
 CMakeCache.txt
 *.cbp
@@ -21,3 +22,6 @@ dependencies.lock
 .gitpod.yml
 
 sdkconfig.board.*.dev
+
+# Built WASM files
+Boards/WebSimulator/AppSim.*

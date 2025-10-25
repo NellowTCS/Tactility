@@ -276,7 +276,14 @@ class SystemInfoApp final : public App {
 #endif
 
 #if configUSE_TRACE_FACILITY
-        addRtosTasks(tasks_tab);
+
+#if defined(__EMSCRIPTEN__)
+    auto* task_label = lv_label_create(tasks_tab);
+    lv_label_set_text(task_label, "Task inspection not available on WASM build");
+#else
+    addRtosTasks(tasks_tab);
+#endif
+
 #endif
 
         addDevices(devices_tab);
