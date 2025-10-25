@@ -29,7 +29,7 @@
     <canvas id="canvas"></canvas>
     <div id="output"></div>
     <script>
-      // Configure Emscripten Module before loading AppSim.js
+      // Configure Emscripten Module before loading FirmwareSim.js
       var Module = {
         canvas: document.getElementById("canvas"),
         print: function (text) {
@@ -49,6 +49,6 @@
         },
       };
     </script>
-    <script src="./AppSim.js"></script>
+    <script src="./FirmwareSim.js"></script>
   </body>
 </html>
