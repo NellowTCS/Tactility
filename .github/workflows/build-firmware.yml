@@ -24,7 +24,6 @@ jobs:
           { id: cyd-e32r32p, arch: esp32 },
           { id: cyd-e32r35t, arch: esp32 },
           { id: cyd-e32r40t, arch: esp32 },
-          { id: cyd-2432s032c, arch: esp32 },
           { id: cyd-jc2432w328c, arch: esp32 },
           { id: cyd-jc3248w535c, arch: esp32s3 },
           { id: cyd-jc8048w550c, arch: esp32s3 },
