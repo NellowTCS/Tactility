@@ -4,7 +4,6 @@
 #include <St7789Display.h>
 #include <PwmBacklight.h>
 #include <Tactility/hal/touch/TouchDevice.h>
-#include <Tactility/hal/spi/SpiConfiguration.h>
 
 // Create the XPT2046 touch device (hardware/esp_lcd driver)
 static std::shared_ptr<tt::hal::touch::TouchDevice> createTouch() {
