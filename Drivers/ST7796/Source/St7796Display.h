@@ -27,7 +27,8 @@ public:
             bool invertColor = false,
             unsigned int gapX = 0,
             unsigned int gapY = 0,
-            uint32_t bufferSize = 0 // Size in pixel count. 0 means default, which is 1/10 of the screen size
+            uint32_t bufferSize = 0, // Size in pixel count. 0 means default, which is 1/10 of the screen size
+            lcd_rgb_element_order_t rgbElementOrder = LCD_RGB_ELEMENT_ORDER_RGB
         ) : spiHostDevice(spiHostDevice),
             csPin(csPin),
             dcPin(dcPin),
@@ -40,7 +41,9 @@ public:
             gapX(gapX),
             gapY(gapY),
             bufferSize(bufferSize),
-            touch(std::move(touch)) {
+            touch(std::move(touch)),
+            rgbElementOrder(rgbElementOrder)
+        {
             if (this->bufferSize == 0) {
                 this->bufferSize = horizontalResolution * verticalResolution / 10;
             }
@@ -63,6 +66,7 @@ public:
         uint32_t bufferSize = 0; // Size in pixel count. 0 means default, which is 1/10 of the screen size
         std::shared_ptr<tt::hal::touch::TouchDevice> touch;
         std::function<void(uint8_t)> _Nullable backlightDutyFunction = nullptr;
+        lcd_rgb_element_order_t rgbElementOrder = LCD_RGB_ELEMENT_ORDER_RGB;
     };
 
 private:

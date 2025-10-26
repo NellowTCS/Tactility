@@ -303,9 +303,14 @@ void run(const Configuration& config) {
     app::start(app::boot::manifest.appId);
 
     TT_LOG_I(TAG, "Main dispatcher ready");
+#ifdef __EMSCRIPTEN__
+    // For WASM, don't block here - the main loop will call our tick function
+    TT_LOG_I(TAG, "WASM: returning from run(), main loop will handle dispatching");
+#else
     while (true) {
         mainDispatcher.consume();
     }
+#endif
 }
 
 const Configuration* _Nullable getConfiguration() {
