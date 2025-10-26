@@ -7,6 +7,8 @@
 
 #define CYD_SPI_TRANSFER_SIZE_LIMIT (240 * 320 / 4 * 2)
 
+using namespace tt::hal;
+
 static bool initBoot() {
     return driver::pwmbacklight::init(CYD_BACKLIGHT_PIN);
 }
