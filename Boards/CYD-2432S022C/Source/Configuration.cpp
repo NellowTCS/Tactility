@@ -1,17 +1,16 @@
-#include "CYD2432S022C.h"
 #include "devices/Display.h"
 #include "devices/SdCard.h"
 #include "devices/Constants.h"
+
+#include <Tactility/hal/Configuration.h>
 #include <Tactility/lvgl/LvglSync.h>
-#include "esp_log.h"
 #include <PwmBacklight.h>
 
 #define TAG "CYD2432S022C"
 
 static bool initBoot() {
     // Initialize PWM backlight before creating display
-    driver::pwmbacklight::init(CYD_2432S022C_LCD_PIN_BACKLIGHT, 40000); // Recommended 40 kHz
-    ESP_LOGI("YellowDisplay", "Setting backlight duty to 255");
+    driver::pwmbacklight::init(CYD_2432S022C_LCD_PIN_BACKLIGHT, 40000);
     driver::pwmbacklight::setBacklightDuty(255);
     return true;
 }
@@ -23,7 +22,7 @@ static tt::hal::DeviceVector createDevices() {
     };
 }
 
-const tt::hal::Configuration cyd_2432s022c_config = {
+extern const tt::hal::Configuration hardwareConfiguration = {
     .initBoot = initBoot,
     .createDevices = createDevices,
     .i2c = {

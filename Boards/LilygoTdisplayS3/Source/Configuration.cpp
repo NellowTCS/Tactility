@@ -1,9 +1,9 @@
-#include <Tactility/hal/Configuration.h>
-#include <Tactility/lvgl/LvglSync.h>
-
-#include <ButtonControl.h>
 #include "devices/Display.h"
 #include "devices/Power.h"
+
+#include <Tactility/hal/Configuration.h>
+#include <Tactility/lvgl/LvglSync.h>
+#include <ButtonControl.h>
 
 bool initBoot();
 
@@ -17,7 +17,7 @@ static std::vector<std::shared_ptr<Device>> createDevices() {
     };
 }
 
-extern const Configuration lilygo_tdisplays3 = {
+extern const Configuration hardwareConfiguration = {
     .initBoot = initBoot,
     .createDevices = createDevices,
     .i2c = {},

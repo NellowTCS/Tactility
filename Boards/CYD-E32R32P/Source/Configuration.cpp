@@ -1,6 +1,7 @@
-#include "E32R40T.h"
 #include "devices/SdCard.h"
 #include "devices/Display.h"
+
+#include <Tactility/hal/Configuration.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <PwmBacklight.h>
 
@@ -17,7 +18,7 @@ static tt::hal::DeviceVector createDevices() {
     };
 }
 
-const tt::hal::Configuration cyd_e32r40t_config = {
+extern const Configuration hardwareConfiguration = {
     .initBoot = initBoot,
     .createDevices = createDevices,
     .i2c = {},

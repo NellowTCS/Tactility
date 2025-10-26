@@ -1,11 +1,9 @@
-#include "JC3248W535C.h"
 #include "devices/Display.h"
 #include "devices/SdCard.h"
 
+#include <Tactility/hal/Configuration.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <PwmBacklight.h>
-
-#include <Tactility/hal/Configuration.h>
 
 using namespace tt::hal;
 
@@ -22,7 +20,7 @@ static bool initBoot() {
     return driver::pwmbacklight::init(GPIO_NUM_1);
 }
 
-const Configuration cyd_jc3248w535c_config = {
+extern const Configuration hardwareConfiguration = {
     .initBoot = initBoot,
     .createDevices = createDevices,
     .i2c = {

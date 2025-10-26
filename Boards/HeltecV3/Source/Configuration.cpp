@@ -1,11 +1,10 @@
-#include <Tactility/hal/Configuration.h>
-#include <Tactility/lvgl/LvglSync.h>
-#include <ButtonControl.h>
-
-#include "HeltecV3.h"
 #include "devices/Display.h"
 #include "devices/Power.h"
 #include "devices/Constants.h"
+
+#include <Tactility/hal/Configuration.h>
+#include <Tactility/lvgl/LvglSync.h>
+#include <ButtonControl.h>
 
 #include "driver/gpio.h"
 #include "driver/i2c.h"
@@ -44,7 +43,7 @@ static std::vector<std::shared_ptr<Device>> createDevices() {
     };
 }
 
-extern const Configuration heltec_v3 = {
+extern const Configuration hardwareConfiguration = {
     .initBoot = initBoot,
     .uiScale = UiScale::Smallest,
     .createDevices = createDevices,

@@ -1,10 +1,13 @@
-#include "E32R35T.h"
 #include "devices/SdCard.h"
 #include "devices/Display.h"
+
+#include <Tactility/hal/Configuration.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <PwmBacklight.h>
 
 #define CYD_SPI_TRANSFER_SIZE_LIMIT (240 * 320 / 4 * 2)
+
+using namespace tt::hal;
 
 static bool initBoot() {
     return driver::pwmbacklight::init(CYD_BACKLIGHT_PIN);
@@ -17,7 +20,7 @@ static tt::hal::DeviceVector createDevices() {
     };
 }
 
-const tt::hal::Configuration cyd_e32r35t_config = {
+extern const Configuration hardwareConfiguration = {
     .initBoot = initBoot,
     .createDevices = createDevices,
     .i2c = {},
