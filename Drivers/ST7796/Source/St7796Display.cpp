@@ -67,7 +67,7 @@ bool St7796Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_lc
 
     const esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = configuration->resetPin, // Set to -1 if not use
-        .color_space = LCD_RGB_ELEMENT_ORDER_RGB,
+        .color_space = configuration->rgbElementOrder,
         .data_endian = LCD_RGB_DATA_ENDIAN_LITTLE,
         .bits_per_pixel = 16,
         .vendor_config = &vendor_config

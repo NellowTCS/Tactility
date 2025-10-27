@@ -84,6 +84,18 @@ uint32_t EventFlag::wait(
     uint32_t options,
     uint32_t timeoutTicksw
 ) const {
+#ifdef __EMSCRIPTEN__
+    // For WASM, we can't wait on event flags since FreeRTOS scheduler isn't running
+    // Return timeout error immediately so callers can handle it gracefully
+    (void)flags;
+    (void)options;
+    (void)handle;
+    if (timeoutTicksw > 0U) {
+        return (uint32_t)ErrorTimeout;
+    } else {
+        return (uint32_t)ErrorResource;
+    }
+#else
     assert(!kernel::isIsr());
     assert((flags & TT_EVENT_FLAG_INVALID_BITS) == 0U);
 
@@ -130,6 +142,7 @@ uint32_t EventFlag::wait(
     }
 
     return rflags;
+#endif
 }
 
 } // namespace

@@ -19,7 +19,7 @@ runs:
       with:
         submodules: recursive
     - name: Install Linux Dependencies for SDL
-      if: ${{ runner.os == 'Linux' }}
+      if: ${{ runner.os == 'Linux' && inputs.os_name != 'wasm' }}
       shell: bash
       # See Libraries/SDL/docs/README-linux.md
       run: >
@@ -36,17 +36,30 @@ runs:
         WLR_LIBINPUT_NO_DEVICES: 1
         WAYLAND_DISPLAY: wayland-1
         GTK_USE_PORTAL: 0
+    - name: Setup Emscripten
+      if: ${{ inputs.os_name == 'wasm' }}
+      uses: mymindstorm/setup-emsdk@v14
+      with:
+        version: latest
     - name: Setup cmake
+      if: ${{ inputs.os_name != 'wasm' }}
       uses: jwlawson/actions-setup-cmake@v2
       with:
         cmake-version: '3.31.x'
     - name: "Prepare Project"
+      if: ${{ inputs.os_name != 'wasm' }}
       shell: bash
       run: cmake -S ./ -B buildsim
     - name: "Build Tests"
+      if: ${{ inputs.os_name != 'wasm' }}
       shell: bash
       run: cmake --build buildsim --target FirmwareSim
+    - name: "Build WASM"
+      if: ${{ inputs.os_name == 'wasm' }}
+      shell: bash
+      run: ./Buildscripts/build-wasm.sh --clean
     - name: 'Release'
+      if: ${{ inputs.os_name != 'wasm' }}
       shell: bash
       run: Buildscripts/release-simulator.sh buildsim release/Simulator-${{ inputs.os_name }}-${{ inputs.platform_name }}
     - name: 'Upload Artifact'
@@ -54,5 +67,5 @@ runs:
       if: ${{ inputs.publish == 'true' }}
       with:
         name: Simulator-${{ inputs.os_name }}-${{ inputs.platform_name }}
-        path: release/Simulator-${{ inputs.os_name }}-${{ inputs.platform_name }}
+        path: ${{ inputs.os_name == 'wasm' && 'Boards/WebSimulator/' || format('release/Simulator-{0}-{1}', inputs.os_name, inputs.platform_name) }}
         retention-days: 30

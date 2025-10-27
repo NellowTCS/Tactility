@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 namespace tt::hal::uart {
 
 #ifdef ESP_PLATFORM

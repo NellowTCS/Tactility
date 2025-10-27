@@ -118,12 +118,14 @@ std::shared_ptr<tt::hal::display::DisplayDriver> EspLcdDisplay::getDisplayDriver
             tt_crash("unsupported driver");
         }
 
+        // Pass the configured column offset to the native driver so it applies the offset when drawing
         displayDriver = std::make_shared<EspLcdDisplayDriver>(
             panelHandle,
             lock,
             lvgl_port_config.hres,
             lvgl_port_config.vres,
-            color_format
+            color_format,
+            getDriverColumnOffset()
         );
     }
     return displayDriver;

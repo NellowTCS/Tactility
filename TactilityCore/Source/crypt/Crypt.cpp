@@ -145,7 +145,11 @@ static int aes256CryptCbc(
 ) {
     tt_check(key && iv && input && output);
 
-    if ((length % 16) || (length == 0)) {
+    if (length == 0) {
+        return 0;
+    }
+
+    if (length % 16) {
         return -1; // TODO: Proper error code from mbed lib?
     }
 
@@ -162,6 +166,9 @@ static int aes256CryptCbc(
 }
 
 int encrypt(const uint8_t iv[16], const uint8_t* inData, uint8_t* outData, size_t dataLength) {
+    if (dataLength == 0) {
+        return 0;
+    }
     tt_check(dataLength % 16 == 0, "Length is not a multiple of 16 bytes (for AES 256");
     uint8_t key[32];
     getKey(key);
@@ -174,6 +181,9 @@ int encrypt(const uint8_t iv[16], const uint8_t* inData, uint8_t* outData, size_
 }
 
 int decrypt(const uint8_t iv[16], const uint8_t* inData, uint8_t* outData, size_t dataLength) {
+    if (dataLength == 0) {
+        return 0;
+    }
     tt_check(dataLength % 16 == 0, "Length is not a multiple of 16 bytes (for AES 256");
     uint8_t key[32];
     getKey(key);
