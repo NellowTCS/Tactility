@@ -1,5 +1,5 @@
 // Display Library for SPI e-paper panels from Dalian Good Display and boards from Waveshare.
-// Requires ESP-IDF SPI and GPIO. Caution: the e-paper panels require 3.3V supply AND data lines!
+// Caution: the e-paper panels require 3.3V supply AND data lines!
 //
 // Display Library based on Demo Example from Good Display: https://www.good-display.com/companyfile/32/
 //
@@ -10,6 +10,7 @@
 // Library: https://github.com/ZinggJM/GxEPD2
 
 #include "GxEPD2_EPD.h"
+#include "esp_timer.h"
 
 const char* GxEPD2_EPD::TAG = "GxEPD2";
 
@@ -17,7 +18,7 @@ GxEPD2_EPD::GxEPD2_EPD(int16_t cs, int16_t dc, int16_t rst, int16_t busy, int16_
                        uint16_t w, uint16_t h, GxEPD2::Panel p, bool c, bool pu, bool fpu) :
   WIDTH(w), HEIGHT(h), panel(p), hasColor(c), hasPartialUpdate(pu), hasFastPartialUpdate(fpu),
   _cs(cs), _dc(dc), _rst(rst), _busy(busy), _busy_level(busy_level), _busy_timeout(busy_timeout), _diag_enabled(false),
-  _spi_host(HSPI_HOST), _devcfg({.command_bits = 0, .address_bits = 0, .dummy_bits = 0, .mode = 0, .duty_cycle_pos = 0, .cs_ena_pretrans = 0, .cs_ena_posttrans = 0, .clock_speed_hz = 10000000, .input_delay_ns = 0, .spics_io_num = cs, .flags = 0, .queue_size = 7, .pre_cb = NULL, .post_cb = NULL}), _spi_handle(NULL)
+  _spi_host(SPI2_HOST), _devcfg({.command_bits = 0, .address_bits = 0, .dummy_bits = 0, .mode = 0, .duty_cycle_pos = 0, .cs_ena_pretrans = 0, .cs_ena_posttrans = 0, .clock_speed_hz = 10000000, .input_delay_ns = 0, .spics_io_num = cs, .flags = 0, .queue_size = 7, .pre_cb = NULL, .post_cb = NULL}), _spi_handle(NULL)
 {
   _initial_write = true;
   _initial_refresh = true;
@@ -59,12 +60,18 @@ void GxEPD2_EPD::init(uint32_t serial_diag_bitrate, bool initial, uint16_t reset
   _reset();
   // Initialize SPI bus
   spi_bus_config_t buscfg = {
-    .miso_io_num = 12, // Default ESP32 HSPI MISO
-    .mosi_io_num = 13, // Default ESP32 HSPI MOSI
-    .sclk_io_num = 14, // Default ESP32 HSPI SCLK
+    .mosi_io_num = 10, // MOSI
+    .miso_io_num = 11, // MISO
+    .sclk_io_num = 9,  // SCLK
     .quadwp_io_num = -1,
     .quadhd_io_num = -1,
-    .max_transfer_sz = 4094
+    .data4_io_num = -1,
+    .data5_io_num = -1,
+    .data6_io_num = -1,
+    .data7_io_num = -1,
+    .max_transfer_sz = 4094,
+    .flags = 0,
+    .intr_flags = 0
   };
   esp_err_t ret = spi_bus_initialize(_spi_host, &buscfg, SPI_DMA_CH_AUTO);
   ESP_ERROR_CHECK(ret);
@@ -117,7 +124,8 @@ void GxEPD2_EPD::_reset()
       gpio_set_direction((gpio_num_t)_rst, GPIO_MODE_OUTPUT);
       gpio_set_level((gpio_num_t)_rst, 0);
       vTaskDelay(pdMS_TO_TICKS(_reset_duration));
-      gpio_set_direction((gpio_num_t)_rst, GPIO_MODE_INPUT_PULLUP);
+      gpio_set_direction((gpio_num_t)_rst, GPIO_MODE_INPUT);
+      gpio_set_pull_mode((gpio_num_t)_rst, GPIO_PULLUP_ONLY);
       vTaskDelay(pdMS_TO_TICKS(_reset_duration > 10 ? _reset_duration : 10));
     }
     else
