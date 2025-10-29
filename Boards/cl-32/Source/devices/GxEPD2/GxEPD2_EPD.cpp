@@ -58,7 +58,7 @@ void GxEPD2_EPD::init(uint32_t serial_diag_bitrate, bool initial, uint16_t reset
     gpio_set_level((gpio_num_t)_cs, 1);
   }
   _reset();
-  // Initialize SPI bus
+  // Initialize SPI bus (may already be initialized by HAL)
   spi_bus_config_t buscfg = {
     .mosi_io_num = 10, // MOSI
     .miso_io_num = 11, // MISO
@@ -74,7 +74,14 @@ void GxEPD2_EPD::init(uint32_t serial_diag_bitrate, bool initial, uint16_t reset
     .intr_flags = 0
   };
   esp_err_t ret = spi_bus_initialize(_spi_host, &buscfg, SPI_DMA_CH_AUTO);
-  ESP_ERROR_CHECK(ret);
+  if (ret == ESP_OK) {
+    // Bus initialized successfully
+  } else if (ret == ESP_ERR_INVALID_STATE) {
+    // Bus already initialized by HAL, continue
+  } else {
+    ESP_ERROR_CHECK(ret); // Other error
+  }
+  // Add SPI device
   ret = spi_bus_add_device(_spi_host, &_devcfg, &_spi_handle);
   ESP_ERROR_CHECK(ret);
   if (_rst >= 0)
