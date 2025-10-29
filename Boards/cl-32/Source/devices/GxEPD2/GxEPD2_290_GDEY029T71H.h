@@ -14,7 +14,7 @@
 #ifndef _GxEPD2_290_GDEY029T71H_H_
 #define _GxEPD2_290_GDEY029T71H_H_
 
-#include "../GxEPD2_EPD.h"
+#include "GxEPD2_EPD.h"
 
 class GxEPD2_290_GDEY029T71H : public GxEPD2_EPD
 {
