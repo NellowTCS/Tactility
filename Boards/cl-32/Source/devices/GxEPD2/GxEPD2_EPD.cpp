@@ -11,12 +11,6 @@
 
 #include "GxEPD2_EPD.h"
 
-#if defined(ESP_PLATFORM)
-#include <pgmspace.h>
-#else
-#include <avr/pgmspace.h>
-#endif
-
 const char* GxEPD2_EPD::TAG = "GxEPD2";
 
 GxEPD2_EPD::GxEPD2_EPD(int16_t cs, int16_t dc, int16_t rst, int16_t busy, int16_t busy_level, uint32_t busy_timeout,
@@ -208,12 +202,12 @@ void GxEPD2_EPD::_writeData(const uint8_t* data, uint16_t n)
 
 void GxEPD2_EPD::_writeDataPGM(const uint8_t* data, uint16_t n, int16_t fill_with_zeroes)
 {
-  // Note: ESP-IDF SPI handles DMA automatically; pgm_read_byte works
+  // In ESP-IDF, const data is accessible directly (no PROGMEM)
   uint8_t* buffer = (uint8_t*)malloc(n + fill_with_zeroes);
   if (!buffer) return;
   for (uint16_t i = 0; i < n; i++)
   {
-    buffer[i] = pgm_read_byte(&*data++);
+    buffer[i] = *data++;  // Direct access
   }
   for (int16_t i = 0; i < fill_with_zeroes; i++)
   {
@@ -225,7 +219,7 @@ void GxEPD2_EPD::_writeDataPGM(const uint8_t* data, uint16_t n, int16_t fill_wit
 
 void GxEPD2_EPD::_writeDataPGM_sCS(const uint8_t* data, uint16_t n, int16_t fill_with_zeroes)
 {
-  // Simplified: ESP-IDF manages it
+  // Simplified: handle CS manually if needed, but ESP-IDF manages it
   _writeDataPGM(data, n, fill_with_zeroes);
 }
 
@@ -251,7 +245,7 @@ void GxEPD2_EPD::_writeCommandDataPGM(const uint8_t* pCommandData, uint8_t datal
   if (!buffer) return;
   for (uint8_t i = 0; i < datalen; i++)
   {
-    buffer[i] = pgm_read_byte(&pCommandData[i]);
+    buffer[i] = *pCommandData++;  // Direct access
   }
   _writeCommandData(buffer, datalen);
   free(buffer);
