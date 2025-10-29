@@ -10,7 +10,7 @@ private:
         auto* self = static_cast<GxEPD2Display*>(lv_display_get_user_data(display));
         int16_t w = area->x2 - area->x1 + 1;
         int16_t h = area->y2 - area->y1 + 1;
-        // Write the monochrome bitmap to e-paper
+        // Write the monochrome bitmap to e-paper (full or partial refresh as needed)
         self->display.writeImage(px_map, area->x1, area->y1, w, h);
         lv_display_flush_ready(display);
     }
@@ -33,11 +33,11 @@ public:
 
     std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable getTouchDevice() override { return nullptr; } // No touch for e-paper
 
-    // Enable LVGL support for monochrome
+    // Enable LVGL support for monochrome (static content only, slow for animations)
     bool supportsLvgl() const override { return true; }
     bool startLvgl() override {
         if (lvglDisplay != nullptr) return false;
-        lvglDisplay = lv_display_create(WIDTH, HEIGHT);
+        lvglDisplay = lv_display_create(display.WIDTH, display.HEIGHT);  // Use display's constants
         lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_I1); // Monochrome 1-bit
         lv_display_set_flush_cb(lvglDisplay, lvglFlushCallback);
         lv_display_set_user_data(lvglDisplay, this);
