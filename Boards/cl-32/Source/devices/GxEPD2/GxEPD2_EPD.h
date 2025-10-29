@@ -1,9 +1,9 @@
 // Display Library for SPI e-paper panels from Dalian Good Display and boards from Waveshare.
-// Requires HW SPI and Adafruit_GFX. Caution: the e-paper panels require 3.3V supply AND data lines!
+// Caution: the e-paper panels require 3.3V supply AND data lines!
 //
 // Display Library based on Demo Example from Good Display: https://www.good-display.com/companyfile/32/
 //
-// Author: Jean-Marc Zingg
+// Author: Jean-Marc Zingg (ported to ESP-IDF)
 //
 // Version: see library.properties
 //
@@ -12,8 +12,12 @@
 #ifndef _GxEPD2_EPD_H_
 #define _GxEPD2_EPD_H_
 
-#include <Arduino.h>
-#include <SPI.h>
+#include <stdint.h>
+#include "driver/spi_master.h"
+#include "driver/gpio.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
 
 #include <GxEPD2.h>
 
@@ -99,7 +103,7 @@ class GxEPD2_EPD
     {
       return (a > b ? a : b);
     };
-    void selectSPI(SPIClass& spi, SPISettings spi_settings);
+    void selectSPI(spi_host_device_t host, spi_device_interface_config_t devcfg); // Updated for ESP-IDF
   protected:
     void _reset();
     void _waitWhileBusy(const char* comment = 0, uint16_t busy_time = 5000);
@@ -117,14 +121,16 @@ class GxEPD2_EPD
     int16_t _cs, _dc, _rst, _busy, _busy_level;
     uint32_t _busy_timeout;
     bool _diag_enabled, _pulldown_rst_mode;
-    SPIClass* _pSPIx;
-    SPISettings _spi_settings;
+    spi_host_device_t _spi_host;
+    spi_device_interface_config_t _devcfg;
+    spi_device_handle_t _spi_handle;
     bool _initial_write, _initial_refresh;
     bool _power_is_on, _using_partial_mode, _hibernating;
     bool _init_display_done;
     uint16_t _reset_duration;
     void (*_busy_callback)(const void*); 
     const void* _busy_callback_parameter;
+    static const char* TAG;
 };
 
 #endif

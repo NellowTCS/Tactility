@@ -60,9 +60,9 @@ extern const tt::hal::Configuration hardwareConfiguration = {
             .device = SPI2_HOST,
             .dma = SPI_DMA_CH_AUTO,
             .config = {
-                .mosi_io_num = GPIO_NUM_13,
-                .miso_io_num = GPIO_NUM_NC,
-                .sclk_io_num = GPIO_NUM_14,
+                .mosi_io_num = GPIO_NUM_10,
+                .miso_io_num = GPIO_NUM_11,
+                .sclk_io_num = GPIO_NUM_9,
                 .quadwp_io_num = GPIO_NUM_NC, // Quad SPI LCD driver is not yet supported
                 .quadhd_io_num = GPIO_NUM_NC, // Quad SPI LCD driver is not yet supported
                 .data4_io_num = GPIO_NUM_NC,
@@ -98,7 +98,7 @@ extern const tt::hal::Configuration hardwareConfiguration = {
                 .isr_cpu_id = ESP_INTR_CPU_AFFINITY_AUTO,
                 .intr_flags = 0
             },
-            .initMode = tt::hal::spi::InitMode::ByTactility,
+            .initMode = tt::hal::spi::InitMode::Disabled,  // Disabled since Arduino uses shared SPI2_HOST (HSPI)
             .isMutable = false,
             .lock = nullptr
         },

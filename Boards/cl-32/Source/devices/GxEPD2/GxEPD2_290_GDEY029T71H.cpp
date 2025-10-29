@@ -1,11 +1,11 @@
 // Display Library for SPI e-paper panels from Dalian Good Display and boards from Waveshare.
-// Requires HW SPI and Adafruit_GFX. Caution: the e-paper panels require 3.3V supply AND data lines!
+// Caution: the e-paper panels require 3.3V supply AND data lines!
 //
 // based on Demo Example from Good Display, available here: https://www.good-display.com/comp/xcompanyFile/downloadNew.do?appId=24&fid=2029&id=1453
 // Panel: GDEY029T71H : https://www.good-display.com/product/540.html
 // Controller : SSD1685 : https://v4.cecdn.yun300.cn/100001_1909185148/SSD1685.pdf
 //
-// Author: Jean-Marc Zingg
+// Author: Jean-Marc Zingg (ported to ESP-IDF)
 //
 // Version: see library.properties
 //
@@ -72,7 +72,7 @@ void GxEPD2_290_GDEY029T71H::writeImageAgain(const uint8_t bitmap[], int16_t x, 
 
 void GxEPD2_290_GDEY029T71H::_writeImage(uint8_t command, const uint8_t bitmap[], int16_t x, int16_t y, int16_t w, int16_t h, bool invert, bool mirror_y, bool pgm)
 {
-  delay(1); // yield() to avoid WDT on ESP8266 and ESP32
+  vTaskDelay(pdMS_TO_TICKS(1)); // yield() to avoid WDT on ESP32
   int16_t wb = (w + 7) / 8; // width bytes, bitmaps are padded
   x -= x % 8; // byte boundary
   w = wb * 8; // byte boundary
@@ -99,7 +99,7 @@ void GxEPD2_290_GDEY029T71H::_writeImage(uint8_t command, const uint8_t bitmap[]
       int16_t idx = mirror_y ? j + dx / 8 + ((h - 1 - (i + dy))) * wb : j + dx / 8 + (i + dy) * wb;
       if (pgm)
       {
-#if defined(__AVR) || defined(ESP8266) || defined(ESP32)
+#if defined(ESP32)
         data = pgm_read_byte(&bitmap[idx]);
 #else
         data = bitmap[idx];
@@ -114,7 +114,7 @@ void GxEPD2_290_GDEY029T71H::_writeImage(uint8_t command, const uint8_t bitmap[]
     }
   }
   _endTransfer();
-  delay(1); // yield() to avoid WDT on ESP8266 and ESP32
+  vTaskDelay(pdMS_TO_TICKS(1)); // yield() to avoid WDT on ESP32
 }
 
 void GxEPD2_290_GDEY029T71H::writeImagePart(const uint8_t bitmap[], int16_t x_part, int16_t y_part, int16_t w_bitmap, int16_t h_bitmap,
@@ -133,7 +133,7 @@ void GxEPD2_290_GDEY029T71H::writeImagePartAgain(const uint8_t bitmap[], int16_t
 void GxEPD2_290_GDEY029T71H::_writeImagePart(uint8_t command, const uint8_t bitmap[], int16_t x_part, int16_t y_part, int16_t w_bitmap, int16_t h_bitmap,
     int16_t x, int16_t y, int16_t w, int16_t h, bool invert, bool mirror_y, bool pgm)
 {
-  delay(1); // yield() to avoid WDT on ESP8266 and ESP32
+  vTaskDelay(pdMS_TO_TICKS(1)); // yield() to avoid WDT on ESP32
   if ((w_bitmap < 0) || (h_bitmap < 0) || (w < 0) || (h < 0)) return;
   if ((x_part < 0) || (x_part >= w_bitmap)) return;
   if ((y_part < 0) || (y_part >= h_bitmap)) return;
@@ -166,7 +166,7 @@ void GxEPD2_290_GDEY029T71H::_writeImagePart(uint8_t command, const uint8_t bitm
       int16_t idx = mirror_y ? x_part / 8 + j + dx / 8 + ((h_bitmap - 1 - (y_part + i + dy))) * wb_bitmap : x_part / 8 + j + dx / 8 + (y_part + i + dy) * wb_bitmap;
       if (pgm)
       {
-#if defined(__AVR) || defined(ESP8266) || defined(ESP32)
+#if defined(ESP32)
         data = pgm_read_byte(&bitmap[idx]);
 #else
         data = bitmap[idx];
@@ -181,7 +181,7 @@ void GxEPD2_290_GDEY029T71H::_writeImagePart(uint8_t command, const uint8_t bitm
     }
   }
   _endTransfer();
-  delay(1); // yield() to avoid WDT on ESP8266 and ESP32
+  vTaskDelay(pdMS_TO_TICKS(1)); // yield() to avoid WDT on ESP32
 }
 
 void GxEPD2_290_GDEY029T71H::writeImage(const uint8_t* black, const uint8_t* color, int16_t x, int16_t y, int16_t w, int16_t h, bool invert, bool mirror_y, bool pgm)
@@ -361,9 +361,9 @@ void GxEPD2_290_GDEY029T71H::_PowerOff()
 void GxEPD2_290_GDEY029T71H::_InitDisplay()
 {
   if (_hibernating) _reset();
-  delay(10); // 10ms according to specs
+  vTaskDelay(pdMS_TO_TICKS(10)); // 10ms according to specs
   _writeCommand(0x12);  //SWRESET
-  delay(10); // 10ms according to specs
+  vTaskDelay(pdMS_TO_TICKS(10)); // 10ms according to specs
   _writeCommand(0x01); //Driver output control
   _writeData((HEIGHT - 1) % 256);
   _writeData((HEIGHT - 1) / 256);
@@ -395,7 +395,7 @@ void GxEPD2_290_GDEY029T71H::_Update_Full()
     _writeData(0x91);
     _writeCommand(0x20);
     //_waitWhileBusy("_Update_Full Load temperature", full_refresh_time); // 15us
-    delay(2);
+    vTaskDelay(pdMS_TO_TICKS(2));
     _writeCommand(0x22); // Display Update Control
     _writeData(0xC7);
   }

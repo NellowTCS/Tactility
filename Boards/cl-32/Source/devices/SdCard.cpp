@@ -22,4 +22,3 @@ std::shared_ptr<SdCardDevice> createSdCard() {
         std::move(configuration)
     );
 }
-
