@@ -1,5 +1,5 @@
 // Display Library for SPI e-paper panels from Dalian Good Display and boards from Waveshare.
-// Caution: the e-paper panels require 3.3V supply AND data lines!
+// Requires ESP-IDF SPI and GPIO. Caution: the e-paper panels require 3.3V supply AND data lines!
 //
 // Display Library based on Demo Example from Good Display: https://www.good-display.com/companyfile/32/
 //
@@ -11,7 +11,7 @@
 
 #include "GxEPD2_EPD.h"
 
-#if defined(ESP32)
+#if defined(ESP_PLATFORM)
 #include <pgmspace.h>
 #else
 #include <avr/pgmspace.h>
@@ -158,7 +158,7 @@ void GxEPD2_EPD::_waitWhileBusy(const char* comment, uint16_t busy_time)
         ESP_LOGE(TAG, "Busy Timeout!");
         break;
       }
-#if defined(ESP32)
+#if defined(ESP_PLATFORM)
       vTaskDelay(pdMS_TO_TICKS(1)); // yield to avoid WDT
 #endif
     }

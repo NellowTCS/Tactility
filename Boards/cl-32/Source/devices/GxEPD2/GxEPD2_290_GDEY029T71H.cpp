@@ -99,7 +99,7 @@ void GxEPD2_290_GDEY029T71H::_writeImage(uint8_t command, const uint8_t bitmap[]
       int16_t idx = mirror_y ? j + dx / 8 + ((h - 1 - (i + dy))) * wb : j + dx / 8 + (i + dy) * wb;
       if (pgm)
       {
-#if defined(ESP32)
+#if defined(ESP_PLATFORM)
         data = pgm_read_byte(&bitmap[idx]);
 #else
         data = bitmap[idx];
@@ -166,7 +166,7 @@ void GxEPD2_290_GDEY029T71H::_writeImagePart(uint8_t command, const uint8_t bitm
       int16_t idx = mirror_y ? x_part / 8 + j + dx / 8 + ((h_bitmap - 1 - (y_part + i + dy))) * wb_bitmap : x_part / 8 + j + dx / 8 + (y_part + i + dy) * wb_bitmap;
       if (pgm)
       {
-#if defined(ESP32)
+#if defined(ESP_PLATFORM)
         data = pgm_read_byte(&bitmap[idx]);
 #else
         data = bitmap[idx];
