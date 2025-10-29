@@ -11,6 +11,8 @@
 #define EPD_RST GPIO_NUM_12 // Reset
 #define EPD_BUSY GPIO_NUM_14 // Busy signal
 
+#define LCD_PIN_BACKLIGHT GPIO_NUM_NC
+
 // SPI transfer size limit for e-paper (small buffer)
 #define LCD_SPI_TRANSFER_SIZE_LIMIT 1024
 

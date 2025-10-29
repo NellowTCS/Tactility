@@ -7,7 +7,7 @@
 #include <driver/gpio.h>
 
 static bool initBoot() {
-    return true;
+    return driver::pwmbacklight::init(LCD_PIN_BACKLIGHT);
 }
 
 static tt::hal::DeviceVector createDevices() {
@@ -28,8 +28,8 @@ extern const tt::hal::Configuration hardwareConfiguration = {
             .isMutable = true,
             .config = (i2c_config_t) {
                 .mode = I2C_MODE_MASTER,
-                .sda_io_num = GPIO_NUM_33,
-                .scl_io_num = GPIO_NUM_32,
+                .sda_io_num = GPIO_NUM_1,
+                .scl_io_num = GPIO_NUM_2,
                 .sda_pullup_en = false,
                 .scl_pullup_en = false,
                 .master = {
