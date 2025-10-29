@@ -4,6 +4,7 @@
 #include <Tactility/hal/Configuration.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <PwmBacklight.h>
+#include <driver/gpio.h>
 
 static bool initBoot() {
     return true;
@@ -83,9 +84,9 @@ extern const tt::hal::Configuration hardwareConfiguration = {
             .device = SPI3_HOST,
             .dma = SPI_DMA_CH_AUTO,
             .config = {
-                .mosi_io_num = GPIO_NUM_23,
-                .miso_io_num = GPIO_NUM_19,
-                .sclk_io_num = GPIO_NUM_18,
+                .mosi_io_num = GPIO_NUM_NC,
+                .miso_io_num = GPIO_NUM_NC,
+                .sclk_io_num = GPIO_NUM_NC,
                 .quadwp_io_num = GPIO_NUM_NC, // Quad SPI LCD driver is not yet supported
                 .quadhd_io_num = GPIO_NUM_NC, // Quad SPI LCD driver is not yet supported
                 .data4_io_num = GPIO_NUM_NC,
