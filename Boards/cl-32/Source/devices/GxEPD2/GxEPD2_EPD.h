@@ -19,7 +19,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 
-#include <GxEPD2.h>
+#include "GxEPD2.h"
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 //#pragma GCC diagnostic ignored "-Wsign-compare"

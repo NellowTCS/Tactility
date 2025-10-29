@@ -6,7 +6,7 @@
 #include <PwmBacklight.h>
 
 static bool initBoot() {
-    return driver::pwmbacklight::init(LCD_PIN_BACKLIGHT);
+    return true;
 }
 
 static tt::hal::DeviceVector createDevices() {
