@@ -187,7 +187,7 @@ Rotation handling modes:
 #define ROTATE_90_CW   2
 
 #ifndef EPD_ROTATION_MODE
-#define EPD_ROTATION_MODE ROTATE_90_CW
+#define EPD_ROTATION_MODE ROTATE_NONE
 #endif
 
 // Read a single pixel from a packed 1bpp buffer (MSB-first per byte)
