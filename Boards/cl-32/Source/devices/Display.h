@@ -20,6 +20,6 @@ constexpr auto EPD_HEIGHT = 384;
 constexpr auto LCD_PIN_BACKLIGHT = GPIO_NUM_NC;
 
 // SPI transfer limit for e-paper (smaller buffers)
-constexpr auto LCD_SPI_TRANSFER_SIZE_LIMIT = 4096;
+constexpr auto LCD_SPI_TRANSFER_SIZE_LIMIT = 8192;
 
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay();

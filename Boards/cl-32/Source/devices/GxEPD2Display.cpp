@@ -24,7 +24,7 @@ std::string GxEPD2Display::getName() const {
 }
 
 std::string GxEPD2Display::getDescription() const {
-    return "E-paper display GDEY029T71H (168x384)";
+    return "E-paper display GDEY029T71H";
 }
 
 bool GxEPD2Display::start() {
@@ -144,6 +144,9 @@ bool GxEPD2Display::startLvgl() {
     // Set flush callback
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
+
+    // Rotate to landscape (display is 168x384, we want it as 384x168)
+    lv_display_set_rotation(_lvglDisplay, LV_DISPLAY_ROTATION_90);
 
     ESP_LOGI(TAG, "LVGL integration started successfully");
     return true;
