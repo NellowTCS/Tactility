@@ -104,7 +104,7 @@ bool GxEPD2Display::startLvgl() {
     ESP_LOGI(TAG, "Starting LVGL integration...");
 
     // Calculate buffer size (10 lines worth)
-    const size_t bufSize = _config.height * DRAW_BUF_LINES; // Use height for landscape
+    const size_t bufSize = _config.height * DRAW_BUF_LINES; // Use height for landscape (LVGL width)
 
     // Allocate draw buffers in DMA-capable memory
     _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
@@ -120,7 +120,7 @@ bool GxEPD2Display::startLvgl() {
 
     ESP_LOGI(TAG, "Allocated draw buffers: %zu bytes each", bufSize * sizeof(lv_color_t));
 
-    // Create LVGL display
+    // Create LVGL display (width = LVGL width = physical height after rotation)
     _lvglDisplay = lv_display_create(_config.height, _config.width);
     if (!_lvglDisplay) {
         ESP_LOGE(TAG, "Failed to create LVGL display");
@@ -184,8 +184,11 @@ std::shared_ptr<tt::hal::display::DisplayDriver> GxEPD2Display::getDisplayDriver
 
 // Rotate, mirror, and optionally invert monochrome bitmap 90° CW from LVGL landscape to e-paper portrait
 static void rotate_bitmap_1bpp(const uint8_t* src, uint8_t* dst, int src_w, int src_h, bool flip_x, bool flip_y, bool invert) {
-    // dst: buffer for e-paper (width=src_h, height=src_w)
-    memset(dst, 0, (src_h * src_w + 7) / 8); // dst size
+    // dst: buffer for e-paper (width = src_h, height = src_w)
+    const int dst_w = src_h;
+    const int dst_h = src_w;
+    const int dst_bytes = (dst_w * dst_h + 7) / 8;
+    memset(dst, 0, dst_bytes); // clear destination
 
     for (int y = 0; y < src_h; ++y) {
         for (int x = 0; x < src_w; ++x) {
@@ -196,15 +199,19 @@ static void rotate_bitmap_1bpp(const uint8_t* src, uint8_t* dst, int src_w, int 
             bool pixel = (src[src_byte] >> src_bit) & 0x01;
             if (invert) pixel = !pixel;
 
-            // 90° CW rotation: (x, y) -> (y, src_w - 1 - x)
-            int dst_x = flip_x ? (src_h - 1 - y) : y;
-            int dst_y = flip_y ? x : (src_w - 1 - x);
-            int dst_idx = dst_y * src_h + dst_x;
+            // 90° CW rotation (no flips): (x, y) -> (y, src_w - 1 - x)
+            int dst_x = y;
+            int dst_y = src_w - 1 - x;
+
+            // Apply flips inside the rotated coordinate system if requested
+            if (flip_x) dst_x = (dst_w - 1) - dst_x; // vertical flip in EPD coords
+            if (flip_y) dst_y = (dst_h - 1) - dst_y; // horizontal flip in EPD coords
+
+            int dst_idx = dst_y * dst_w + dst_x;
             int dst_byte = dst_idx / 8;
             int dst_bit  = 7 - (dst_idx % 8);
 
-            if (pixel)
-                dst[dst_byte] |= (1 << dst_bit);
+            if (pixel) dst[dst_byte] |= (1 << dst_bit);
         }
     }
 }
@@ -218,11 +225,11 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    // Get landscape area from LVGL
+    // src_w/src_h: size of the LVGL area being flushed (in LVGL coordinate space)
     int src_w = area->x2 - area->x1 + 1;
     int src_h = area->y2 - area->y1 + 1;
 
-    // Allocate rotated buffer
+    // dst_w/dst_h: size of the rotated area (in EPD coordinate space)
     int dst_w = src_h;
     int dst_h = src_w;
     int dst_bytes = ((dst_w * dst_h) + 7) / 8;
@@ -233,21 +240,33 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    bool flip_x = false;   // mirror vertically
-    bool flip_y = true;   // mirror horizontally
-    bool invert = true;   // invert black/white
+    bool flip_x = false;   // flip vertically in EPD coordinates
+    bool flip_y = false;   // flip horizontally in EPD coordinates
+    bool invert = true;    // invert black/white if required by panel wiring
 
     rotate_bitmap_1bpp(px_map, rotated_bitmap, src_w, src_h, flip_x, flip_y, invert);
 
-    // E-paper expects portrait: x = area->y1, y = EPD_WIDTH - 1 - area->x2
-    int x = flip_x ? (self->_config.height - 1 - area->y2) : area->y1;
-    int y = flip_y ? (self->_config.width - 1 - area->x2) : area->x1;
-    int w = dst_w;
-    int h = dst_h;
+    // Map LVGL area rectangle to EPD coordinates after 90° CW rotation (no flips)
+    // LVGL full width (Wlv) is _config.height (we created LVGL with _config.height as width)
+    // 90° CW mapping: (xl, yl) -> (x_epd = yl, y_epd = Wlv - 1 - xl)
+    const int Wlv = self->_config.height;
+    int x_epd = area->y1;                    // left of rotated block
+    int y_epd = (Wlv - 1) - area->x2;        // top of rotated block (use area->x2)
+    int w_epd = dst_w;
+    int h_epd = dst_h;
 
-    self->_display->writeImage(rotated_bitmap, x, y, w, h, false, false, false);
+    ESP_LOGD(TAG, "Flush: LV area x=[%d..%d] y=[%d..%d] src_w=%d src_h=%d -> EPD x=%d y=%d w=%d h=%d (Wlv=%d)",
+             area->x1, area->x2, area->y1, area->y2, src_w, src_h, x_epd, y_epd, w_epd, h_epd, Wlv);
+
+    // Bounds-safety: clamp x_epd/y_epd if needed (avoid sending out-of-range)
+    if (x_epd < 0) { x_epd = 0; }
+    if (y_epd < 0) { y_epd = 0; }
+    if (x_epd + w_epd > (int)self->_config.width) w_epd = self->_config.width - x_epd;
+    if (y_epd + h_epd > (int)self->_config.height) h_epd = self->_config.height - y_epd;
+
+    self->_display->writeImage(rotated_bitmap, x_epd, y_epd, w_epd, h_epd, false, false, false);
     self->_display->refresh(true);
 
-    free(rotated_bitmap);
+    heap_caps_free(rotated_bitmap);
     lv_display_flush_ready(disp);
 }
