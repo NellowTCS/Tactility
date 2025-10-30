@@ -59,12 +59,11 @@ void GxEPD2_EPD::init(uint32_t serial_diag_bitrate, bool initial, uint16_t reset
     gpio_set_level((gpio_num_t)_cs, 1);
   }
   
-  // DON'T initialize the SPI bus here - Tactility HAL does it
-  // Just add the device to the existing bus
+  // Just add our device to the existing bus
   esp_err_t ret = spi_bus_add_device(_spi_host, &_devcfg, &_spi_handle);
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "Failed to add SPI device: %s", esp_err_to_name(ret));
-    return;
+    // Don't return - continue to set up GPIO pins
   }
   
   if (_rst >= 0)
