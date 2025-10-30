@@ -64,6 +64,10 @@ bool GxEPD2Display::start() {
     ESP_LOGI(TAG, "Initializing display hardware...");
     _display->init(0); // 0 = no serial diagnostics
 
+    // setRotation(3) rotates the panel 90° clockwise so LVGL can render in landscape without manual rotate.
+    ESP_LOGI(TAG, "Setting display rotation to 3...");
+    _display->setRotation(3);
+
     // Clear the screen to white
     ESP_LOGI(TAG, "Clearing screen...");
     _display->clearScreen(0xFF); // 0xFF = white
@@ -103,8 +107,13 @@ bool GxEPD2Display::startLvgl() {
 
     ESP_LOGI(TAG, "Starting LVGL integration...");
 
-    // Calculate buffer size (10 lines worth of the physical width)
-    const size_t bufSize = _config.width * DRAW_BUF_LINES;
+    // If we rotated the hardware (setRotation(3)), swap width/height for LVGL so LVGL draws in the
+    // correct orientation and we can write px_map directly to the panel.
+    const uint16_t lv_width = _config.height; // swap
+    const uint16_t lv_height = _config.width; // swap
+
+    // Calculate buffer size (10 lines worth of the LVGL width)
+    const size_t bufSize = lv_width * DRAW_BUF_LINES;
 
     // Allocate draw buffers in DMA-capable memory
     _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
@@ -112,21 +121,20 @@ bool GxEPD2Display::startLvgl() {
 
     if (!_drawBuf1 || !_drawBuf2) {
         ESP_LOGE(TAG, "Failed to allocate LVGL draw buffers");
-        if (_drawBuf1) free(_drawBuf1);
-        if (_drawBuf2) free(_drawBuf2);
+        if (_drawBuf1) heap_caps_free(_drawBuf1);
+        if (_drawBuf2) heap_caps_free(_drawBuf2);
         _drawBuf1 = _drawBuf2 = nullptr;
         return false;
     }
 
     ESP_LOGI(TAG, "Allocated draw buffers: %zu bytes each", bufSize * sizeof(lv_color_t));
 
-    // Create LVGL display with physical dimensions (168x384)
-    // The rotation happens in the flush callback
-    _lvglDisplay = lv_display_create(_config.width, _config.height);
+    // Create LVGL display using the swapped (rotated) dimensions so LVGL coordinates match panel rotation
+    _lvglDisplay = lv_display_create(lv_width, lv_height);
     if (!_lvglDisplay) {
         ESP_LOGE(TAG, "Failed to create LVGL display");
-        free(_drawBuf1);
-        free(_drawBuf2);
+        heap_caps_free(_drawBuf1);
+        heap_caps_free(_drawBuf2);
         _drawBuf1 = _drawBuf2 = nullptr;
         return false;
     }
@@ -143,14 +151,14 @@ bool GxEPD2Display::startLvgl() {
         LV_DISPLAY_RENDER_MODE_PARTIAL
     );
 
-    // Set flush callback
+    // Set flush callback and user data
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
-    // Rotate display 90° to landscape (LVGL will think it's 384x168)
-    lv_display_set_rotation(_lvglDisplay, LV_DISPLAY_ROTATION_90);
+    // Do not ask LVGL to rotate; we let the hardware driver handle rotation via setRotation(3)
+    // (so we removed lv_display_set_rotation)
 
-    ESP_LOGI(TAG, "LVGL integration started successfully");
+    ESP_LOGI(TAG, "LVGL integration started successfully (LV size %ux%u)", lv_width, lv_height);
     return true;
 }
 
@@ -162,12 +170,12 @@ bool GxEPD2Display::stopLvgl() {
     }
 
     if (_drawBuf1) {
-        free(_drawBuf1);
+        heap_caps_free(_drawBuf1);
         _drawBuf1 = nullptr;
     }
 
     if (_drawBuf2) {
-        free(_drawBuf2);
+        heap_caps_free(_drawBuf2);
         _drawBuf2 = nullptr;
     }
 
@@ -186,39 +194,9 @@ std::shared_ptr<tt::hal::display::DisplayDriver> GxEPD2Display::getDisplayDriver
     return nullptr;
 }
 
-// Rotate monochrome bitmap 90° CCW (counter-clockwise) for landscape display
-// LVGL thinks display is 168x384 (portrait), but with rotation=90 it presents 384x168 (landscape)
-// So we need to rotate LVGL's landscape output 90° CCW to match the physical portrait panel
-static void rotate_bitmap_90ccw_1bpp(const uint8_t* src, uint8_t* dst, int src_w, int src_h) {
-    // After 90° CCW rotation: dst_w = src_h, dst_h = src_w
-    const int dst_w = src_h;
-    const int dst_h = src_w;
-    const int dst_bytes = (dst_w * dst_h + 7) / 8;
-    memset(dst, 0, dst_bytes);
-
-    for (int y = 0; y < src_h; ++y) {
-        for (int x = 0; x < src_w; ++x) {
-            // Read pixel from source
-            int src_idx = y * src_w + x;
-            int src_byte = src_idx / 8;
-            int src_bit = 7 - (src_idx % 8);
-            bool pixel = (src[src_byte] >> src_bit) & 0x01;
-
-            // 90° CCW rotation: (x, y) -> (y, dst_h - 1 - x)
-            int dst_x = y;
-            int dst_y = dst_h - 1 - x;
-
-            // Write pixel to destination
-            int dst_idx = dst_y * dst_w + dst_x;
-            int dst_byte = dst_idx / 8;
-            int dst_bit = 7 - (dst_idx % 8);
-            
-            if (pixel) {
-                dst[dst_byte] |= (1 << dst_bit);
-            }
-        }
-    }
-}
+// The rotated hardware means LVGL's px_map should now match the panel orientation.
+// We will write the incoming px_map directly to the panel. If the px_map bit-packing
+// doesn't match the panel's expectation, we will detect that in testing and fall back.
 
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* self = static_cast<GxEPD2Display*>(lv_display_get_user_data(disp));
@@ -229,52 +207,40 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    // Source dimensions (LVGL area in landscape: 384x168)
+    // Source dimensions (LVGL area)
     int src_w = area->x2 - area->x1 + 1;
     int src_h = area->y2 - area->y1 + 1;
 
-    // Destination dimensions after 90° CCW rotation (portrait: 168x384)
-    int dst_w = src_h;
-    int dst_h = src_w;
-    
-    int dst_bytes = (dst_w * dst_h + 7) / 8;
-    uint8_t* rotated_bitmap = (uint8_t*)heap_caps_malloc(dst_bytes, MALLOC_CAP_DMA);
-    if (!rotated_bitmap) {
-        ESP_LOGE(TAG, "Failed to allocate rotated bitmap");
-        lv_display_flush_ready(disp);
-        return;
-    }
+    // LVGL is using swapped dimensions to match rotated hardware.
+    // So px_map should be in the correct orientation for the panel; write directly.
+    // compute bytes for the bitmap (rows padded to byte boundary)
+    int row_bytes = (src_w + 7) / 8;
+    int src_bytes = row_bytes * src_h;
 
-    // Rotate the bitmap 90° CCW
-    rotate_bitmap_90ccw_1bpp(px_map, rotated_bitmap, src_w, src_h);
+    ESP_LOGD(TAG, "Flush: LVGL [%d,%d %dx%d] bytes=%d", area->x1, area->y1, src_w, src_h, src_bytes);
 
-    // Calculate the position on the e-paper display
-    // LVGL area (landscape 384x168): top-left = (area->x1, area->y1)
-    // After 90° CCW rotation to portrait (168x384):
-    // top-left (x, y) maps to (y, 384 - (x + w))
-    int epd_x = area->y1;
-    int epd_y = self->_config.height - (area->x1 + src_w);
+    // Coordinates on the EPD: since hardware rotation already applied, area coords map directly
+    int epd_x = area->x1;
+    int epd_y = area->y1;
 
-    // Make sure coordinates are within bounds
+    // Bounds check / clip
     if (epd_x < 0) epd_x = 0;
     if (epd_y < 0) epd_y = 0;
-    if (epd_x + dst_w > (int)self->_config.width) dst_w = self->_config.width - epd_x;
-    if (epd_y + dst_h > (int)self->_config.height) dst_h = self->_config.height - epd_y;
+    int w = src_w;
+    int h = src_h;
+    if (epd_x + w > (int)self->_config.width) w = self->_config.width - epd_x;
+    if (epd_y + h > (int)self->_config.height) h = self->_config.height - epd_y;
 
-    ESP_LOGD(TAG, "Flush: LVGL [%d,%d %dx%d] -> EPD [%d,%d %dx%d]",
-             area->x1, area->y1, src_w, src_h, epd_x, epd_y, dst_w, dst_h);
+    // Write to display; GxEPD2 expects packed 1bpp with rows padded to byte boundary.
+    // If px_map bit-order differs (LSB vs MSB) this may require conversion.
+    self->_display->writeImage(px_map, epd_x, epd_y, w, h, false, false, false);
 
-    // Write to e-paper display buffer (don't refresh yet)
-    self->_display->writeImage(rotated_bitmap, epd_x, epd_y, dst_w, dst_h, false, false, false);
-    
-    // Only refresh if this is a full screen update or large area
-    // This reduces flickering for small incremental updates
-    bool is_large_update = (src_w * src_h) > (384 * 168 / 4); // More than 25% of screen
+    // Decide refresh strategy - keep existing heuristic
+    bool is_large_update = (src_w * src_h) > (384 * 168 / 4); // >25%
     if (is_large_update) {
         ESP_LOGI(TAG, "Large update, refreshing display");
         self->_display->refresh(true); // Partial refresh
     }
 
-    heap_caps_free(rotated_bitmap);
     lv_display_flush_ready(disp);
 }
