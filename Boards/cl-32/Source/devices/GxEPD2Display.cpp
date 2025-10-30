@@ -2,6 +2,7 @@
 #include "GxEPD2/GxEPD2_290_GDEY029T71H.h"
 #include <esp_log.h>
 #include <esp_heap_caps.h>
+#include <cstring>
 
 static const char* TAG = "GxEPD2Display";
 
@@ -103,7 +104,7 @@ bool GxEPD2Display::startLvgl() {
     ESP_LOGI(TAG, "Starting LVGL integration...");
 
     // Calculate buffer size (10 lines worth)
-    const size_t bufSize = _config.width * DRAW_BUF_LINES;
+    const size_t bufSize = _config.height * DRAW_BUF_LINES; // Use height for landscape
 
     // Allocate draw buffers in DMA-capable memory
     _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
@@ -120,7 +121,7 @@ bool GxEPD2Display::startLvgl() {
     ESP_LOGI(TAG, "Allocated draw buffers: %zu bytes each", bufSize * sizeof(lv_color_t));
 
     // Create LVGL display
-    _lvglDisplay = lv_display_create(_config.width, _config.height);
+    _lvglDisplay = lv_display_create(_config.height, _config.width);
     if (!_lvglDisplay) {
         ESP_LOGE(TAG, "Failed to create LVGL display");
         free(_drawBuf1);
@@ -181,6 +182,34 @@ std::shared_ptr<tt::hal::display::DisplayDriver> GxEPD2Display::getDisplayDriver
     return nullptr;
 }
 
+// Rotate monochrome bitmap 90° CW from LVGL landscape to e-paper portrait
+static void rotate_bitmap_1bpp(const uint8_t* src, uint8_t* dst, int src_w, int src_h) {
+    // src: buffer from LVGL (width=src_w, height=src_h)
+    // dst: buffer for e-paper (width=src_h, height=src_w)
+    // Both are 1bpp (bitmaps, padded to byte boundaries)
+    memset(dst, 0, (src_w * src_h + 7) / 8); // clear destination
+
+    for (int y = 0; y < src_h; ++y) {
+        for (int x = 0; x < src_w; ++x) {
+            int src_idx = y * src_w + x;
+            int src_byte = src_idx / 8;
+            int src_bit  = 7 - (src_idx % 8);
+
+            bool pixel = (src[src_byte] >> src_bit) & 0x01;
+
+            // 90° CW rotation: (x, y) -> (y, src_w - 1 - x)
+            int dst_x = y;
+            int dst_y = src_w - 1 - x;
+            int dst_idx = dst_y * src_h + dst_x;
+            int dst_byte = dst_idx / 8;
+            int dst_bit  = 7 - (dst_idx % 8);
+
+            if (pixel)
+                dst[dst_byte] |= (1 << dst_bit);
+        }
+    }
+}
+
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* self = static_cast<GxEPD2Display*>(lv_display_get_user_data(disp));
     
@@ -190,16 +219,33 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    int16_t x = area->x1;
-    int16_t y = area->y1;
-    int16_t w = area->x2 - area->x1 + 1;
-    int16_t h = area->y2 - area->y1 + 1;
+    // Get landscape area from LVGL
+    int src_w = area->x2 - area->x1 + 1;
+    int src_h = area->y2 - area->y1 + 1;
 
-    // Write bitmap to display buffer
-    self->_display->writeImage(px_map, x, y, w, h, false, false, false);
+    // Allocate rotated buffer
+    int dst_w = src_h;
+    int dst_h = src_w;
+    int dst_bytes = ((dst_w * dst_h) + 7) / 8;
+    uint8_t* rotated_bitmap = (uint8_t*)heap_caps_malloc(dst_bytes, MALLOC_CAP_DMA);
+    if (!rotated_bitmap) {
+        ESP_LOGE(TAG, "Failed to allocate rotated bitmap");
+        lv_display_flush_ready(disp);
+        return;
+    }
 
-    // Perform partial refresh
-    self->_display->refresh(true); // true = partial update
+    rotate_bitmap_1bpp(px_map, rotated_bitmap, src_w, src_h);
 
+    // For landscape: area->x1, y1 are swapped!
+    // E-paper expects portrait: x = area->y1, y = EPD_WIDTH - 1 - area->x2
+    int x = area->y1;
+    int y = self->_config.width - 1 - area->x2;
+    int w = src_h;
+    int h = src_w;
+
+    self->_display->writeImage(rotated_bitmap, x, y, w, h, false, false, false);
+    self->_display->refresh(true);
+
+    free(rotated_bitmap);
     lv_display_flush_ready(disp);
 }
