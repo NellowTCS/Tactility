@@ -46,58 +46,45 @@ void GxEPD2_EPD::init(uint32_t serial_diag_bitrate, bool initial, uint16_t reset
   _hibernating = false;
   _init_display_done = false;
   _reset_duration = reset_duration;
+  
   if (serial_diag_bitrate > 0)
   {
-    // ESP-IDF logging is always enabled; bitrate ignored
     _diag_enabled = true;
   }
+  
   // Initialize GPIO pins
   if (_cs >= 0)
   {
     gpio_set_direction((gpio_num_t)_cs, GPIO_MODE_OUTPUT);
     gpio_set_level((gpio_num_t)_cs, 1);
   }
-  _reset();
-  // Initialize SPI bus (may already be initialized by HAL)
-  spi_bus_config_t buscfg = {
-    .mosi_io_num = 10, // MOSI
-    .miso_io_num = 11, // MISO
-    .sclk_io_num = 9,  // SCLK
-    .quadwp_io_num = -1,
-    .quadhd_io_num = -1,
-    .data4_io_num = -1,
-    .data5_io_num = -1,
-    .data6_io_num = -1,
-    .data7_io_num = -1,
-    .max_transfer_sz = 4094,
-    .flags = 0,
-    .intr_flags = 0
-  };
-  esp_err_t ret = spi_bus_initialize(_spi_host, &buscfg, SPI_DMA_CH_AUTO);
-  if (ret == ESP_OK) {
-    // Bus initialized successfully
-  } else if (ret == ESP_ERR_INVALID_STATE) {
-    // Bus already initialized by HAL, continue
-  } else {
-    ESP_ERROR_CHECK(ret); // Other error
+  
+  // DON'T initialize the SPI bus here - Tactility HAL does it
+  // Just add the device to the existing bus
+  esp_err_t ret = spi_bus_add_device(_spi_host, &_devcfg, &_spi_handle);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to add SPI device: %s", esp_err_to_name(ret));
+    return;
   }
-  // Add SPI device
-  ret = spi_bus_add_device(_spi_host, &_devcfg, &_spi_handle);
-  ESP_ERROR_CHECK(ret);
+  
   if (_rst >= 0)
   {
     gpio_set_direction((gpio_num_t)_rst, GPIO_MODE_OUTPUT);
     gpio_set_level((gpio_num_t)_rst, 1);
   }
+  
   if (_dc >= 0)
   {
     gpio_set_direction((gpio_num_t)_dc, GPIO_MODE_OUTPUT);
     gpio_set_level((gpio_num_t)_dc, 1);
   }
+  
   if (_busy >= 0)
   {
     gpio_set_direction((gpio_num_t)_busy, GPIO_MODE_INPUT);
   }
+  
+  _reset();
 }
 
 void GxEPD2_EPD::end()
