@@ -15,4 +15,6 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     auto disp = std::make_shared<GxEPD2Display>(config);
 
     disp->setRotation(2);
+
+    return disp;
 }

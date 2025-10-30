@@ -142,6 +142,19 @@ lv_display_t* GxEPD2Display::getLvglDisplay() const { return _lvglDisplay; }
 bool GxEPD2Display::supportsDisplayDriver() const { return false; }
 std::shared_ptr<tt::hal::display::DisplayDriver> GxEPD2Display::getDisplayDriver() { return nullptr; }
 
+uint16_t GxEPD2Display::getWidth() const { return _config.width; }
+uint16_t GxEPD2Display::getHeight() const { return _config.height; }
+
+void GxEPD2Display::writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, int16_t w, int16_t h, bool invert, bool mirror_y) {
+    if (!_display) return;
+    _display->writeImage(bitmap, x, y, w, h, invert, mirror_y, false);
+}
+
+void GxEPD2Display::refreshDisplay(bool partial) {
+    if (!_display) return;
+    _display->refresh(partial);
+}
+
 // Helpers for bit access (MSB-first)
 static inline bool read_bit_msbf(const uint8_t* buf, int row_bytes, int x, int y) {
     int byte_index = y * row_bytes + (x / 8);
