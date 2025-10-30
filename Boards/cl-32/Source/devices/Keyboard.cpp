@@ -37,6 +37,23 @@ static inline int rc_to_index(int row, int col) {
     return idx;
 }
 
+CL32Keyboard::CL32Keyboard(const std::shared_ptr<Tca8418>& tca)
+    : keypad(tca)
+    , kbHandle(nullptr)
+    , inputTimer(nullptr)
+{
+    // Create FreeRTOS queue for key events (16 chars deep)
+    queue = xQueueCreate(16, sizeof(char));
+}
+
+CL32Keyboard::~CL32Keyboard() {
+    stopLvgl();
+    if (queue) {
+        vQueueDelete(queue);
+        queue = nullptr;
+    }
+}
+
 void CL32Keyboard::readCallback(lv_indev_t* indev, lv_indev_data_t* data) {
     auto keyboard = static_cast<CL32Keyboard*>(lv_indev_get_user_data(indev));
     char keypress = 0;
