@@ -42,6 +42,10 @@ public:
     bool supportsDisplayDriver() const override;
     std::shared_ptr<tt::hal::display::DisplayDriver> _Nullable getDisplayDriver() override;
 
+    // Runtime rotation API (0 = none, 1 = 90° CCW, 2 = 90° CW)
+    void setRotation(uint8_t rot) { rotation_ = rot & 3; }
+    uint8_t getRotation() const { return rotation_; }
+
 private:
     Configuration _config;
     std::unique_ptr<GxEPD2_290_GDEY029T71H> _display;
@@ -50,6 +54,9 @@ private:
     lv_color_t* _drawBuf2;
 
     static constexpr size_t DRAW_BUF_LINES = 10;
+
+    // rotation: 0 none, 1 90° CCW, 2 90° CW
+    uint8_t rotation_ = 0;
 
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
 };

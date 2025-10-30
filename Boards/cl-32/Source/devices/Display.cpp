@@ -12,5 +12,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         .spiHost = EPD_SPI_HOST
     };
 
-    return std::make_shared<GxEPD2Display>(config);
+    auto disp = std::make_shared<GxEPD2Display>(config);
+
+    disp->setRotation(2);
 }
