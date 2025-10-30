@@ -240,8 +240,8 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     rotate_bitmap_1bpp(px_map, rotated_bitmap, src_w, src_h, flip_x, flip_y, invert);
 
     // E-paper expects portrait: x = area->y1, y = EPD_WIDTH - 1 - area->x2
-    int x = flip_x ? (_config.height - 1 - area->y2) : area->y1;
-    int y = flip_y ? (_config.width - 1 - area->x2) : area->x1;
+    int x = flip_x ? (self->_config.height - 1 - area->y2) : area->y1;
+    int y = flip_y ? (self->_config.width - 1 - area->x2) : area->x1;
     int w = dst_w;
     int h = dst_h;
 
