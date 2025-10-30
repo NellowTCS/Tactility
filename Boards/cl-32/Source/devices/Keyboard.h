@@ -16,9 +16,6 @@ public:
     std::string getName() const override { return "CL-32 Keyboard (TCA8418)"; }
     std::string getDescription() const override { return "CL-32 keyboard controller via TCA8418"; }
 
-    bool start() override { return true; } // No hardware init needed
-    bool stop() override { return true; }
-
     bool startLvgl(lv_display_t* display) override;
     bool stopLvgl() override;
     bool isAttached() const override;

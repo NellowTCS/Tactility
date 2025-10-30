@@ -42,15 +42,23 @@ CL32Keyboard::CL32Keyboard(const std::shared_ptr<Tca8418>& tca)
     , kbHandle(nullptr)
     , inputTimer(nullptr)
 {
+    ESP_LOGI(TAG, "CL32Keyboard constructor called");
     // Create FreeRTOS queue for key events (16 chars deep)
     queue = xQueueCreate(16, sizeof(char));
+    if (!queue) {
+        ESP_LOGE(TAG, "Failed to create keyboard queue!");
+    } else {
+        ESP_LOGI(TAG, "Keyboard queue created successfully");
+    }
 }
 
 CL32Keyboard::~CL32Keyboard() {
+    ESP_LOGI(TAG, "CL32Keyboard destructor called");
     stopLvgl();
     if (queue) {
         vQueueDelete(queue);
         queue = nullptr;
+        ESP_LOGI(TAG, "Keyboard queue deleted");
     }
 }
 
@@ -80,10 +88,22 @@ void CL32Keyboard::processKeyboard() {
     static bool sym_pressed = false;
     static bool cap_toggle = false;
     static bool cap_toggle_armed = true;
+    static bool first_run = true;
 
-    if (!keypad) return;
+    if (first_run) {
+        ESP_LOGI(TAG, "processKeyboard: first run");
+        first_run = false;
+    }
+
+    if (!keypad) {
+        ESP_LOGE(TAG, "processKeyboard: keypad is null!");
+        return;
+    }
 
     if (keypad->update()) {
+        ESP_LOGI(TAG, "Keypad updated: %d pressed, %d released", 
+                 keypad->pressed_key_count, keypad->released_key_count);
+        
         bool anykey_pressed = (keypad->pressed_key_count > 0);
 
         // detect modifiers first
@@ -165,6 +185,8 @@ void CL32Keyboard::processKeyboard() {
             }
 
             if (chr != 0) {
+                ESP_LOGI(TAG, "Key: row=%d col=%d idx=%d char='%c' (0x%02X)", 
+                         row, col, idx, chr, (uint8_t)chr);
                 xQueueSend(queue, &chr, 50 / portTICK_PERIOD_MS);
             }
         }
@@ -189,42 +211,65 @@ void CL32Keyboard::processKeyboard() {
 }
 
 bool CL32Keyboard::startLvgl(lv_display_t* display) {
-    if (!keypad) return false;
+    ESP_LOGI(TAG, "startLvgl called");
+    
+    if (!keypad) {
+        ESP_LOGE(TAG, "startLvgl: keypad is null!");
+        return false;
+    }
 
     // Initialize TCA wrapper keypad to expected rows/cols (mirror Tpager)
+    ESP_LOGI(TAG, "Initializing keypad with 8 rows x 10 cols");
     keypad->init(8, 10); // 8 rows x 10 cols (CL-32 mapping)
 
     // create the periodic input polling timer (similar interval to other drivers)
     assert(inputTimer == nullptr);
+    ESP_LOGI(TAG, "Creating input timer");
     inputTimer = std::make_unique<tt::Timer>(tt::Timer::Type::Periodic, [this] {
         this->processKeyboard();
     });
 
     // Create LVGL input device and hook read callback
+    ESP_LOGI(TAG, "Creating LVGL input device");
     kbHandle = lv_indev_create();
     lv_indev_set_type(kbHandle, LV_INDEV_TYPE_KEYPAD);
     lv_indev_set_read_cb(kbHandle, &CL32Keyboard::readCallback);
     lv_indev_set_display(kbHandle, display);
     lv_indev_set_user_data(kbHandle, this);
 
+    ESP_LOGI(TAG, "Starting input timer (20ms interval)");
     inputTimer->start(20 / portTICK_PERIOD_MS);
 
+    ESP_LOGI(TAG, "CL32Keyboard startLvgl completed successfully");
     return true;
 }
 
 bool CL32Keyboard::stopLvgl() {
+    ESP_LOGI(TAG, "stopLvgl called");
+    
     if (inputTimer) {
+        ESP_LOGI(TAG, "Stopping input timer");
         inputTimer->stop();
         inputTimer = nullptr;
     }
     if (kbHandle) {
+        ESP_LOGI(TAG, "Deleting LVGL input device");
         lv_indev_delete(kbHandle);
         kbHandle = nullptr;
     }
+    
+    ESP_LOGI(TAG, "CL32Keyboard stopLvgl completed");
     return true;
 }
 
 bool CL32Keyboard::isAttached() const {
-    if (!keypad) return false;
-    return tt::hal::i2c::masterHasDeviceAtAddress(keypad->getPort(), keypad->getAddress(), 100);
+    if (!keypad) {
+        ESP_LOGW(TAG, "isAttached: keypad is null");
+        return false;
+    }
+    
+    bool attached = tt::hal::i2c::masterHasDeviceAtAddress(keypad->getPort(), keypad->getAddress(), 100);
+    ESP_LOGI(TAG, "isAttached: %s (port=%d, addr=0x%02X)", 
+             attached ? "YES" : "NO", keypad->getPort(), keypad->getAddress());
+    return attached;
 }
