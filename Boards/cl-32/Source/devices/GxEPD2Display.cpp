@@ -182,8 +182,10 @@ Rotation handling modes:
  - ROTATE_90_CW: rotate 90 degrees clockwise
  - ROTATE_90_CCW: rotate 90 degrees counter-clockwise
 */
-#define ROTATE_90_CCW 1
-#define ROTATE_90_CW  2
+#define ROTATE_NONE    0
+#define ROTATE_90_CCW  1
+#define ROTATE_90_CW   2
+
 #ifndef EPD_ROTATION_MODE
 #define EPD_ROTATION_MODE ROTATE_90_CCW
 #endif
