@@ -145,9 +145,6 @@ bool GxEPD2Display::startLvgl() {
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
-    // Rotate to landscape (display is 168x384, we want it as 384x168)
-    lv_display_set_rotation(_lvglDisplay, LV_DISPLAY_ROTATION_90);
-
     ESP_LOGI(TAG, "LVGL integration started successfully");
     return true;
 }
