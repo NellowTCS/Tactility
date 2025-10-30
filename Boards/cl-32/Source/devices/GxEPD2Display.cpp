@@ -233,8 +233,8 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    bool flip_x = true;   // mirror vertically
-    bool flip_y = false;   // mirror horizontally
+    bool flip_x = false;   // mirror vertically
+    bool flip_y = true;   // mirror horizontally
     bool invert = true;   // invert black/white
 
     rotate_bitmap_1bpp(px_map, rotated_bitmap, src_w, src_h, flip_x, flip_y, invert);
