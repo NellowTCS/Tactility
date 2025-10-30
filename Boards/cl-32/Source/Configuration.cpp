@@ -1,5 +1,6 @@
 #include "devices/Display.h"
 #include "devices/SdCard.h"
+#include "devices/Keyboard.h"
 
 #include <Tactility/hal/Configuration.h>
 #include <Tactility/lvgl/LvglSync.h>
@@ -14,9 +15,15 @@ static bool initBoot() {
 }
 
 static DeviceVector createDevices() {
+    // create TCA wrapper and keyboard for CL-32
+    auto tca = std::make_shared<Tca8418>(I2C_NUM_0);
+    auto keyboard = std::make_shared<CL32Keyboard>(tca);
+
     return {
         createDisplay(),
-        createSdCard()
+        createSdCard(),
+        tca,
+        keyboard
     };
 }
 
