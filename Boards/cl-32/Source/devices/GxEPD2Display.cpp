@@ -1,8 +1,10 @@
+// (Full file contents; only the direct-write (ROTATE_NONE) branch and a few debug logs were modified)
 #include "GxEPD2Display.h"
 #include "GxEPD2/GxEPD2_290_GDEY029T71H.h"
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include <cstring>
+#include <cstdio>
 
 static const char* TAG = "GxEPD2Display";
 
@@ -102,6 +104,8 @@ bool GxEPD2Display::startLvgl() {
     // The flush callback below will handle rotation if needed.
     const uint16_t lv_width = _config.width;
     const uint16_t lv_height = _config.height;
+
+    ESP_LOGI(TAG, "EPD config width=%u height=%u, LVGL width=%u height=%u", _config.width, _config.height, lv_width, lv_height);
 
     const size_t bufSize = lv_width * DRAW_BUF_LINES;
 
@@ -231,11 +235,24 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
 
     ESP_LOGD(TAG, "Flush request: LVGL area [%d,%d %dx%d] (src_row_bytes=%d)", src_x, src_y, src_w, src_h, src_row_bytes);
 
+    // Sanity log: dump first few px_map bytes for first row to help debug
+    if (src_row_bytes > 0) {
+        char hexbuf[128] = {0};
+        int dump = src_row_bytes < 16 ? src_row_bytes : 16;
+        for (int i = 0; i < dump; ++i) {
+            char tmp[8];
+            snprintf(tmp, sizeof(tmp), "%02X ", px_map[i]);
+            strncat(hexbuf, tmp, sizeof(hexbuf) - strlen(hexbuf) - 1);
+        }
+        ESP_LOGD(TAG, "px_map row0 first %d bytes: %s", dump, hexbuf);
+    }
+
     // If no rotation is requested, write directly (but ensure x is byte aligned)
     if (EPD_ROTATION_MODE == ROTATE_NONE) {
         int epd_x = align_x_to_byte(src_x);
         int epd_y = src_y;
-        int write_w = src_w + (src_x - epd_x); // expand width if we moved x left to align
+        int left_shift = src_x - epd_x;
+        int write_w = src_w + left_shift; // expand width if we moved x left to align
         // pad write_w to byte boundary
         int write_w_padded = ((write_w + 7) / 8) * 8;
 
@@ -253,24 +270,53 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
             lv_display_flush_ready(disp);
             return;
         }
-        // Clear tmp
-        memset(tmp, 0, dst_row_bytes * src_h);
-        // Copy row by row, shifting bits into position
+        // Initialize to white (GxEPD2 drivers typically use 0xFF = white)
+        memset(tmp, 0xFF, dst_row_bytes * src_h);
+
+        // Copy row by row, shifting bits into aligned position.
+        // Note: we assume LVGL's px_map bit polarity is: 1 = white, 0 = black.
+        // GxEPD2 typically expects 0 = black, 1 = white, so we set/clear bits accordingly.
         for (int row = 0; row < src_h; ++row) {
             for (int x = 0; x < src_w; ++x) {
-                bool px = read_bit_msbf(px_map, src_row_bytes, x, row);
-                int dst_x = x + (src_x - epd_x); // account for left shift when aligning
-                write_bit_msbf(tmp, dst_row_bytes, dst_x, row, px);
+                // read bit from px_map (MSB-first per byte)
+                int src_byte = row * src_row_bytes + (x / 8);
+                int src_bit = 7 - (x & 7);
+                bool px = ((px_map[src_byte] >> src_bit) & 1) != 0;
+
+                int dst_x = left_shift + x;
+                int dst_byte_index = row * dst_row_bytes + (dst_x / 8);
+                int dst_bit = 7 - (dst_x & 7);
+
+                if (!px) {
+                    // LVGL bit=0 -> black -> clear bit (0) in tmp
+                    tmp[dst_byte_index] &= ~(1 << dst_bit);
+                } else {
+                    // LVGL bit=1 -> white -> set bit (1) in tmp
+                    tmp[dst_byte_index] |= (1 << dst_bit);
+                }
             }
         }
 
-        self->_display->writeImage(tmp, epd_x, epd_y, write_w_padded, src_h, false, false, false);
-        // Refresh decision: keep same heuristic
-        bool is_large_update = (src_w * src_h) > (384 * 168 / 4);
-        if (is_large_update) {
-            ESP_LOGI(TAG, "Large update (no-rotate), refreshing");
-            self->_display->refresh(true);
+        // Debug: dump first few bytes of tmp row0
+        {
+            char hexbuf2[128] = {0};
+            int dump2 = dst_row_bytes < 16 ? dst_row_bytes : 16;
+            for (int i = 0; i < dump2; ++i) {
+                char tmpc[8];
+                snprintf(tmpc, sizeof(tmpc), "%02X ", tmp[i]);
+                strncat(hexbuf2, tmpc, sizeof(hexbuf2) - strlen(hexbuf2) - 1);
+            }
+            ESP_LOGD(TAG, "tmp row0 first %d bytes: %s", dump2, hexbuf2);
         }
+
+        ESP_LOGI(TAG, "Writing direct to EPD @%d,%d size %dx%d (padded_w=%d, dst_row_bytes=%d)",
+                epd_x, epd_y, write_w_padded, src_h, write_w_padded, dst_row_bytes);
+
+        self->_display->writeImage(tmp, epd_x, epd_y, write_w_padded, src_h, false, false, false);
+
+        // For better visibility while debugging, force a refresh for any flush
+        self->_display->refresh(true);
+
         heap_caps_free(tmp);
         lv_display_flush_ready(disp);
         return;
@@ -315,6 +361,16 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
             write_bit_msbf(rotated, dst_row_bytes, dx, dy, px);
         }
     }
+#elif (EPD_ROTATION_MODE == ROTATE_NONE)
+    // No rotation: copy source (src_w x src_h) to rotated buffer (dst_w == src_w, dst_h == src_h)
+    // Note: in this path we expect dst_w == src_w and dst_row_bytes == src_bytes_per_row
+    for (int y = 0; y < src_h; ++y) {
+        for (int x = 0; x < src_w; ++x) {
+            bool px = read_bit_msbf(px_map, src_bytes_per_row, x, y);
+            // dst coordinates identical to source
+            write_bit_msbf(rotated, dst_row_bytes, x, y, px);
+        }
+    }
 #else
 #error "Invalid EPD_ROTATION_MODE"
 #endif
@@ -325,13 +381,20 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     int epd_y = 0;
 
 #if (EPD_ROTATION_MODE == ROTATE_90_CCW)
-    // Original mapping used earlier: epd_x = area->y1; epd_y = height - (area->x1 + src_w)
+    // 90° CCW: map LVGL (area->x1, area->y1, src_w, src_h)
+    // to e-paper coordinates after CCW rotation
     epd_x = src_y;
     epd_y = self->_config.height - (src_x + src_w);
 #elif (EPD_ROTATION_MODE == ROTATE_90_CW)
-    // For CW mapping: epd_x = height - (area->y1 + src_h); epd_y = area->x1
+    // 90° CW
     epd_x = self->_config.height - (src_y + src_h);
     epd_y = src_x;
+#elif (EPD_ROTATION_MODE == ROTATE_NONE)
+    // No rotation: LVGL coordinates map directly to EPD coordinates
+    epd_x = src_x;
+    epd_y = src_y;
+#else
+#error "Invalid EPD_ROTATION_MODE"
 #endif
 
     // Align epd_x to byte boundary expected by EPD driver
