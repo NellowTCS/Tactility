@@ -40,13 +40,8 @@ class LauncherApp final : public App {
 
         auto* button_image = lv_image_create(apps_button);
         lv_image_set_src(button_image, imageFile);
-        
-        // Only apply recolor if not compiled for 1-bit color depth
-        #if LV_COLOR_DEPTH > 1
         lv_obj_set_style_image_recolor(button_image, lv_theme_get_color_primary(parent), LV_STATE_DEFAULT);
         lv_obj_set_style_image_recolor_opa(button_image, LV_OPA_COVER, LV_STATE_DEFAULT);
-        #endif
-        
         // Ensure buttons are still tappable when the asset fails to load
         // Icon images are 40x40, so we get some extra padding too
         lv_obj_set_size(button_image, button_size, button_size);
