@@ -264,9 +264,16 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     ESP_LOGD(TAG, "Flush: LVGL [%d,%d %dx%d] -> EPD [%d,%d %dx%d]",
              area->x1, area->y1, src_w, src_h, epd_x, epd_y, dst_w, dst_h);
 
-    // Write to e-paper display
+    // Write to e-paper display buffer (don't refresh yet)
     self->_display->writeImage(rotated_bitmap, epd_x, epd_y, dst_w, dst_h, false, false, false);
-    self->_display->refresh(true); // Partial refresh
+    
+    // Only refresh if this is a full screen update or large area
+    // This reduces flickering for small incremental updates
+    bool is_large_update = (src_w * src_h) > (384 * 168 / 4); // More than 25% of screen
+    if (is_large_update) {
+        ESP_LOGI(TAG, "Large update, refreshing display");
+        self->_display->refresh(true); // Partial refresh
+    }
 
     heap_caps_free(rotated_bitmap);
     lv_display_flush_ready(disp);
