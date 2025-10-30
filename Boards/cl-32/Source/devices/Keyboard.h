@@ -6,6 +6,7 @@
 #include <driver/gpio.h>
 #include <freertos/queue.h>
 #include <memory>
+#include <lvgl.h>
 
 class CL32Keyboard final : public tt::hal::keyboard::KeyboardDevice {
 public:
@@ -21,29 +22,21 @@ public:
     lv_indev_t* _Nullable getLvglIndev() override { return kbHandle; }
 
 private:
-    struct RawEvent {
-        uint8_t code;
-        uint8_t pressed; // 1 pressed, 0 released
-    };
+    // Event queue consumed by LVGL read callback (char or LV_KEY_* values)
+    QueueHandle_t queue = nullptr;
+
+    // TCA8418 wrapper instance owned by the board configuration
+    std::shared_ptr<Tca8418> keypad;
 
     // LVGL input device handle
     lv_indev_t* _Nullable kbHandle = nullptr;
 
-    // queue for events
-    QueueHandle_t queue = nullptr;
+    // Periodic timer used to poll/process keypad events
+    std::unique_ptr<tt::Timer> inputTimer;
 
-    // TCA wrapper (owned by board)
-    std::shared_ptr<Tca8418> keypad;
+    // Process events coming from the Tca wrapper, enqueue chars/LV keys
+    void processKeyboard();
 
-    // polling timer (mirrors other drivers)
-    std::unique_ptr<tt::Timer> pollTimer;
-
-    // helper: poll chip and push RawEvent into queue
-    void pollChip();
-
-    // map TCA event code to LVGL key (ASCII or LV_KEY_*)
-    uint32_t mapEventToLvKey(uint8_t event_code);
-
-    // LVGL read callback
+    // LVGL read callback (static trampoline)
     static void readCallback(lv_indev_t* indev, lv_indev_data_t* data);
 };
