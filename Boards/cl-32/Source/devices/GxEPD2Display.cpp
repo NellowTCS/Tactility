@@ -2,6 +2,7 @@
 #include "GxEPD2/GxEPD2_290_GDEY029T71H.h"
 #include <esp_log.h>
 #include <esp_heap_caps.h>
+#include <cstring>
 
 static const char* TAG = "GxEPD2Display";
 
@@ -102,7 +103,7 @@ bool GxEPD2Display::startLvgl() {
 
     ESP_LOGI(TAG, "Starting LVGL integration...");
 
-    // Calculate buffer size (10 lines worth)
+    // Calculate buffer size (10 lines worth of the physical width)
     const size_t bufSize = _config.width * DRAW_BUF_LINES;
 
     // Allocate draw buffers in DMA-capable memory
@@ -119,7 +120,8 @@ bool GxEPD2Display::startLvgl() {
 
     ESP_LOGI(TAG, "Allocated draw buffers: %zu bytes each", bufSize * sizeof(lv_color_t));
 
-    // Create LVGL display
+    // Create LVGL display with physical dimensions (168x384)
+    // The rotation happens in the flush callback
     _lvglDisplay = lv_display_create(_config.width, _config.height);
     if (!_lvglDisplay) {
         ESP_LOGE(TAG, "Failed to create LVGL display");
@@ -145,6 +147,7 @@ bool GxEPD2Display::startLvgl() {
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
+    // Rotate display 90° to landscape (LVGL will think it's 384x168)
     lv_display_set_rotation(_lvglDisplay, LV_DISPLAY_ROTATION_90);
 
     ESP_LOGI(TAG, "LVGL integration started successfully");
@@ -183,6 +186,40 @@ std::shared_ptr<tt::hal::display::DisplayDriver> GxEPD2Display::getDisplayDriver
     return nullptr;
 }
 
+// Rotate monochrome bitmap 90° CCW (counter-clockwise) for landscape display
+// LVGL thinks display is 168x384 (portrait), but with rotation=90 it presents 384x168 (landscape)
+// So we need to rotate LVGL's landscape output 90° CCW to match the physical portrait panel
+static void rotate_bitmap_90ccw_1bpp(const uint8_t* src, uint8_t* dst, int src_w, int src_h) {
+    // After 90° CCW rotation: dst_w = src_h, dst_h = src_w
+    const int dst_w = src_h;
+    const int dst_h = src_w;
+    const int dst_bytes = (dst_w * dst_h + 7) / 8;
+    memset(dst, 0, dst_bytes);
+
+    for (int y = 0; y < src_h; ++y) {
+        for (int x = 0; x < src_w; ++x) {
+            // Read pixel from source
+            int src_idx = y * src_w + x;
+            int src_byte = src_idx / 8;
+            int src_bit = 7 - (src_idx % 8);
+            bool pixel = (src[src_byte] >> src_bit) & 0x01;
+
+            // 90° CCW rotation: (x, y) -> (y, dst_h - 1 - x)
+            int dst_x = y;
+            int dst_y = dst_h - 1 - x;
+
+            // Write pixel to destination
+            int dst_idx = dst_y * dst_w + dst_x;
+            int dst_byte = dst_idx / 8;
+            int dst_bit = 7 - (dst_idx % 8);
+            
+            if (pixel) {
+                dst[dst_byte] |= (1 << dst_bit);
+            }
+        }
+    }
+}
+
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* self = static_cast<GxEPD2Display*>(lv_display_get_user_data(disp));
     
@@ -192,16 +229,45 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    int16_t x = area->x1;
-    int16_t y = area->y1;
-    int16_t w = area->x2 - area->x1 + 1;
-    int16_t h = area->y2 - area->y1 + 1;
+    // Source dimensions (LVGL area in landscape: 384x168)
+    int src_w = area->x2 - area->x1 + 1;
+    int src_h = area->y2 - area->y1 + 1;
 
-    // Write bitmap to display buffer
-    self->_display->writeImage(px_map, x, y, w, h, false, false, false);
+    // Destination dimensions after 90° CCW rotation (portrait: 168x384)
+    int dst_w = src_h;
+    int dst_h = src_w;
+    
+    int dst_bytes = (dst_w * dst_h + 7) / 8;
+    uint8_t* rotated_bitmap = (uint8_t*)heap_caps_malloc(dst_bytes, MALLOC_CAP_DMA);
+    if (!rotated_bitmap) {
+        ESP_LOGE(TAG, "Failed to allocate rotated bitmap");
+        lv_display_flush_ready(disp);
+        return;
+    }
 
-    // Perform partial refresh
-    self->_display->refresh(true); // true = partial update
+    // Rotate the bitmap 90° CCW
+    rotate_bitmap_90ccw_1bpp(px_map, rotated_bitmap, src_w, src_h);
 
+    // Calculate the position on the e-paper display
+    // LVGL area (landscape 384x168): top-left = (area->x1, area->y1)
+    // After 90° CCW rotation to portrait (168x384):
+    // top-left (x, y) maps to (y, 384 - (x + w))
+    int epd_x = area->y1;
+    int epd_y = self->_config.height - (area->x1 + src_w);
+
+    // Make sure coordinates are within bounds
+    if (epd_x < 0) epd_x = 0;
+    if (epd_y < 0) epd_y = 0;
+    if (epd_x + dst_w > (int)self->_config.width) dst_w = self->_config.width - epd_x;
+    if (epd_y + dst_h > (int)self->_config.height) dst_h = self->_config.height - epd_y;
+
+    ESP_LOGD(TAG, "Flush: LVGL [%d,%d %dx%d] -> EPD [%d,%d %dx%d]",
+             area->x1, area->y1, src_w, src_h, epd_x, epd_y, dst_w, dst_h);
+
+    // Write to e-paper display
+    self->_display->writeImage(rotated_bitmap, epd_x, epd_y, dst_w, dst_h, false, false, false);
+    self->_display->refresh(true); // Partial refresh
+
+    heap_caps_free(rotated_bitmap);
     lv_display_flush_ready(disp);
 }
