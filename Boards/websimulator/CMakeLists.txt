@@ -15,7 +15,6 @@ target_link_libraries(WebSimulator
     PRIVATE Tactility
     PRIVATE TactilityCore
     PRIVATE lvgl
-    PRIVATE SDL2
 )
 
 # Enable pthreads for threading, SDL2 for input/output
