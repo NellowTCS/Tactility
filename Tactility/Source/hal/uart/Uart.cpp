@@ -3,7 +3,7 @@
 #include <Tactility/Log.h>
 #include <Tactility/Mutex.h>
 
-#include <ranges>
+#include <algorithm>
 #include <cstring>
 #include <Tactility/Tactility.h>
 
@@ -32,10 +32,10 @@ static uint32_t lastUartId = uartIdNotInUse;
 bool init(const std::vector<Configuration>& configurations) {
     TT_LOG_I(TAG, "Init");
     for (const auto& configuration: configurations) {
-        uartEntries.push_back({
-            .usageId = uartIdNotInUse,
-            .configuration = configuration
-        });
+        UartEntry entry;
+        entry.usageId = uartIdNotInUse;
+        entry.configuration = configuration;
+        uartEntries.push_back(entry);
     }
 
     return true;
@@ -103,16 +103,16 @@ size_t Uart::readUntil(std::byte* buffer, size_t bufferSize, uint8_t untilByte, 
 std::unique_ptr<Uart> open(std::string name) {
     TT_LOG_I(TAG, "Open %s", name.c_str());
 
-    auto result = std::views::filter(uartEntries, [&name](auto& entry) {
+    auto it = std::find_if(uartEntries.begin(), uartEntries.end(), [&name](const auto& entry) {
         return entry.configuration.name == name;
     });
 
-    if (result.empty()) {
+    if (it == uartEntries.end()) {
         TT_LOG_E(TAG, "UART not found: %s", name.c_str());
         return nullptr;
     }
 
-    auto& entry = *result.begin();
+    auto& entry = *it;
     if (entry.usageId != uartIdNotInUse) {
         TT_LOG_E(TAG, "UART in use: %s", name.c_str());
         return nullptr;
@@ -127,12 +127,12 @@ std::unique_ptr<Uart> open(std::string name) {
 
 void close(uint32_t uartId) {
     TT_LOG_I(TAG, "Close %lu", uartId);
-    auto result = std::views::filter(uartEntries, [&uartId](auto& entry) {
-      return entry.usageId == uartId;
+    auto it = std::find_if(uartEntries.begin(), uartEntries.end(), [&uartId](auto& entry) {
+        return entry.usageId == uartId;
     });
 
-    if (!result.empty()) {
-        auto& entry = *result.begin();
+    if (it != uartEntries.end()) {
+        auto& entry = *it;
         entry.usageId = uartIdNotInUse;
     } else {
         TT_LOG_W(TAG, "Auto-closing UART, but can't find it");
