@@ -64,3 +64,10 @@ void vAssertCalled(unsigned long line, const char* const file) {
     }
     taskEXIT_CRITICAL();
 }
+
+extern "C" void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
+    // This function is called when a stack overflow is detected.
+    // For the simulator, we can simply log the error and stop execution.
+    fprintf(stderr, "Stack overflow in task: %s\n", pcTaskName);
+    abort(); // Stop execution, as stack overflow is a serious error.
+}
