@@ -20,7 +20,7 @@ extern void vAssertCalled(unsigned long line, const char* const file);
 #define configQUEUE_REGISTRY_SIZE               10
 #define configUSE_QUEUE_SETS                    1
 #define configUSE_TIME_SLICING                  1  // Enable for fair threading on web
-#define configUSE_NEWLIB_REENTRANT              1  // Required for Emscripten's threading
+#define configUSE_NEWLIB_REENTRANT              0  // Keep 0 to avoid reent.h issues on Emscripten
 #define configENABLE_BACKWARD_COMPATIBILITY     1
 #define configNUM_THREAD_LOCAL_STORAGE_POINTERS 5
 #define configUSE_MINI_LIST_ITEM                1
