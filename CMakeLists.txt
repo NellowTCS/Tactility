@@ -112,7 +112,7 @@ if (NOT DEFINED ENV{ESP_IDF_VERSION})
     endif()
     if (EMSCRIPTEN)
         target_include_directories(lvgl PUBLIC ${CMAKE_SYSROOT}/include)
-        target_compile_definitions(lvgl PUBLIC LV_SDL_INCLUDE_PATH="<SDL.h>")
+        target_compile_definitions(lvgl PUBLIC LV_SDL_INCLUDE_PATH=SDL.h)
     endif()
 
     # Sim app
