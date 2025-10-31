@@ -110,7 +110,6 @@ if (NOT DEFINED ENV{ESP_IDF_VERSION})
     if (NOT EMSCRIPTEN)
         target_link_libraries(lvgl PRIVATE SDL2-static)
     endif()
-    
 
     # Sim app
     add_subdirectory(Firmware)
