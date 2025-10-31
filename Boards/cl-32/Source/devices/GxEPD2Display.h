@@ -18,7 +18,6 @@ public:
         gpio_num_t rstPin;
         gpio_num_t busyPin;
         spi_host_device_t spiHost;
-        uint8_t rotation = 0; // 0=none, 1=90°CCW, 2=90°CW
     };
 
     explicit GxEPD2Display(const Configuration& config);
@@ -42,10 +41,6 @@ public:
     // DisplayDriver (not implemented)
     bool supportsDisplayDriver() const override;
     std::shared_ptr<tt::hal::display::DisplayDriver> _Nullable getDisplayDriver() override;
-
-    // Runtime rotation API (0 = none, 1 = 90° CCW, 2 = 90° CW)
-    void setRotation(uint8_t rot) { rotation_ = rot & 3; }
-    uint8_t getRotation() const { return rotation_; }
 
     // Minimal public helpers for tests / external use (safe, small API)
     uint16_t getWidth() const;
