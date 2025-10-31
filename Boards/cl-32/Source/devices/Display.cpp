@@ -9,12 +9,9 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         .dcPin = EPD_PIN_DC,
         .rstPin = EPD_PIN_RST,
         .busyPin = EPD_PIN_BUSY,
-        .spiHost = EPD_SPI_HOST
+        .spiHost = EPD_SPI_HOST,
+        .rotation = 2
     };
 
-    auto disp = std::make_shared<GxEPD2Display>(config);
-
-    disp->setRotation(2);
-
-    return disp;
+    return std::make_shared<GxEPD2Display>(config);
 }

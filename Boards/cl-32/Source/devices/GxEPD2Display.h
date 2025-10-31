@@ -18,6 +18,7 @@ public:
         gpio_num_t rstPin;
         gpio_num_t busyPin;
         spi_host_device_t spiHost;
+        uint8_t rotation = 0; // 0=none, 1=90°CCW, 2=90°CW
     };
 
     explicit GxEPD2Display(const Configuration& config);
@@ -42,10 +43,6 @@ public:
     bool supportsDisplayDriver() const override;
     std::shared_ptr<tt::hal::display::DisplayDriver> _Nullable getDisplayDriver() override;
 
-    // Runtime rotation API (0 = none, 1 = 90° CCW, 2 = 90° CW)
-    void setRotation(uint8_t rot) { rotation_ = rot & 3; }
-    uint8_t getRotation() const { return rotation_; }
-
     // Minimal public helpers for tests / external use (safe, small API)
     uint16_t getWidth() const;
     uint16_t getHeight() const;
@@ -57,9 +54,6 @@ public:
     // Refresh the display; partial = true -> partial refresh, false -> full refresh
     void refreshDisplay(bool partial) ;
 
-    // Optional: run small internal debug test (disabled here; prefer external tester)
-    // void runInternalDiagnostics();
-
 private:
     Configuration _config;
     std::unique_ptr<GxEPD2_290_GDEY029T71H> _display;
@@ -68,9 +62,6 @@ private:
     lv_color_t* _drawBuf2;
 
     static constexpr size_t DRAW_BUF_LINES = 10;
-
-    // rotation: 0 none, 1 90° CCW, 2 90° CW
-    uint8_t rotation_ = 0;
 
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
 };
