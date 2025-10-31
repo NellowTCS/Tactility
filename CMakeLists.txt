@@ -66,6 +66,12 @@ endif ()
 
 project(Tactility)
 
+if (EMSCRIPTEN)
+    # Add Emscripten-specific flags globally
+    add_compile_options(-sUSE_SDL=2 -pthread)
+    add_link_options(-sUSE_SDL=2 -pthread -sALLOW_MEMORY_GROWTH=1)
+endif()
+
 # Defined as regular project for PC and component for ESP
 if (NOT DEFINED ENV{ESP_IDF_VERSION})
     if (DEFINED TACTILITY_BOARD)
@@ -107,15 +113,7 @@ if (NOT DEFINED ENV{ESP_IDF_VERSION})
     # LVGL
     add_compile_definitions($<$<BOOL:${LV_USE_DRAW_SDL}>:LV_USE_DRAW_SDL=1>)
     add_subdirectory(Libraries/lvgl) # Added as idf component for ESP and as library for other targets
-    if (NOT EMSCRIPTEN)
-        target_link_libraries(lvgl PRIVATE SDL2-static)
-    endif()
-
-    if (EMSCRIPTEN)
-        # Override LV_SDL_INCLUDE_PATH to use <SDL.h> for Emscripten
-        target_compile_definitions(lvgl PUBLIC LV_SDL_INCLUDE_PATH=<SDL.h>)
-        target_include_directories(lvgl PUBLIC ${CMAKE_SYSROOT}/include)
-    endif()
+    target_link_libraries(lvgl PRIVATE SDL2-static)
 
     # Sim app
     add_subdirectory(Firmware)
