@@ -110,10 +110,14 @@ if (NOT DEFINED ENV{ESP_IDF_VERSION})
     if (NOT EMSCRIPTEN)
         target_link_libraries(lvgl PRIVATE SDL2-static)
     endif()
-    if (EMSCRIPTEN)
-        target_include_directories(lvgl PUBLIC ${CMAKE_SYSROOT}/include)
-        target_compile_definitions(lvgl PUBLIC LV_SDL_INCLUDE_PATH=<SDL.h>)
-    endif()
+    
+if (EMSCRIPTEN)
+    set_target_properties(lvgl PROPERTIES
+        LINK_FLAGS "-s USE_SDL=2"
+    )
+    target_compile_definitions(lvgl PUBLIC LV_SDL_INCLUDE_PATH=<SDL.h>)
+    target_include_directories(lvgl PUBLIC ${CMAKE_SYSROOT}/include)
+endif()
 
     # Sim app
     add_subdirectory(Firmware)
