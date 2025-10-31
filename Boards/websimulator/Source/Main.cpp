@@ -5,6 +5,9 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include <cstdlib>
+#include <cstdio>
+
 #define TAG "freertos"
 
 namespace websimulator {
