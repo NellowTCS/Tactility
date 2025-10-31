@@ -50,7 +50,7 @@ runs:
       shell: bash
       run: >
         if [ "${{ inputs.os_name }}" == "web" ]; then
-          emcmake cmake -S ./Boards/websimulator -B buildweb
+          emcmake cmake -S ./Boards/web-simulator -B buildweb
         else
           cmake -S ./ -B buildsim
         fi
