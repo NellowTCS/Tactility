@@ -107,7 +107,9 @@ if (NOT DEFINED ENV{ESP_IDF_VERSION})
     # LVGL
     add_compile_definitions($<$<BOOL:${LV_USE_DRAW_SDL}>:LV_USE_DRAW_SDL=1>)
     add_subdirectory(Libraries/lvgl) # Added as idf component for ESP and as library for other targets
-    target_link_libraries(lvgl PRIVATE SDL2-static)
+    if (NOT EMSCRIPTEN)
+        target_link_libraries(lvgl PRIVATE SDL2-static)
+    endif()
 
     # Sim app
     add_subdirectory(Firmware)
