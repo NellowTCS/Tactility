@@ -6,6 +6,9 @@
 #include <Tactility/Thread.h>
 
 #include <lvgl.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #define TAG "lvgl_task"
 
@@ -56,12 +59,35 @@ void lvgl_task_interrupt() {
     task_unlock();
 }
 
+#ifdef __EMSCRIPTEN__
+static void lvgl_loop() {
+    if (lvgl_lock(10)) {
+        uint32_t task_delay_ms = lv_timer_handler();
+        lvgl_unlock();
+        if ((task_delay_ms > task_max_sleep_ms) || (1 == task_delay_ms)) {
+            task_delay_ms = task_max_sleep_ms;
+        } else if (task_delay_ms < 1) {
+            task_delay_ms = 1;
+        }
+        // Delay handled by Emscripten's loop
+    }
+}
+#endif
+
 void lvgl_task_start() {
     TT_LOG_I(TAG, "lvgl task starting");
 
     tt::lvgl::syncSet(&lvgl_lock, &lvgl_unlock);
 
-    // Create the main app loop, like ESP-IDF
+#ifdef __EMSCRIPTEN__
+    // Create display in main thread for Emscripten
+    displayHandle = lv_sdl_window_create(320, 240);
+    lv_sdl_window_set_title(displayHandle, "Tactility Web");
+
+    task_set_running(true);
+    emscripten_set_main_loop(lvgl_loop, 0, 1);  // 0 FPS for event-driven, infinite loop
+#else
+    // Original task-based approach for non-Emscripten
     BaseType_t task_result = xTaskCreate(
         lvgl_task,
         "lvgl",
@@ -70,16 +96,14 @@ void lvgl_task_start() {
         static_cast<UBaseType_t>(tt::Thread::Priority::High), // Should be higher than main app task
         nullptr
     );
-
     assert(task_result == pdTRUE);
+#endif
 }
 
+#ifndef __EMSCRIPTEN__
 static void lvgl_task(TT_UNUSED void* arg) {
     TT_LOG_I(TAG, "lvgl task started");
 
-    /** Ideally. the display handle would be created during Simulator.start(),
-     * but somehow that doesn't work. Waiting here from a ThreadFlag when that happens
-     * also doesn't work. It seems that it must be called from this task. */
     displayHandle = lv_sdl_window_create(320, 240);
     lv_sdl_window_set_title(displayHandle, "Tactility");
 
@@ -104,4 +128,4 @@ static void lvgl_task(TT_UNUSED void* arg) {
     displayHandle = nullptr;
     vTaskDelete(nullptr);
 }
-
+#endif

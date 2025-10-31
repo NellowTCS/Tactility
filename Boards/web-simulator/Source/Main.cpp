@@ -7,7 +7,7 @@
 
 #define TAG "freertos"
 
-namespace simulator {
+namespace websimulator {
 
 MainFunction mainFunction = nullptr;
 
@@ -17,7 +17,7 @@ void setMain(MainFunction newMainFunction) {
 
 static void freertosMainTask(TT_UNUSED void* parameter) {
     TT_LOG_I(TAG, "starting app_main()");
-    assert(simulator::mainFunction);
+    assert(websimulator::mainFunction);
     mainFunction();
     TT_LOG_I(TAG, "returned from app_main()");
     vTaskDelete(nullptr);
@@ -39,7 +39,12 @@ void freertosMain() {
     vTaskStartScheduler();
 }
 
-} // namespace
+// Emscripten idle hook: yield to browser when idle
+extern "C" void vApplicationIdleHook(void) {
+    // Yield control (prevents blocking the main thread)
+}
+
+} // namespace websimulator
 
 /**
  * Assert implementation as defined in the FreeRTOSConfig.h
@@ -59,4 +64,3 @@ void vAssertCalled(unsigned long line, const char* const file) {
     }
     taskEXIT_CRITICAL();
 }
-

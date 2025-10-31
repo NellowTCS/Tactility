@@ -19,8 +19,8 @@ extern void vAssertCalled(unsigned long line, const char* const file);
 #define configUSE_ALTERNATIVE_API               0 /* Deprecated! */
 #define configQUEUE_REGISTRY_SIZE               10
 #define configUSE_QUEUE_SETS                    1
-#define configUSE_TIME_SLICING                  0
-#define configUSE_NEWLIB_REENTRANT              0
+#define configUSE_TIME_SLICING                  1  // Enable for fair threading on web
+#define configUSE_NEWLIB_REENTRANT              1  // Required for Emscripten's threading
 #define configENABLE_BACKWARD_COMPATIBILITY     1
 #define configNUM_THREAD_LOCAL_STORAGE_POINTERS 5
 #define configUSE_MINI_LIST_ITEM                1
@@ -32,14 +32,14 @@ extern void vAssertCalled(unsigned long line, const char* const file);
 /* Memory allocation related definitions. */
 #define configSUPPORT_STATIC_ALLOCATION             0
 #define configSUPPORT_DYNAMIC_ALLOCATION            1
-#define configTOTAL_HEAP_SIZE                       (1024 * 1024)
+#define configTOTAL_HEAP_SIZE                       (1024 * 1024 * 4)  // Increase for web
 #define configAPPLICATION_ALLOCATED_HEAP            0
 #define configSTACK_ALLOCATION_FROM_SEPARATE_HEAP   0 // TODO: Compare with ESP defaults
 
 /* Hook function related definitions. */
-#define configUSE_IDLE_HOOK                     0
+#define configUSE_IDLE_HOOK                     1  // Enable for Emscripten yielding
 #define configUSE_TICK_HOOK                     0
-#define configCHECK_FOR_STACK_OVERFLOW          0
+#define configCHECK_FOR_STACK_OVERFLOW          2  // Enable checks (Emscripten-friendly)
 #define configUSE_MALLOC_FAILED_HOOK            0
 #define configUSE_DAEMON_TASK_STARTUP_HOOK      0
 #define configUSE_SB_COMPLETED_CALLBACK         0

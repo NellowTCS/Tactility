@@ -32,4 +32,3 @@ public:
 
     std::shared_ptr<tt::hal::touch::TouchDriver> _Nullable getTouchDriver() override { return nullptr; };
 };
-
