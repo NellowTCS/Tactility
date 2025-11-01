@@ -21,7 +21,6 @@ runs:
     - name: Install Linux Dependencies for SDL
       if: ${{ runner.os == 'Linux' && inputs.os_name != 'web' }}
       shell: bash
-      # See Libraries/SDL/docs/README-linux.md
       run: >
         sudo apt-get update && 
         sudo apt-get install build-essential git make
@@ -66,7 +65,7 @@ runs:
       shell: bash
       run: >
         if [ "${{ inputs.os_name }}" == "web" ]; then
-          Buildscripts/release-simulator.sh buildweb release/WebSimulator-${{ inputs.os_name }}-${{ inputs.platform_name }}
+          Buildscripts/release-simulator.sh buildweb release/Simulator-${{ inputs.os_name }}-${{ inputs.platform_name }}
         else
           Buildscripts/release-simulator.sh buildsim release/Simulator-${{ inputs.os_name }}-${{ inputs.platform_name }}
         fi
