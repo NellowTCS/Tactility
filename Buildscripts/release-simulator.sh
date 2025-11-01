@@ -13,17 +13,23 @@ mkdir -p $target_path
 
 cp version.txt $target_path
 
-# Handle web (Emscripten) builds
-if [ -f "$build_path/WebSimulator.js" ]; then
+# Check for WebSimulator (Emscripten) build
+websim_js=$(find $build_path -name "WebSimulator.js" -print -quit)
+if [ -n "$websim_js" ]; then
     echo "Releasing WebSimulator build..."
-    cp $build_path/WebSimulator.js $target_path/
-    cp $build_path/WebSimulator.wasm $target_path/
-    cp $build_path/WebSimulator.html $target_path/
-    # cp $build_path/WebSimulator.data $target_path/
+    js_dir=$(dirname "$websim_js")
+    cp "$js_dir/WebSimulator.js" $target_path/
+    cp "$js_dir/WebSimulator.wasm" $target_path/
+    cp "$js_dir/WebSimulator.data" $target_path/ 2>/dev/null || true # Optional data file
 else
     # Handle native builds
     echo "Releasing native simulator build..."
-    cp $build_path/Firmware/FirmwareSim $target_path/
-    cp -r Data/data $target_path/
-    cp -r Data/system $target_path/
+    if [ -f "$build_path/Firmware/FirmwareSim" ]; then
+        cp $build_path/Firmware/FirmwareSim $target_path/
+        cp -r Data/data $target_path/
+        cp -r Data/system $target_path/
+    else
+        echo "Error: FirmwareSim not found in $build_path. Please check the build output."
+        exit 1
+    fi
 fi
