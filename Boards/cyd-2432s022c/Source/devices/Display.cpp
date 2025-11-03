@@ -1,8 +1,10 @@
 #include "Constants.h"
 #include "Display.h"
-#include "St7789i8080Display.h"
-#include "PwmBacklight.h"
 #include "Touch.h"
+
+#include <Tactility/Log.h>
+#include <St7789i8080Display.h>
+#include <PwmBacklight.h>
 
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     // Create configuration
