@@ -75,7 +75,7 @@ project(Tactility)
 if (NOT DEFINED ENV{ESP_IDF_VERSION})
     add_subdirectory(Tactility)
     add_subdirectory(TactilityCore)
-    add_subdirectory(Boards/Simulator)
+    add_subdirectory(Boards/simulator)
 endif ()
 
 if (NOT DEFINED ENV{ESP_IDF_VERSION})
@@ -97,7 +97,7 @@ if (NOT DEFINED ENV{ESP_IDF_VERSION})
     add_subdirectory(Libraries/minmea)
     target_compile_definitions(freertos_kernel PUBLIC "projCOVERAGE_TEST=0")
     target_include_directories(freertos_kernel
-        PUBLIC Boards/Simulator/Source # for FreeRTOSConfig.h
+        PUBLIC Boards/simulator/Source # for FreeRTOSConfig.h
     )
 
     # EmbedTLS
