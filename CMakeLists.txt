@@ -6,11 +6,6 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_ASM_COMPILE_OBJECT "${CMAKE_CXX_COMPILER_TARGET}")
 
-# For Emscripten builds, don't use pthreads at all - we run single-threaded
-if (CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1")
-endif()
-
 include("Buildscripts/logo.cmake")
 
 if (NOT WIN32)
@@ -80,15 +75,9 @@ endif ()
 
 if (NOT DEFINED ENV{ESP_IDF_VERSION})
     # FreeRTOS
-    set(FREERTOS_CONFIG_FILE_DIRECTORY ${PROJECT_SOURCE_DIR}/Boards/Simulator/Source CACHE STRING "")
-    
-    if (CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-        # For WASM, use GCC_POSIX port (pthread flags already set at top of CMakeLists)
-        set(FREERTOS_PORT GCC_POSIX CACHE STRING "")
-    else()
-        set(FREERTOS_PORT GCC_POSIX CACHE STRING "")
-    endif()
-    
+    set(FREERTOS_CONFIG_FILE_DIRECTORY ${PROJECT_SOURCE_DIR}/Boards/simulator/Source CACHE STRING "")
+    set(FREERTOS_PORT GCC_POSIX CACHE STRING "")
+
     add_subdirectory(Libraries/cJSON)
     add_subdirectory(Libraries/FreeRTOS-Kernel)
     add_subdirectory(Libraries/lv_screenshot)
