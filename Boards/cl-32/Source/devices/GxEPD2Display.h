@@ -11,13 +11,14 @@ class GxEPD2_290_GDEY029T71H; // Forward declaration
 class GxEPD2Display : public tt::hal::display::DisplayDevice {
 public:
     struct Configuration {
-        uint16_t width;
-        uint16_t height;
+        uint16_t width;          // Physical panel width
+        uint16_t height;         // Physical panel height
         gpio_num_t csPin;
         gpio_num_t dcPin;
         gpio_num_t rstPin;
         gpio_num_t busyPin;
         spi_host_device_t spiHost;
+        uint8_t rotation;        // 0=portrait, 2=landscape (90° CW)
     };
 
     explicit GxEPD2Display(const Configuration& config);
@@ -38,20 +39,16 @@ public:
     bool stopLvgl() override;
     lv_display_t* _Nullable getLvglDisplay() const override;
 
-    // DisplayDriver (not implemented)
+    // DisplayDriver (not implemented - e-paper needs LVGL for buffering)
     bool supportsDisplayDriver() const override;
     std::shared_ptr<tt::hal::display::DisplayDriver> _Nullable getDisplayDriver() override;
 
-    // Minimal public helpers for tests / external use (safe, small API)
+    // Public API for tests/external use
     uint16_t getWidth() const;
     uint16_t getHeight() const;
-
-    // Write a packed 1bpp buffer to the panel via the driver (safe wrapper).
-    // The buffer must be packed MSB-first per row, rows padded to byte boundary.
-    void writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, int16_t w, int16_t h, bool invert = false, bool mirror_y = false);
-
-    // Refresh the display; partial = true -> partial refresh, false -> full refresh
-    void refreshDisplay(bool partial) ;
+    void writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, int16_t w, int16_t h, 
+                       bool invert = false, bool mirror_y = false);
+    void refreshDisplay(bool partial);
 
 private:
     Configuration _config;
@@ -62,8 +59,8 @@ private:
 
     static constexpr size_t DRAW_BUF_LINES = 10;
 
-    // rotation: 0 none, 1 90° CCW, 2 90° CW
-    uint8_t rotation_ = 0;
-
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
+    
+    // Convert RGB565 pixel to monochrome (true=white, false=black)
+    static inline bool rgb565ToMono(lv_color_t pixel);
 };
