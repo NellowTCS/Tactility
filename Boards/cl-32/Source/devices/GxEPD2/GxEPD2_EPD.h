@@ -13,11 +13,11 @@
 #define _GxEPD2_EPD_H_
 
 #include <stdint.h>
-#include "driver/spi_master.h"
-#include "driver/gpio.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_log.h"
+#include <driver/spi_master.h>
+#include <driver/gpio.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <esp_log.h>
 
 #include "GxEPD2.h"
 

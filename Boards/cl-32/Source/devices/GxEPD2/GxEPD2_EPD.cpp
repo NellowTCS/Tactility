@@ -10,7 +10,7 @@
 // Library: https://github.com/ZinggJM/GxEPD2
 
 #include "GxEPD2_EPD.h"
-#include "esp_timer.h"
+#include <esp_timer.h>
 
 const char* GxEPD2_EPD::TAG = "GxEPD2";
 

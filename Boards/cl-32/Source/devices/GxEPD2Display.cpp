@@ -97,22 +97,24 @@ bool GxEPD2Display::startLvgl() {
     }
 
     // --- LVGL Configuration based on Rotation ---
+    // Physical display dimensions (portrait: 168x384)
     uint16_t lv_width = _config.width;
     uint16_t lv_height = _config.height;
     lv_display_rotation_t lv_rotation = LV_DISPLAY_ROTATION_0;
 
     if (_config.rotation == 2) {
-        // 90° CW rotation: swap dimensions and set LVGL rotation flag
-        lv_width = _config.height;
-        lv_height = _config.width;
-        lv_rotation = LV_DISPLAY_ROTATION_90; // Tell LVGL to rotate rendering
+        // 90° CW rotation for landscape mode
+        // LVGL will handle software rotation internally
+        lv_rotation = LV_DISPLAY_ROTATION_90;
+        // Note: We create display with physical dimensions (168x384)
+        // LVGL presents logical dimensions (384x168) and handles all rotation
     } else {
         // Default to no rotation 
-        // I need to add more 'else if' blocks here for other rotations (1=180, 3=270)
+        // TODO: add support for other rotations (1=180, 3=270)
     }
 
-    ESP_LOGI(TAG, "Starting LVGL: physical=%ux%u, logical=%ux%u, rotation=%u (LVGL:%d)", 
-             _config.width, _config.height, lv_width, lv_height, _config.rotation, lv_rotation);
+    ESP_LOGI(TAG, "Starting LVGL: physical=%ux%u rotation=%d (sw_rotate=implicit)", 
+             lv_width, lv_height, lv_rotation);
 
     // Allocate draw buffers (RGB565 format - 2 bytes per pixel)
     const size_t bufSize = lv_width * DRAW_BUF_LINES; 
@@ -128,7 +130,7 @@ bool GxEPD2Display::startLvgl() {
 
     ESP_LOGI(TAG, "Allocated %zu bytes per buffer", bufSize * sizeof(lv_color_t));
 
-    // Create LVGL display
+    // Create LVGL display with physical dimensions
     _lvglDisplay = lv_display_create(lv_width, lv_height);
     if (!_lvglDisplay) {
         ESP_LOGE(TAG, "Failed to create LVGL display");
@@ -138,8 +140,9 @@ bool GxEPD2Display::startLvgl() {
         return false;
     }
 
-    // Apply the configured rotation to LVGL
-    lv_display_set_rotation(_lvglDisplay, lv_rotation); 
+    // Set rotation - LVGL will handle dimension swapping and software rotation
+    // This is equivalent to esp_lvgl_port with sw_rotate=true
+    lv_display_set_rotation(_lvglDisplay, lv_rotation);
 
     // Use RGB565 format - standard LVGL rendering
     lv_display_set_color_format(_lvglDisplay, LV_COLOR_FORMAT_RGB565);
@@ -201,19 +204,22 @@ void GxEPD2Display::refreshDisplay(bool partial) {
     _display->refresh(partial);
 }
 
-// Helper: Convert RGB565 to monochrome using brightness threshold (Keep inline)
+// Helper: Convert RGB565 to monochrome using brightness threshold
+// Uses ITU-R BT.601 luma coefficients for RGB to grayscale conversion
 inline bool GxEPD2Display::rgb565ToMono(lv_color_t pixel) {
-    // Extract RGB components
+    // Extract RGB components from lv_color_t
+    // Note: LVGL9 uses 8-bit color channels internally
     uint8_t r = pixel.red;   
     uint8_t g = pixel.green; 
     uint8_t b = pixel.blue;  
     
-    // Calculate brightness using standard weights (Luminance approximation)
+    // Calculate brightness using standard luminance weights
+    // Y = 0.299*R + 0.587*G + 0.114*B
+    // Approximated as (77*R + 151*G + 28*B) / 256 for speed
     uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
     
-    // Threshold: >127 = white, <=127 = black
-    // this display should be using 0x00 for Black and 0xFF for White in 1-bit mode I think.
-    return brightness > 127; // true = white (bit=1), false = black (bit=0)
+    // Threshold at 50% gray: >127 = white (bit=1), <=127 = black (bit=0)
+    return brightness > 127;
 }
 
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
@@ -223,55 +229,57 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return; 
     }
 
-    // LVGL has applied the rotation, so area->x1 and area->y1 are the target EPD coordinates.
+    // LVGL provides already-rotated coordinates and pixel data in physical orientation
+    // When lv_display_set_rotation() is used, LVGL handles all rotation internally
     const int epd_x = area->x1;
     const int epd_y = area->y1;
-    const int dst_w = area->x2 - area->x1 + 1; // Width of the block
-    const int dst_h = area->y2 - area->y1 + 1; // Height of the block
+    const int epd_w = area->x2 - area->x1 + 1;
+    const int epd_h = area->y2 - area->y1 + 1;
 
-    if (dst_w <= 0 || dst_h <= 0) { 
+    if (epd_w <= 0 || epd_h <= 0) { 
         lv_display_flush_ready(disp); 
         return; 
     }
 
-    ESP_LOGD(TAG, "Flush: EPD_Target=[%d,%d] %dx%d", epd_x, epd_y, dst_w, dst_h);
+    ESP_LOGD(TAG, "Flush: EPD=[%d,%d] %dx%d", epd_x, epd_y, epd_w, epd_h);
 
-    // Allocate 1-bit packed buffer (size based on the target block size)
-    const int dst_row_bytes = (dst_w + 7) / 8;
-    const size_t packed_size = dst_row_bytes * dst_h;
+    // Allocate 1-bit packed buffer for monochrome e-paper
+    // Format: MSB first, horizontal byte packing (left-to-right)
+    const int epd_row_bytes = (epd_w + 7) / 8;
+    const size_t packed_size = epd_row_bytes * epd_h;
     uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
     if (!packed) {
-        ESP_LOGE(TAG, "Failed to allocate %zu bytes", packed_size);
+        ESP_LOGE(TAG, "Failed to allocate %zu bytes for 1-bit buffer", packed_size);
         lv_display_flush_ready(disp);
         return;
     }
-    // Initialize to 0xFF (White) - GxEPD2 uses 0xFF for white, 0x00 for black.
+    
+    // Initialize to 0xFF (all white) - GxEPD2 uses 0xFF=white, 0x00=black
     memset(packed, 0xFF, packed_size); 
 
-    // Convert RGB565 -> 1-bit
+    // Convert RGB565 -> 1-bit monochrome
+    // LVGL has already rotated the pixel data to match physical display orientation
     lv_color_t* src_pixels = (lv_color_t*)px_map;
 
-    for (int y = 0; y < dst_h; ++y) {
-        for (int x = 0; x < dst_w; ++x) {
-            lv_color_t pixel = src_pixels[y * dst_w + x]; // px_map is a simple block of src_w * src_h pixels
+    for (int y = 0; y < epd_h; ++y) {
+        for (int x = 0; x < epd_w; ++x) {
+            lv_color_t pixel = src_pixels[y * epd_w + x];
             bool is_white = self->rgb565ToMono(pixel);
 
-            // Pack bit (MSB first per row, simple linear packing)
-            const int byte_idx = y * dst_row_bytes + (x / 8);
-            const int bit = 7 - (x & 7); // The bit within the byte
+            // Pack bit into byte (MSB first, horizontal addressing)
+            const int byte_idx = y * epd_row_bytes + (x / 8);
+            const int bit_pos = 7 - (x & 7);  // MSB = leftmost pixel
             
             if (is_white) {
-                // Set the bit to 1 (White - default for memset)
-                packed[byte_idx] |= (1 << bit);
+                packed[byte_idx] |= (1 << bit_pos);   // Set bit (white)
             } else {
-                // Clear the bit to 0 (Black)
-                packed[byte_idx] &= ~(1 << bit);
+                packed[byte_idx] &= ~(1 << bit_pos);  // Clear bit (black)
             }
         }
     }
 
-    // Write the 1-bit buffer to the display
-    self->_display->writeImage(packed, epd_x, epd_y, dst_w, dst_h, false, false, false);
+    // Write the 1-bit buffer to the e-paper display
+    self->_display->writeImage(packed, epd_x, epd_y, epd_w, epd_h, false, false, false);
     self->_display->refresh(true); // Partial refresh (~400ms)
 
     heap_caps_free(packed);
