@@ -15,6 +15,7 @@ jobs:
     strategy:
       matrix:
         board: [
+          { id: cyd-2432s022c, arch: esp32 },
           { id: cyd-2432s024c, arch: esp32 },
           { id: cyd-2432s028r, arch: esp32 },
           { id: cyd-2432s028rv3, arch: esp32 },

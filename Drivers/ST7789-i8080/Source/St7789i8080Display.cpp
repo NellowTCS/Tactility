@@ -331,6 +331,30 @@ bool St7789i8080Display::startLvgl() {
     };
     esp_lcd_panel_io_register_event_callbacks(ioHandle, &cbs, lvglDisplay);
 
+    // Attach input device if touch is available
+    if (configuration.touch) {
+        TT_LOG_I(TAG, "Initializing LVGL input device (touch)");
+
+        // Set up LVGL input device driver (only once)
+        lv_indev_drv_t indev_drv;
+        lv_indev_drv_init(&indev_drv);
+        indev_drv.type = LV_INDEV_TYPE_POINTER;
+        indev_drv.read_cb = [](lv_indev_drv_t* drv, lv_indev_data_t* data) {
+            auto touch = g_display_instance->getConfiguration().touch;
+            if (touch && touch->getTouchData(data->point.x, data->point.y)) {
+                data->state = LV_INDEV_STATE_PR;
+            } else {
+                data->state = LV_INDEV_STATE_REL;
+            }
+        };
+
+        // Ensure single-time registration
+        touchIndev = lv_indev_drv_register(&indev_drv);
+        if (!touchIndev) {
+            TT_LOG_E(TAG, "Failed to register input device");
+        }
+    }
+
     g_display_instance = this;
     TT_LOG_I(TAG, "LVGL display created successfully");
     return true;
