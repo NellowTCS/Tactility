@@ -21,8 +21,8 @@ std::shared_ptr<tt::hal::touch::TouchDevice> createTouch() {
 
     auto configuration = std::make_unique<Cst816sTouch::Configuration>(
         TOUCH_PORT,
-        CYD_2432S022C_LCD_HORIZONTAL_RESOLUTION,
-        CYD_2432S022C_LCD_VERTICAL_RESOLUTION,
+        DISPLAY_HORIZONTAL_RESOLUTION,
+        DISPLAY_VERTICAL_RESOLUTION,
         swapXY,
         mirrorX,
         mirrorY
