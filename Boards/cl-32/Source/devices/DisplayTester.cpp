@@ -77,6 +77,11 @@ void runTests(GxEPD2Display* display)
     // 3 stripes (left/mid/right) so you can see mapping in one shot
     test_three_stripes(display);
     vTaskDelay(pdMS_TO_TICKS(2000));
+
+    // 4. Clear screen to White (0xFF)
+    test_fullscreen_fill(display, 0xFF);
+    vTaskDelay(pdMS_TO_TICKS(300));
+    
     ESP_LOGI(TAG, "=== perform_display_tests END ===");
 }
 

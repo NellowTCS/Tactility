@@ -39,6 +39,7 @@ bool GxEPD2Display::start() {
         _config.busyPin
     );
 
+    // spi_device_interface_config_t setup for SPI initialization
     spi_device_interface_config_t devcfg = {
         .command_bits = 0,
         .address_bits = 0,
@@ -95,20 +96,26 @@ bool GxEPD2Display::startLvgl() {
         return false;
     }
 
-    // Calculate LVGL dimensions based on rotation
+    // --- LVGL Configuration based on Rotation ---
     uint16_t lv_width = _config.width;
     uint16_t lv_height = _config.height;
+    lv_display_rotation_t lv_rotation = LV_DISPLAY_ROTATION_0;
+
     if (_config.rotation == 2) {
-        // 90° CW rotation: swap dimensions
+        // 90° CW rotation: swap dimensions and set LVGL rotation flag
         lv_width = _config.height;
         lv_height = _config.width;
+        lv_rotation = LV_DISPLAY_ROTATION_90; // Tell LVGL to rotate rendering
+    } else {
+        // Default to no rotation 
+        // I need to add more 'else if' blocks here for other rotations (1=180, 3=270)
     }
 
-    ESP_LOGI(TAG, "Starting LVGL: physical=%ux%u, logical=%ux%u, rotation=%u", 
-             _config.width, _config.height, lv_width, lv_height, _config.rotation);
+    ESP_LOGI(TAG, "Starting LVGL: physical=%ux%u, logical=%ux%u, rotation=%u (LVGL:%d)", 
+             _config.width, _config.height, lv_width, lv_height, _config.rotation, lv_rotation);
 
     // Allocate draw buffers (RGB565 format - 2 bytes per pixel)
-    const size_t bufSize = lv_width * DRAW_BUF_LINES;
+    const size_t bufSize = lv_width * DRAW_BUF_LINES; 
     _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
     _drawBuf2 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
     if (!_drawBuf1 || !_drawBuf2) {
@@ -131,8 +138,10 @@ bool GxEPD2Display::startLvgl() {
         return false;
     }
 
+    // Apply the configured rotation to LVGL
+    lv_display_set_rotation(_lvglDisplay, lv_rotation); 
+
     // Use RGB565 format - standard LVGL rendering
-    // We convert to 1-bit in the flush callback (like SSD1306 approach)
     lv_display_set_color_format(_lvglDisplay, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(_lvglDisplay, _drawBuf1, _drawBuf2, 
                            bufSize * sizeof(lv_color_t), 
@@ -140,7 +149,7 @@ bool GxEPD2Display::startLvgl() {
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
-    ESP_LOGI(TAG, "LVGL started successfully (RGB565 -> 1-bit monochrome)");
+    ESP_LOGI(TAG, "LVGL started successfully");
     return true;
 }
 
@@ -192,19 +201,19 @@ void GxEPD2Display::refreshDisplay(bool partial) {
     _display->refresh(partial);
 }
 
-// Helper: Convert RGB565 to monochrome using brightness threshold
+// Helper: Convert RGB565 to monochrome using brightness threshold (Keep inline)
 inline bool GxEPD2Display::rgb565ToMono(lv_color_t pixel) {
-    // Extract RGB components from RGB565
-    // RGB565 layout: RRRRRGGG GGGBBBBB
-    uint8_t r = pixel.red;   // Already 8-bit in LVGL9
-    uint8_t g = pixel.green; // Already 8-bit in LVGL9
-    uint8_t b = pixel.blue;  // Already 8-bit in LVGL9
+    // Extract RGB components
+    uint8_t r = pixel.red;   
+    uint8_t g = pixel.green; 
+    uint8_t b = pixel.blue;  
     
-    // Calculate brightness using standard weights
+    // Calculate brightness using standard weights (Luminance approximation)
     uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
     
     // Threshold: >127 = white, <=127 = black
-    return brightness > 127;
+    // this display should be using 0x00 for Black and 0xFF for White in 1-bit mode I think.
+    return brightness > 127; // true = white (bit=1), false = black (bit=0)
 }
 
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
@@ -214,38 +223,20 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return; 
     }
 
-    const int src_w = area->x2 - area->x1 + 1;
-    const int src_h = area->y2 - area->y1 + 1;
+    // LVGL has applied the rotation, so area->x1 and area->y1 are the target EPD coordinates.
+    const int epd_x = area->x1;
+    const int epd_y = area->y1;
+    const int dst_w = area->x2 - area->x1 + 1; // Width of the block
+    const int dst_h = area->y2 - area->y1 + 1; // Height of the block
 
-    if (src_w <= 0 || src_h <= 0) { 
+    if (dst_w <= 0 || dst_h <= 0) { 
         lv_display_flush_ready(disp); 
         return; 
     }
 
-    ESP_LOGD(TAG, "Flush: [%d,%d] %dx%d", area->x1, area->y1, src_w, src_h);
+    ESP_LOGD(TAG, "Flush: EPD_Target=[%d,%d] %dx%d", epd_x, epd_y, dst_w, dst_h);
 
-    // Calculate destination based on rotation
-    int dst_w, dst_h, epd_x, epd_y;
-    
-    if (self->_config.rotation == 0) {
-        // No rotation
-        dst_w = src_w;
-        dst_h = src_h;
-        epd_x = area->x1;
-        epd_y = area->y1;
-    } else if (self->_config.rotation == 2) {
-        // 90° CW: LVGL (384x168) -> EPD (168x384)
-        dst_w = src_h;
-        dst_h = src_w;
-        epd_x = self->_config.height - (area->y1 + src_h);
-        epd_y = area->x1;
-    } else {
-        ESP_LOGE(TAG, "Unsupported rotation: %u", self->_config.rotation);
-        lv_display_flush_ready(disp);
-        return;
-    }
-
-    // Allocate 1-bit packed buffer
+    // Allocate 1-bit packed buffer (size based on the target block size)
     const int dst_row_bytes = (dst_w + 7) / 8;
     const size_t packed_size = dst_row_bytes * dst_h;
     uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
@@ -254,48 +245,32 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         lv_display_flush_ready(disp);
         return;
     }
-    memset(packed, 0xFF, packed_size); // White background
+    // Initialize to 0xFF (White) - GxEPD2 uses 0xFF for white, 0x00 for black.
+    memset(packed, 0xFF, packed_size); 
 
-    // Convert RGB565 -> 1-bit with rotation
+    // Convert RGB565 -> 1-bit
     lv_color_t* src_pixels = (lv_color_t*)px_map;
 
-    for (int y = 0; y < src_h; ++y) {
-        for (int x = 0; x < src_w; ++x) {
-            lv_color_t pixel = src_pixels[y * src_w + x];
-            bool is_white = rgb565ToMono(pixel);
+    for (int y = 0; y < dst_h; ++y) {
+        for (int x = 0; x < dst_w; ++x) {
+            lv_color_t pixel = src_pixels[y * dst_w + x]; // px_map is a simple block of src_w * src_h pixels
+            bool is_white = self->rgb565ToMono(pixel);
 
-            // Apply rotation
-            int dx, dy;
-            if (self->_config.rotation == 0) {
-                dx = x;
-                dy = y;
-            } else { // rotation == 2
-                dx = dst_w - 1 - y;
-                dy = x;
-            }
-
-            // Pack bit (MSB first per row)
-            const int byte_idx = dy * dst_row_bytes + (dx / 8);
-            const int bit = 7 - (dx & 7);
+            // Pack bit (MSB first per row, simple linear packing)
+            const int byte_idx = y * dst_row_bytes + (x / 8);
+            const int bit = 7 - (x & 7); // The bit within the byte
+            
             if (is_white) {
+                // Set the bit to 1 (White - default for memset)
                 packed[byte_idx] |= (1 << bit);
             } else {
+                // Clear the bit to 0 (Black)
                 packed[byte_idx] &= ~(1 << bit);
             }
         }
     }
 
-    // Bounds check
-    if (epd_x < 0) epd_x = 0;
-    if (epd_y < 0) epd_y = 0;
-    if (epd_x + dst_w > (int)self->_config.width) {
-        dst_w = self->_config.width - epd_x;
-    }
-    if (epd_y + dst_h > (int)self->_config.height) {
-        dst_h = self->_config.height - epd_y;
-    }
-
-    // Write to display and refresh
+    // Write the 1-bit buffer to the display
     self->_display->writeImage(packed, epd_x, epd_y, dst_w, dst_h, false, false, false);
     self->_display->refresh(true); // Partial refresh (~400ms)
 
