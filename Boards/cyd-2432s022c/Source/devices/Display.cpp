@@ -1,3 +1,4 @@
+#include "Constants.h"
 #include "Display.h"
 #include "St7789i8080Display.h"
 #include "PwmBacklight.h"

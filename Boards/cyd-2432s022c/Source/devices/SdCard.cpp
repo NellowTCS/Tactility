@@ -16,7 +16,7 @@ std::shared_ptr<SdCardDevice> createSdCard() {
         SdCardDevice::MountBehaviour::AtBoot,
         nullptr,
         std::vector<gpio_num_t>(),
-        CYD_2432S022C_SDCARD_SPI_HOST
+        SDCARD_HOST
     );
 
     auto* sdcard = (SdCardDevice*) new SpiSdCardDevice(
