@@ -30,8 +30,9 @@ static inline int rc_to_index(int row, int col) {
     // in the same coordinate system the original firmware expects.
     // Ensure values are within bounds and convert to flat 1..80 -> 0..79 indexing.
     if (row < 0 || col < 0) return -1;
-    // Some wrappers present rows 0..3 and cols 0..9 (40 keys), others report 8x10 matrix.
-    // The CL-32 hardware uses up to 80 keys. We assume row*10+col mapping here.
+    // CL-32 hardware uses 8 rows × 10 cols = 80 keys max
+    if (row >= 8 || col >= 10) return -1;  // Bounds check!
+    // We assume row*10+col mapping here.
     int idx = (row * 10) + col;
     if (idx < 0 || idx >= 80) return -1;
     return idx;
@@ -126,7 +127,7 @@ void CL32Keyboard::processKeyboard() {
             int row = keypad->pressed_list[i].row;
             int col = keypad->pressed_list[i].col;
             int idx = rc_to_index(row, col);
-            if (idx < 0) continue;
+            if (idx < 0 || idx >= 80) continue;  // Bounds check!
 
             uint8_t special = key_map_codes[idx];
 
@@ -196,7 +197,7 @@ void CL32Keyboard::processKeyboard() {
             int row = keypad->released_list[i].row;
             int col = keypad->released_list[i].col;
             int idx = rc_to_index(row, col);
-            uint8_t special = (idx >= 0) ? key_map_codes[idx] : 0;
+            uint8_t special = (idx >= 0 && idx < 80) ? key_map_codes[idx] : 0;
             if (special == 225) shift_pressed = false;
             if (special == 60) sym_pressed = false;
         }
