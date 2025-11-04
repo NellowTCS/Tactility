@@ -263,6 +263,13 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     uint32_t src_row_bytes = (uint32_t)lv_draw_buf_width_to_stride(epd_w, cf);
     uint8_t* src_bytes = (uint8_t*)px_map;
 
+    // Debugging: print a few diagnostics for the first several flushes to detect stride/packing issues
+    static int s_flush_debug_count = 0;
+    if (s_flush_debug_count < 6) {
+        ESP_LOGI(TAG, "lvglFlush: epd=%dx%d at (%d,%d) cf=%d src_row_bytes=%u", epd_w, epd_h, epd_x, epd_y, (int)cf, (unsigned)src_row_bytes);
+        // print first 16 bytes of the source row and packed buffer after conversion (below)
+    }
+
     for (int y = 0; y < epd_h; ++y) {
         // Row pointer using LVGL-provided stride
         lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)y * src_row_bytes);
@@ -280,6 +287,20 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 packed[byte_idx] &= ~(1 << bit_pos);  // Clear bit (black)
             }
         }
+    }
+
+    if (s_flush_debug_count < 6) {
+        // Dump first few bytes of packed buffer
+        const int dump_bytes = std::min<int>((int)packed_size, 16);
+        char buf_hex[16 * 3 + 1];
+        char *p = buf_hex;
+        for (int i = 0; i < dump_bytes; ++i) {
+            int n = sprintf(p, "%02X ", packed[i]);
+            p += n;
+        }
+        *p = '\0';
+        ESP_LOGI(TAG, "packed[%d]= %s", dump_bytes, buf_hex);
+        ++s_flush_debug_count;
     }
 
     // Write the 1-bit buffer to the e-paper display
