@@ -257,19 +257,23 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     // Initialize to 0xFF (all white) - GxEPD2 uses 0xFF=white, 0x00=black
     memset(packed, 0xFF, packed_size); 
 
-    // Convert RGB565 -> 1-bit monochrome
-    // LVGL has already rotated the pixel data to match physical display orientation
-    lv_color_t* src_pixels = (lv_color_t*)px_map;
+    // Convert LVGL pixel buffer -> 1-bit monochrome for e-paper
+    // LVGL may provide rows with padding/stride or swap bytes; compute stride using LVGL helper
+    lv_color_format_t cf = lv_display_get_color_format(disp);
+    uint32_t src_row_bytes = (uint32_t)lv_draw_buf_width_to_stride(epd_w, cf);
+    uint8_t* src_bytes = (uint8_t*)px_map;
 
     for (int y = 0; y < epd_h; ++y) {
+        // Row pointer using LVGL-provided stride
+        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)y * src_row_bytes);
         for (int x = 0; x < epd_w; ++x) {
-            lv_color_t pixel = src_pixels[y * epd_w + x];
+            lv_color_t pixel = src_row[x];
             bool is_white = self->rgb565ToMono(pixel);
 
             // Pack bit into byte (MSB first, horizontal addressing)
             const int byte_idx = y * epd_row_bytes + (x / 8);
             const int bit_pos = 7 - (x & 7);  // MSB = leftmost pixel
-            
+
             if (is_white) {
                 packed[byte_idx] |= (1 << bit_pos);   // Set bit (white)
             } else {
