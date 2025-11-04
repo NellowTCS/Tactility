@@ -2,6 +2,7 @@
 
 #include <EspLcdDisplay.h>
 #include <Tactility/hal/display/DisplayDevice.h>
+#include <Tactility/hal/spi/Spi.h>
 
 #include <driver/gpio.h>
 #include <driver/spi_master.h>
@@ -64,19 +65,19 @@ private:
 public:
 
     explicit Ssd1681Display(std::unique_ptr<Configuration> inConfiguration) :
-        EspLcdDisplay(nullptr),
+        EspLcdDisplay(tt::hal::spi::getLock(inConfiguration->spiHost)),
         configuration(std::move(inConfiguration))
     {
         assert(configuration != nullptr);
         if (configuration->bufferSize == 0) {
-            // For monochrome=true, ESP-LVGL-PORT requires full screen buffer
+            // For monochrome=true, esp-lvgl-port requires full screen buffer
             configuration->bufferSize = configuration->width * configuration->height;
         }
     }
 
     std::string getName() const override { return "SSD1681"; }
 
-    std::string getDescription() const override { return "SSD1681/SSD1685 e-paper display with ESP-LVGL-PORT"; }
+    std::string getDescription() const override { return "SSD1681/SSD1685 e-paper display"; }
 
     std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable getTouchDevice() override { return configuration->touch; }
 

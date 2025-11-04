@@ -12,18 +12,13 @@
 
 #define TAG "ssd1681_display"
 
-// SSD1681 specific dimensions for GDEY029T71H
-#define SSD1681_WIDTH  168
-#define SSD1681_HEIGHT 384
-#define SSD1681_SOURCE_SHIFT 8  // S8..S175 connected to display sources
-
 bool Ssd1681Display::createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) {
     // SPI bus configuration for e-paper
     const esp_lcd_panel_io_spi_config_t io_config = {
         .cs_gpio_num = configuration->csPin,
         .dc_gpio_num = configuration->dcPin,
         .spi_mode = 0,
-        .pclk_hz = 10 * 1000 * 1000,  // 10MHz - safe for e-paper
+        .pclk_hz = 10 * 1000 * 1000,
         .trans_queue_depth = 10,
         .on_color_trans_done = nullptr,
         .user_ctx = nullptr,
@@ -71,7 +66,7 @@ bool Ssd1681Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
             .mode = GPIO_MODE_INPUT,
             .pull_up_en = GPIO_PULLUP_DISABLE,
             .pull_down_en = GPIO_PULLDOWN_ENABLE,
-            .intr_type = GPIO_INTR_NEGEDGE,  // Trigger when BUSY goes LOW (refresh done)
+            .intr_type = GPIO_INTR_NEGEDGE,  // Trigger when BUSY goes low (refresh done)
         };
         gpio_config(&busy_gpio_config);
         gpio_intr_disable(configuration->busyPin);  // Will be enabled before refresh
@@ -117,7 +112,7 @@ bool Ssd1681Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
 }
 
 lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) {
-    // Determine rotation settings for the PANEL DRIVER
+    // Determine rotation settings for the panel
     bool swap_xy = (configuration->rotation == 1 || configuration->rotation == 3);
     bool mirror_x = (configuration->rotation == 2 || configuration->rotation == 3);
     bool mirror_y = (configuration->rotation == 1 || configuration->rotation == 2);
@@ -139,19 +134,19 @@ lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         .trans_size = 0,
         .hres = logical_width,
         .vres = logical_height,
-        .monochrome = true,  // ESP-LVGL-port handles RGB565 → 1-bit conversion!
+        .monochrome = true,  // esp-lvgl-port handles RGB565 → 1-bit conversion
         .rotation = {
             .swap_xy = swap_xy,
             .mirror_x = mirror_x,
             .mirror_y = mirror_y,
         },
-        .color_format = LV_COLOR_FORMAT_RGB565,  // Use RGB565, monochrome flag converts it!
+        .color_format = LV_COLOR_FORMAT_RGB565,  // Use RGB565, monochrome flag converts it
         .flags = {
             .buff_dma = false,
-            .buff_spiram = true,     // Use PSRAM for buffers (we have 2MB)
+            .buff_spiram = true,
             .sw_rotate = false,
             .swap_bytes = false,
-            .full_refresh = false,   // E-paper supports partial refresh
+            .full_refresh = false,
             .direct_mode = false
         }
     };
