@@ -10,8 +10,6 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#define TAG "ssd1681_display"
-
 bool Ssd1681Display::createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) {
     const esp_lcd_panel_io_spi_config_t io_config = {
         .cs_gpio_num = configuration->csPin,

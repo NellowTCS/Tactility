@@ -10,6 +10,8 @@
 #include <esp_lcd_types.h>
 #include <esp_lcd_panel_ssd1681.h>
 
+#define TAG "ssd1681_display"
+
 class Ssd1681Display final : public EspLcdDisplay {
 
 public:
