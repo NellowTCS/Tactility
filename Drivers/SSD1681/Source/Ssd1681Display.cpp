@@ -117,16 +117,16 @@ bool Ssd1681Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
 }
 
 lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) {
-    // Determine rotation settings
+    // Determine rotation settings for the PANEL DRIVER
     bool swap_xy = (configuration->rotation == 1 || configuration->rotation == 3);
     bool mirror_x = (configuration->rotation == 2 || configuration->rotation == 3);
     bool mirror_y = (configuration->rotation == 1 || configuration->rotation == 2);
 
-    // Logical dimensions after rotation
+    // Logical dimensions after rotationn
     uint32_t logical_width = swap_xy ? configuration->height : configuration->width;
     uint32_t logical_height = swap_xy ? configuration->width : configuration->height;
 
-    TT_LOG_I(TAG, "LVGL config: physical=%dx%d logical=%dx%d rotation=%d (swap_xy=%d, mirror_x=%d, mirror_y=%d)",
+    TT_LOG_I(TAG, "LVGL config: physical=%dx%d logical=%dx%d rotation=%d (panel swap_xy=%d, mirror_x=%d, mirror_y=%d)",
              configuration->width, configuration->height, logical_width, logical_height,
              configuration->rotation, swap_xy, mirror_x, mirror_y);
 
@@ -148,10 +148,10 @@ lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         .color_format = LV_COLOR_FORMAT_RGB565,  // Use RGB565, monochrome flag converts it!
         .flags = {
             .buff_dma = false,
-            .buff_spiram = true,  // Use PSRAM for rotation buffer
-            .sw_rotate = true,  // Let esp_lvgl_port handle rotation
+            .buff_spiram = true,     // Use PSRAM for buffers (we have 2MB)
+            .sw_rotate = false,
             .swap_bytes = false,
-            .full_refresh = false,  // E-paper supports partial refresh
+            .full_refresh = false,   // E-paper supports partial refresh
             .direct_mode = false
         }
     };
