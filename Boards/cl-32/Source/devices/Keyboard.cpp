@@ -218,13 +218,6 @@ bool CL32Keyboard::startLvgl(lv_display_t* display) {
         return false;
     }
 
-    // Check if device is present before initializing
-    bool attached = isAttached();
-    if (!attached) {
-        ESP_LOGW(TAG, "TCA8418 not detected, keyboard will not work");
-        // Don't fail completely - allow system to continue
-    }
-
     // Initialize TCA wrapper keypad to expected rows/cols (mirror Tpager)
     ESP_LOGI(TAG, "Initializing keypad with 8 rows x 10 cols");
     keypad->init(8, 10); // 8 rows x 10 cols (CL-32 mapping)
