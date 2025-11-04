@@ -235,12 +235,29 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return; 
     }
 
-    // LVGL provides already-rotated coordinates and pixel data in physical orientation
-    // When lv_display_set_rotation() is used, LVGL handles all rotation internally
-    const int epd_x = area->x1;
-    const int epd_y = area->y1;
-    const int epd_w = area->x2 - area->x1 + 1;
-    const int epd_h = area->y2 - area->y1 + 1;
+    // LVGL provides coordinates and pixel data in logical orientation (after rotation)
+    // For software rotation, we need to transform them back to physical orientation
+    // to match the hardware's native coordinate system (168×384 portrait)
+    
+    lv_display_rotation_t rotation = lv_display_get_rotation(disp);
+    lv_area_t physical_area = *area;
+    
+    // Transform logical area to physical area based on rotation
+    if (rotation == LV_DISPLAY_ROTATION_90) {
+        // Logical: 384×168 (landscape) → Physical: 168×384 (portrait)
+        // Transformation: (x,y) → (y, width-1-x)
+        int32_t hor_res = lv_display_get_horizontal_resolution(disp);  // 384 (logical width)
+        physical_area.x1 = area->y1;
+        physical_area.y1 = hor_res - 1 - area->x2;
+        physical_area.x2 = area->y2;
+        physical_area.y2 = hor_res - 1 - area->x1;
+    }
+    // TODO: Add support for other rotations (180, 270)
+    
+    const int epd_x = physical_area.x1;
+    const int epd_y = physical_area.y1;
+    const int epd_w = physical_area.x2 - physical_area.x1 + 1;
+    const int epd_h = physical_area.y2 - physical_area.y1 + 1;
 
     if (epd_w <= 0 || epd_h <= 0) { 
         lv_display_flush_ready(disp); 
@@ -249,7 +266,11 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
 
     ESP_LOGD(TAG, "Flush: EPD=[%d,%d] %dx%d", epd_x, epd_y, epd_w, epd_h);
 
-    // Allocate 1-bit packed buffer for monochrome e-paper
+    // Get logical area dimensions (what LVGL rendered)
+    const int logical_w = area->x2 - area->x1 + 1;
+    const int logical_h = area->y2 - area->y1 + 1;
+
+    // Allocate 1-bit packed buffer for monochrome e-paper (physical dimensions)
     // Format: MSB first, horizontal byte packing (left-to-right)
     const int epd_row_bytes = (epd_w + 7) / 8;
     const size_t packed_size = epd_row_bytes * epd_h;
@@ -264,33 +285,60 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     memset(packed, 0xFF, packed_size); 
 
     // Convert LVGL pixel buffer -> 1-bit monochrome for e-paper
-    // LVGL may provide rows with padding/stride or swap bytes; compute stride using LVGL helper
+    // The source buffer is in logical dimensions (after LVGL rendering)
     lv_color_format_t cf = lv_display_get_color_format(disp);
-    uint32_t src_row_bytes = (uint32_t)lv_draw_buf_width_to_stride(epd_w, cf);
+    uint32_t src_row_bytes = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
     uint8_t* src_bytes = (uint8_t*)px_map;
 
     // Debugging: print a few diagnostics for the first several flushes to detect stride/packing issues
     static int s_flush_debug_count = 0;
     if (s_flush_debug_count < 6) {
-        ESP_LOGI(TAG, "lvglFlush: epd=%dx%d at (%d,%d) cf=%d src_row_bytes=%u", epd_w, epd_h, epd_x, epd_y, (int)cf, (unsigned)src_row_bytes);
-        // print first 16 bytes of the source row and packed buffer after conversion (below)
+        ESP_LOGI(TAG, "lvglFlush: logical=%dx%d physical=%dx%d at (%d,%d) rot=%d cf=%d src_row_bytes=%u", 
+                 logical_w, logical_h, epd_w, epd_h, epd_x, epd_y, (int)rotation, (int)cf, (unsigned)src_row_bytes);
     }
 
-    for (int y = 0; y < epd_h; ++y) {
-        // Row pointer using LVGL-provided stride
-        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)y * src_row_bytes);
-        for (int x = 0; x < epd_w; ++x) {
-            lv_color_t pixel = src_row[x];
-            bool is_white = self->rgb565ToMono(pixel);
+    // Convert and rotate pixels from logical to physical orientation
+    if (rotation == LV_DISPLAY_ROTATION_90) {
+        // 90° CW rotation: logical (384×h) → physical (h×384)
+        // For each pixel at logical (lx, ly), it maps to physical (ly, 383-lx)
+        for (int ly = 0; ly < logical_h; ++ly) {
+            lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_bytes);
+            for (int lx = 0; lx < logical_w; ++lx) {
+                lv_color_t pixel = src_row[lx];
+                bool is_white = self->rgb565ToMono(pixel);
 
-            // Pack bit into byte (MSB first, horizontal addressing)
-            const int byte_idx = y * epd_row_bytes + (x / 8);
-            const int bit_pos = 7 - (x & 7);  // MSB = leftmost pixel
+                // Map logical (lx, ly) to physical (px, py)
+                int px = ly;
+                int py = (logical_w - 1) - lx;
 
-            if (is_white) {
-                packed[byte_idx] |= (1 << bit_pos);   // Set bit (white)
-            } else {
-                packed[byte_idx] &= ~(1 << bit_pos);  // Clear bit (black)
+                // Pack bit into physical buffer (MSB first, horizontal addressing)
+                const int byte_idx = py * epd_row_bytes + (px / 8);
+                const int bit_pos = 7 - (px & 7);  // MSB = leftmost pixel
+
+                if (is_white) {
+                    packed[byte_idx] |= (1 << bit_pos);   // Set bit (white)
+                } else {
+                    packed[byte_idx] &= ~(1 << bit_pos);  // Clear bit (black)
+                }
+            }
+        }
+    } else {
+        // No rotation (or unhandled rotation) - direct copy
+        for (int y = 0; y < epd_h; ++y) {
+            lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)y * src_row_bytes);
+            for (int x = 0; x < epd_w; ++x) {
+                lv_color_t pixel = src_row[x];
+                bool is_white = self->rgb565ToMono(pixel);
+
+                // Pack bit into byte (MSB first, horizontal addressing)
+                const int byte_idx = y * epd_row_bytes + (x / 8);
+                const int bit_pos = 7 - (x & 7);  // MSB = leftmost pixel
+
+                if (is_white) {
+                    packed[byte_idx] |= (1 << bit_pos);   // Set bit (white)
+                } else {
+                    packed[byte_idx] &= ~(1 << bit_pos);  // Clear bit (black)
+                }
             }
         }
     }
