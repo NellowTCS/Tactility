@@ -134,7 +134,7 @@ lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         .io_handle = ioHandle,
         .panel_handle = panelHandle,
         .control_handle = nullptr,
-        .buffer_size = configuration->bufferSize,
+        .buffer_size = configuration->bufferSize > 0 ? configuration->bufferSize : (logical_width * logical_height / 10),
         .double_buffer = false,  // E-paper doesn't need double buffering
         .trans_size = 0,
         .hres = logical_width,
@@ -147,8 +147,8 @@ lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         },
         .color_format = LV_COLOR_FORMAT_RGB565,  // Use RGB565, monochrome flag converts it!
         .flags = {
-            .buff_dma = true,  // Use DMA-capable memory for e-paper
-            .buff_spiram = false,
+            .buff_dma = false,
+            .buff_spiram = true,  // Use PSRAM for rotation buffer
             .sw_rotate = true,  // Let esp_lvgl_port handle rotation
             .swap_bytes = false,
             .full_refresh = false,  // E-paper supports partial refresh
