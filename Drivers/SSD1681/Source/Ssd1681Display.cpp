@@ -59,43 +59,21 @@ bool Ssd1681Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
-    // Configure BUSY pin with interrupt for refresh detection
-    if (configuration->busyPin != GPIO_NUM_NC) {
-        gpio_config_t busy_gpio_config = {
-            .pin_bit_mask = 1ULL << configuration->busyPin,
-            .mode = GPIO_MODE_INPUT,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
-            .pull_down_en = GPIO_PULLDOWN_ENABLE,
-            .intr_type = GPIO_INTR_NEGEDGE,  // Trigger when BUSY goes low (refresh done)
-        };
-        gpio_config(&busy_gpio_config);
-        gpio_intr_disable(configuration->busyPin);  // Will be enabled before refresh
-    }
-
-    // Create ESP-IDF panel with custom config for GDEY029T71H
     esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = GPIO_NUM_NC,  // Already handled above
+        .reset_gpio_num = GPIO_NUM_NC,
         .color_space = ESP_LCD_COLOR_SPACE_MONOCHROME,
-        .bits_per_pixel = 1,  // Monochrome e-paper
+        .bits_per_pixel = 1,
         .flags = {
             .reset_active_high = 0,
         },
-        .vendor_config = nullptr,
+        .vendor_config = &configuration->vendorConfig,
     };
-
-    // SSD1681-specific configuration
-    esp_lcd_ssd1681_config_t ssd1681_config = {
-        .busy_gpio_num = configuration->busyPin,
-        .non_copy_mode = false,  // Let driver manage buffer copies
-    };
-    panel_config.vendor_config = &ssd1681_config;
 
     if (esp_lcd_new_panel_ssd1681(ioHandle, &panel_config, &panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to create SSD1681 panel");
         return false;
     }
 
-    // Initialize the panel
     if (esp_lcd_panel_reset(panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Panel reset failed");
         return false;
@@ -112,12 +90,10 @@ bool Ssd1681Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
 }
 
 lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) {
-    // Determine rotation settings for the panel
     bool swap_xy = (configuration->rotation == 1 || configuration->rotation == 3);
     bool mirror_x = (configuration->rotation == 2 || configuration->rotation == 3);
     bool mirror_y = (configuration->rotation == 1 || configuration->rotation == 2);
 
-    // Logical dimensions after rotation
     uint32_t logical_width = swap_xy ? configuration->height : configuration->width;
     uint32_t logical_height = swap_xy ? configuration->width : configuration->height;
 
@@ -130,17 +106,17 @@ lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         .panel_handle = panelHandle,
         .control_handle = nullptr,
         .buffer_size = configuration->bufferSize > 0 ? configuration->bufferSize : (logical_width * logical_height),
-        .double_buffer = false,  // E-paper doesn't need double buffering
+        .double_buffer = false,
         .trans_size = 0,
         .hres = logical_width,
         .vres = logical_height,
-        .monochrome = true,  // esp-lvgl-port handles RGB565 → 1-bit conversion
+        .monochrome = true,
         .rotation = {
             .swap_xy = swap_xy,
             .mirror_x = mirror_x,
             .mirror_y = mirror_y,
         },
-        .color_format = LV_COLOR_FORMAT_RGB565,  // Use RGB565, monochrome flag converts it
+        .color_format = LV_COLOR_FORMAT_RGB565,
         .flags = {
             .buff_dma = false,
             .buff_spiram = true,

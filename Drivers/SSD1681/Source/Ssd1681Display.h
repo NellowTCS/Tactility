@@ -8,6 +8,7 @@
 #include <driver/spi_master.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_types.h>
+#include <esp_lcd_panel_ssd1681.h>
 
 class Ssd1681Display final : public EspLcdDisplay {
 
@@ -39,7 +40,10 @@ public:
             bufferSize(0),
             gapX(0),
             gapY(0)
-        {}
+        {
+            vendorConfig.busy_gpio_num = busyPin;
+            vendorConfig.non_copy_mode = false;
+        }
 
         spi_host_device_t spiHost;
         gpio_num_t csPin;
@@ -53,6 +57,7 @@ public:
         uint32_t bufferSize;
         int gapX;
         int gapY;
+        esp_lcd_ssd1681_config_t vendorConfig;
     };
 
 private:
