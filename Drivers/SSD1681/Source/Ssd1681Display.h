@@ -23,9 +23,9 @@ public:
             gpio_num_t dcPin,
             gpio_num_t resetPin,
             gpio_num_t busyPin,
-            unsigned int width,         // Physical width: 168
-            unsigned int height,        // Physical height: 384
-            uint8_t rotation = 0,       // 0=portrait, 1=landscape 90°CW, 2=180°, 3=270°CW
+            unsigned int width,
+            unsigned int height,
+            uint8_t rotation = 0,
             std::shared_ptr<tt::hal::touch::TouchDevice> touch = nullptr
         ) : spiHost(spiHost),
             csPin(csPin),
@@ -35,7 +35,10 @@ public:
             width(width),
             height(height),
             rotation(rotation),
-            touch(std::move(touch))
+            touch(std::move(touch)),
+            bufferSize(0),
+            gapX(0),
+            gapY(0)
         {}
 
         spi_host_device_t spiHost;
@@ -45,11 +48,11 @@ public:
         gpio_num_t busyPin;
         unsigned int width;
         unsigned int height;
-        uint8_t rotation = 0;
+        uint8_t rotation;
         std::shared_ptr<tt::hal::touch::TouchDevice> touch;
-        uint32_t bufferSize = 0; // Size in pixel count. 0 means default (1/10 of screen for e-paper)
-        int gapX = 0;
-        int gapY = 0;
+        uint32_t bufferSize;
+        int gapX;
+        int gapY;
     };
 
 private:
@@ -70,7 +73,6 @@ public:
     {
         assert(configuration != nullptr);
         if (configuration->bufferSize == 0) {
-            // For monochrome=true, esp-lvgl-port requires full screen buffer
             configuration->bufferSize = configuration->width * configuration->height;
         }
     }

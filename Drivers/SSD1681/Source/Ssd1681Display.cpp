@@ -117,7 +117,7 @@ lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_i
     bool mirror_x = (configuration->rotation == 2 || configuration->rotation == 3);
     bool mirror_y = (configuration->rotation == 1 || configuration->rotation == 2);
 
-    // Logical dimensions after rotationn
+    // Logical dimensions after rotation
     uint32_t logical_width = swap_xy ? configuration->height : configuration->width;
     uint32_t logical_height = swap_xy ? configuration->width : configuration->height;
 
@@ -129,7 +129,7 @@ lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         .io_handle = ioHandle,
         .panel_handle = panelHandle,
         .control_handle = nullptr,
-        .buffer_size = configuration->bufferSize > 0 ? configuration->bufferSize : (logical_width * logical_height / 10),
+        .buffer_size = configuration->bufferSize > 0 ? configuration->bufferSize : (logical_width * logical_height),
         .double_buffer = false,  // E-paper doesn't need double buffering
         .trans_size = 0,
         .hres = logical_width,
