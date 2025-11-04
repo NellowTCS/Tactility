@@ -159,16 +159,7 @@ class StatusbarService final : public Service {
     }
 
     void updateGpsIcon() {
-        auto gps_service = gps::findGpsService();
-        if (gps_service == nullptr) {
-            if (gps_last_state != false) {
-                lvgl::statusbar_icon_set_visibility(gps_icon_id, false);
-                gps_last_state = false;
-            }
-            return;
-        }
-
-        auto gps_state = gps_service->getState();
+        auto gps_state = gps::findGpsService()->getState();
         bool show_icon = (gps_state == gps::State::OnPending) || (gps_state == gps::State::On);
         if (gps_last_state != show_icon) {
             if (show_icon) {
