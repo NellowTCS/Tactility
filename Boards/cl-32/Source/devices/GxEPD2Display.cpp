@@ -102,19 +102,25 @@ bool GxEPD2Display::startLvgl() {
     uint16_t lv_height = _config.height;
     lv_display_rotation_t lv_rotation = LV_DISPLAY_ROTATION_0;
 
-    if (_config.rotation == 2) {
-        // 90° CW rotation for landscape mode
-        // LVGL will handle software rotation internally
-        lv_rotation = LV_DISPLAY_ROTATION_90;
-        // Note: We create display with physical dimensions (168x384)
-        // LVGL presents logical dimensions (384x168) and handles all rotation
-    } else {
-        // Default to no rotation 
-        // TODO: add support for other rotations (1=180, 3=270)
+    // Map config rotation to LVGL rotation
+    // 0 = 0° (portrait), 1 = 90° CW (landscape), 2 = 180° (portrait flipped), 3 = 270° CW (landscape flipped)
+    switch (_config.rotation) {
+        case 1:
+            lv_rotation = LV_DISPLAY_ROTATION_90;  // Landscape
+            break;
+        case 2:
+            lv_rotation = LV_DISPLAY_ROTATION_180; // Portrait upside down
+            break;
+        case 3:
+            lv_rotation = LV_DISPLAY_ROTATION_270; // Landscape flipped
+            break;
+        default:
+            lv_rotation = LV_DISPLAY_ROTATION_0;   // Portrait (default)
+            break;
     }
 
-    ESP_LOGI(TAG, "Starting LVGL: physical=%ux%u rotation=%d (sw_rotate=implicit)", 
-             lv_width, lv_height, lv_rotation);
+    ESP_LOGI(TAG, "Starting LVGL: physical=%ux%u rotation=%d (config.rotation=%d, sw_rotate=implicit)", 
+             lv_width, lv_height, lv_rotation, _config.rotation);
 
     // Allocate draw buffers (RGB565 format - 2 bytes per pixel)
     const size_t bufSize = lv_width * DRAW_BUF_LINES; 
