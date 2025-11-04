@@ -13,7 +13,6 @@
 #define TAG "ssd1681_display"
 
 bool Ssd1681Display::createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) {
-    // SPI bus configuration for e-paper
     const esp_lcd_panel_io_spi_config_t io_config = {
         .cs_gpio_num = configuration->csPin,
         .dc_gpio_num = configuration->dcPin,
@@ -42,7 +41,6 @@ bool Ssd1681Display::createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) {
 }
 
 bool Ssd1681Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t& panelHandle) {
-    // Hardware reset
     if (configuration->resetPin != GPIO_NUM_NC) {
         gpio_config_t reset_gpio_config = {
             .pin_bit_mask = 1ULL << configuration->resetPin,
@@ -66,7 +64,7 @@ bool Ssd1681Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         .flags = {
             .reset_active_high = 0,
         },
-        .vendor_config = &configuration->vendorConfig,
+        .vendor_config = &vendorConfig,
     };
 
     if (esp_lcd_new_panel_ssd1681(ioHandle, &panel_config, &panelHandle) != ESP_OK) {
@@ -97,9 +95,11 @@ lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_i
     uint32_t logical_width = swap_xy ? configuration->height : configuration->width;
     uint32_t logical_height = swap_xy ? configuration->width : configuration->height;
 
-    TT_LOG_I(TAG, "LVGL config: physical=%dx%d logical=%dx%d rotation=%d (panel swap_xy=%d, mirror_x=%d, mirror_y=%d)",
+    TT_LOG_I(TAG, "LVGL config: physical=%dx%d logical=%dx%d rotation=%d buffer_size=%lu pixels",
              configuration->width, configuration->height, logical_width, logical_height,
-             configuration->rotation, swap_xy, mirror_x, mirror_y);
+             configuration->rotation, configuration->bufferSize);
+    TT_LOG_I(TAG, "LVGL rotation: swap_xy=%d, mirror_x=%d, mirror_y=%d",
+             swap_xy, mirror_x, mirror_y);
 
     return {
         .io_handle = ioHandle,

@@ -41,8 +41,6 @@ public:
             gapX(0),
             gapY(0)
         {
-            vendorConfig.busy_gpio_num = busyPin;
-            vendorConfig.non_copy_mode = false;
         }
 
         spi_host_device_t spiHost;
@@ -57,12 +55,12 @@ public:
         uint32_t bufferSize;
         int gapX;
         int gapY;
-        esp_lcd_ssd1681_config_t vendorConfig;
     };
 
 private:
 
     std::unique_ptr<Configuration> configuration;
+    esp_lcd_ssd1681_config_t vendorConfig;
 
     bool createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) override;
 
@@ -74,12 +72,20 @@ public:
 
     explicit Ssd1681Display(std::unique_ptr<Configuration> inConfiguration) :
         EspLcdDisplay(tt::hal::spi::getLock(inConfiguration->spiHost)),
-        configuration(std::move(inConfiguration))
+        configuration(std::move(inConfiguration)),
+        vendorConfig{configuration->busyPin, false}
     {
         assert(configuration != nullptr);
         if (configuration->bufferSize == 0) {
             configuration->bufferSize = configuration->width * configuration->height;
         }
+        
+        TT_LOG_I(TAG, "Display initialized: %ux%u, buffer=%lu pixels (%lu bytes RGB565)", 
+                 configuration->width, configuration->height, 
+                 configuration->bufferSize, configuration->bufferSize * 2);
+        TT_LOG_I(TAG, "Free heap: %lu bytes, PSRAM: %lu bytes",
+                 esp_get_free_heap_size(), 
+                 heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
     }
 
     std::string getName() const override { return "SSD1681"; }
