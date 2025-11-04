@@ -5,9 +5,13 @@ constexpr auto TAG = "TCA8418";
 
 namespace registers {
 static const uint8_t CFG = 0x01U;
+static const uint8_t INT_STAT = 0x02U;
 static const uint8_t KP_GPIO1 = 0x1DU;
 static const uint8_t KP_GPIO2 = 0x1EU;
 static const uint8_t KP_GPIO3 = 0x1FU;
+static const uint8_t KP_DEB1 = 0x29U;  // Row debounce
+static const uint8_t KP_DEB2 = 0x2AU;  // Column debounce (0-7)
+static const uint8_t KP_DEB3 = 0x2BU;  // Column debounce (8-9)
 
 static const uint8_t KEY_EVENT_A = 0x04U;
 static const uint8_t KEY_EVENT_B = 0x05U;
@@ -68,6 +72,20 @@ void Tca8418::init(uint8_t numrows, uint8_t numcols) {
 
     initMatrix(num_rows, num_cols);
 
+    // Configure debounce for all rows and columns
+    // Enable debouncing for all 8 rows
+    uint8_t debounce_mask = 0xFF;
+    writeRegister(registers::KP_DEB1, &debounce_mask, 1);
+    
+    // Enable debouncing for first 8 columns
+    writeRegister(registers::KP_DEB2, &debounce_mask, 1);
+    
+    // Enable debouncing for columns 8-9 if needed
+    if (num_cols > 8) {
+        debounce_mask = (num_cols == 9) ? 0x01 : 0x03;
+        writeRegister(registers::KP_DEB3, &debounce_mask, 1);
+    }
+
     /*
      *   BIT: NAME
      *
@@ -117,6 +135,10 @@ void Tca8418::init(uint8_t numrows, uint8_t numcols) {
     // 10011001 x99 -- fifo overflow disabled
     writeRegister8(registers::CFG, 0x99);
 
+    // Clear any pending interrupts
+    uint8_t clear_int = 0xFF;
+    writeRegister(registers::INT_STAT, &clear_int, 1);
+
     clear_released_list();
     clear_pressed_list();
 }
@@ -124,6 +146,7 @@ void Tca8418::init(uint8_t numrows, uint8_t numcols) {
 bool Tca8418::update() {
     last_update_micros = this_update_micros;
     uint8_t key_down, key_event, key_row, key_col;
+    bool had_events = false;
 
     key_event = get_key_event();
     // TODO: read gpio R7/R6 status? 0x14 bits 7&6
@@ -134,6 +157,7 @@ bool Tca8418::update() {
     delta_micros = this_update_micros - last_update_micros;
 
     if (key_event > 0) {
+        had_events = true;
         key_down = (key_event & 0x80);
         uint16_t buffer = key_event;
         buffer &= 0x7F;
@@ -152,8 +176,12 @@ bool Tca8418::update() {
             add_released_key(key_row, key_col);
             remove_pressed_key(key_row, key_col);
         }
+    }
 
-        return true;
+    // Clear interrupt status after processing events
+    if (had_events) {
+        uint8_t clear_int = 0xFF;
+        writeRegister(registers::INT_STAT, &clear_int, 1);
     }
 
     // Increment hold times for pressed keys
@@ -161,7 +189,7 @@ bool Tca8418::update() {
         pressed_list[i].hold_time += delta_micros;
     }
 
-    return false;
+    return had_events;
 }
 
 

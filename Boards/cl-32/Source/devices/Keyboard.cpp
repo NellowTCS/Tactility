@@ -275,8 +275,25 @@ bool CL32Keyboard::isAttached() const {
         return false;
     }
     
+    ESP_LOGI(TAG, "isAttached: Checking I2C bus (port=%d, addr=0x%02X)", 
+             keypad->getPort(), keypad->getAddress());
+    
+    // Try a simple I2C probe
     bool attached = tt::hal::i2c::masterHasDeviceAtAddress(keypad->getPort(), keypad->getAddress(), 100);
-    ESP_LOGI(TAG, "isAttached: %s (port=%d, addr=0x%02X)", 
-             attached ? "YES" : "NO", keypad->getPort(), keypad->getAddress());
+    
+    if (!attached) {
+        ESP_LOGW(TAG, "isAttached: TCA8418 not detected - checking I2C bus");
+        
+        // Scan I2C bus to see what devices are present
+        ESP_LOGI(TAG, "Scanning I2C bus...");
+        for (uint8_t addr = 0x08; addr < 0x78; addr++) {
+            if (tt::hal::i2c::masterHasDeviceAtAddress(keypad->getPort(), addr, 50)) {
+                ESP_LOGI(TAG, "  Found device at 0x%02X", addr);
+            }
+        }
+    } else {
+        ESP_LOGI(TAG, "isAttached: TCA8418 detected successfully");
+    }
+    
     return attached;
 }

@@ -40,10 +40,10 @@ extern const Configuration hardwareConfiguration = {
                 .mode = I2C_MODE_MASTER,
                 .sda_io_num = GPIO_NUM_1,
                 .scl_io_num = GPIO_NUM_2,
-                .sda_pullup_en = false,
-                .scl_pullup_en = false,
+                .sda_pullup_en = true,
+                .scl_pullup_en = true,
                 .master = {
-                    .clk_speed = 400000
+                    .clk_speed = 100000
                 },
                 .clk_flags = 0
             }
