@@ -93,9 +93,12 @@ lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_i
     uint32_t logical_width = swap_xy ? configuration->height : configuration->width;
     uint32_t logical_height = swap_xy ? configuration->width : configuration->height;
 
+    // Monochrome displays need full-screen buffer, allocate in PSRAM
+    uint32_t buffer_size = logical_width * logical_height;
+
     TT_LOG_I(TAG, "LVGL config: physical=%dx%d logical=%dx%d rotation=%d buffer_size=%lu pixels",
              configuration->width, configuration->height, logical_width, logical_height,
-             configuration->rotation, configuration->bufferSize);
+             configuration->rotation, buffer_size);
     TT_LOG_I(TAG, "LVGL rotation: swap_xy=%d, mirror_x=%d, mirror_y=%d",
              swap_xy, mirror_x, mirror_y);
 
@@ -103,7 +106,7 @@ lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         .io_handle = ioHandle,
         .panel_handle = panelHandle,
         .control_handle = nullptr,
-        .buffer_size = configuration->bufferSize > 0 ? configuration->bufferSize : (logical_width * logical_height),
+        .buffer_size = buffer_size,
         .double_buffer = false,
         .trans_size = 0,
         .hres = logical_width,
