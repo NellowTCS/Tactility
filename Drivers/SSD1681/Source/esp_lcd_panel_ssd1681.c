@@ -419,7 +419,6 @@ static esp_err_t epaper_panel_init(esp_lcd_panel_t *panel)
         (uint8_t)((epaper_panel->height - 1) & 0xFF),        // Y end low (383)
         (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF)  // Y end high (1)
     }, 4), TAG, "SSD1681_CMD_SET_RAMY_START_END_POS err");
-    }, 4), TAG, "SSD1681_CMD_SET_RAMY_START_END_POS err");
     
     // --- Border Waveform Control (second setting)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_BORDER_WAVEFORM, (uint8_t[]) {
