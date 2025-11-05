@@ -1,3 +1,4 @@
+ url=https://github.com/NellowTCS/Tactility/blob/926167ea3a26f0fd5ffd38c5c38716d8fb97ccf2/Boards/cl-32/Source/devices/DisplayTester.cpp
 #include "DisplayTester.h"
 #include "GxEPD2Display.h"
 
@@ -85,7 +86,7 @@ static void test_lvgl(GxEPD2Display* disp)
     lv_obj_t* scr = lv_obj_create(NULL);
 
     // Logical dimensions according to LVGL will be the display's LVGL resolution.
-    // Create three horizontal bands that fill the screen.
+    // Use the physical panel dimensions for sizing the bands so they map to the panel.
     const int phys_w = disp->getWidth();
     const int phys_h = disp->getHeight();
     const int band_h = phys_h / 3;
@@ -112,7 +113,7 @@ static void test_lvgl(GxEPD2Display* disp)
     // Add a centered label
     lv_obj_t* label = lv_label_create(scr);
     lv_label_set_text(label, "LVGL Test");
-    lv_obj_set_style_text_font(label, LV_FONT_MONTSERRAT_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, lv_font_get_default(), LV_PART_MAIN);
     lv_obj_center(label);
 
     // Load the screen (LVGL will render next refresh)
