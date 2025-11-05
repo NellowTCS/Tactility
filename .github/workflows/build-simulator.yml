@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - web-simulator
   pull_request:
     types: [ opened, synchronize, reopened ]
 jobs:
@@ -28,3 +29,13 @@ jobs:
           platform_name: aarch64
           # macOS simulator currently fails due to main thread requirement for rendering
           publish: false
+  Web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Build"
+        uses: ./.github/actions/build-simulator
+        with:
+          os_name: web
+          platform_name: wasm
+          publish: true
