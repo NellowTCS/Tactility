@@ -502,9 +502,11 @@ epaper_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int y_start, int x
                             (len_x * len_y / 8)),
                             TAG, "panel_epaper_set_vram error");
     }
-    // --- Refresh the display, show image in VRAM
-    // tx_param will wait until DMA transaction finishes, so it is safe to call panel_epaper_refresh_screen at once.
-    // The driver will not call the `epaper_panel_refresh_screen` automatically, please call it manually.
+    // --- Auto-refresh the display after drawing (modified from original driver)
+    // Original driver required manual refresh, but for LVGL integration we auto-refresh
+    ESP_LOGI(TAG, "Auto-refreshing e-paper display");
+    ESP_RETURN_ON_ERROR(epaper_panel_refresh_screen(panel), TAG, "epaper_panel_refresh_screen error");
+    
     return ESP_OK;
 }
 
