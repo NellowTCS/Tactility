@@ -20,7 +20,14 @@ public:
 
     bool stop();
 
-    std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable createTouch() { return nullptr; }
+    std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable getTouchDevice() override { return nullptr; }
+
+    bool supportsLvgl() const override { return gxDisplay ? gxDisplay->supportsLvgl() : false; }
+    bool startLvgl() override { return gxDisplay ? gxDisplay->startLvgl() : false; }
+    bool stopLvgl() override { return gxDisplay ? gxDisplay->stopLvgl() : false; }
+
+    bool supportsDisplayDriver() const override { return gxDisplay ? gxDisplay->supportsDisplayDriver() : false; }
+    std::shared_ptr<tt::hal::display::DisplayDriver> _Nullable getDisplayDriver() override { return gxDisplay ? gxDisplay->getDisplayDriver() : nullptr; }
 
     lv_display_t* _Nullable getLvglDisplay() const { return gxDisplay ? gxDisplay->getLvglDisplay() : nullptr; }
 };

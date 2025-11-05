@@ -1,6 +1,5 @@
 #include "GxEPD2Display.h"
 #include "GxEPD2/GxEPD2_310_GDEQ031T10.h"
-#include "DisplayTester.h"
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include <cstring>
@@ -61,9 +60,6 @@ bool GxEPD2Display::start() {
     _display->init(0);
     _display->clearScreen(0xFF);
     _display->refresh(false);
-
-    // Run hardware tests once
-    display_tester::runTests(this);
 
     ESP_LOGI(TAG, "E-paper display started successfully");
     return true;

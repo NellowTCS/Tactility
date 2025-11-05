@@ -16,8 +16,8 @@ public:
     std::string getName() const final { return "T-Deck Keyboard"; }
     std::string getDescription() const final { return "I2C keyboard"; }
 
-    bool start(lv_display_t* display) override;
-    bool stop() override;
+    bool startLvgl(lv_display_t* display) override;
+    bool stopLvgl() override;
     bool isAttached() const override;
     lv_indev_t* _Nullable getLvglIndev() override { return deviceHandle; }
 };

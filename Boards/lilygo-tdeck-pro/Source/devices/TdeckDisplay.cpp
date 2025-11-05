@@ -13,7 +13,7 @@ bool TdeckDisplay::start() {
         .height = 320,
         .csPin = (gpio_num_t)BOARD_EPD_CS,
         .dcPin = (gpio_num_t)BOARD_EPD_DC,
-        .rstPin = -1,  // No RST pin connected
+        .rstPin = GPIO_NUM_NC,  // No RST pin connected
         .busyPin = (gpio_num_t)BOARD_EPD_BUSY,
         .spiHost = BOARD_EPD_SPI_HOST,
         .rotation = 0  // Portrait
