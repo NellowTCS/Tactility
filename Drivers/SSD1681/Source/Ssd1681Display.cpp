@@ -70,6 +70,11 @@ bool Ssd1681Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         return false;
     }
 
+    if (esp_lcd_panel_set_gap(panelHandle, configuration->gapX, configuration->gapY) != ESP_OK) {
+        TT_LOG_E(TAG, "Failed to apply panel gap (%d,%d)", configuration->gapX, configuration->gapY);
+        return false;
+    }
+
     if (esp_lcd_panel_reset(panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Panel reset failed");
         return false;

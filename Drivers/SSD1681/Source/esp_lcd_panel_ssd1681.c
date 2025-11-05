@@ -24,6 +24,7 @@
 #include "esp_lcd_ssd1681_commands.h"
 
 #define SSD1681_LUT_SIZE                   159
+#define SSD1681_SOURCE_SHIFT               8
 
 static const char *TAG = "lcd_panel.epaper";
 
@@ -150,6 +151,7 @@ static esp_err_t epaper_set_lut(esp_lcd_panel_io_handle_t io, const uint8_t *lut
 
 static esp_err_t epaper_set_cursor(esp_lcd_panel_io_handle_t io, uint32_t cur_x, uint32_t cur_y)
 {
+    cur_x += SSD1681_SOURCE_SHIFT;
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_INIT_X_ADDR_COUNTER, (uint8_t[]) {
         (uint8_t)((cur_x >> 3) & 0xff)
     }, 1), TAG, "SSD1681_CMD_SET_INIT_X_ADDR_COUNTER err");
@@ -164,6 +166,8 @@ static esp_err_t epaper_set_cursor(esp_lcd_panel_io_handle_t io, uint32_t cur_x,
 
 static esp_err_t epaper_set_area(esp_lcd_panel_io_handle_t io, uint32_t start_x, uint32_t start_y, uint32_t end_x, uint32_t end_y)
 {
+    start_x += SSD1681_SOURCE_SHIFT;
+    end_x += SSD1681_SOURCE_SHIFT;
     // --- Set RAMX Start/End Position
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_RAMX_START_END_POS, (uint8_t[]) {
         (uint8_t)((start_x >> 3) & 0xff),  // start_x
@@ -223,8 +227,9 @@ esp_err_t epaper_panel_refresh_screen(esp_lcd_panel_t *panel)
         duc_flag |= SSD1681_PARAM_COLOR_RW_INVERSE_BIT;
     }
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1681_CMD_DISP_UPDATE_CTRL, (uint8_t[]) {
-        duc_flag  // Color invert flag
-    }, 1), TAG, "SSD1681_CMD_DISP_UPDATE_CTRL err");
+        duc_flag,
+        0x00
+    }, 2), TAG, "SSD1681_CMD_DISP_UPDATE_CTRL err");
     // --- Enable refresh done handler isr
     gpio_intr_enable((gpio_num_t)epaper_panel->busy_gpio_num);
     // --- Send refresh command
@@ -386,6 +391,7 @@ static esp_err_t epaper_panel_init(esp_lcd_panel_t *panel)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SWRST, NULL, 0), TAG,
                         "param SSD1681_CMD_SWRST err");
     vTaskDelay(pdMS_TO_TICKS(10));
+    ESP_RETURN_ON_ERROR(panel_epaper_wait_busy(panel), TAG, "post reset busy wait err");
     
     // --- Driver Output Control (HEIGHT-1)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_OUTPUT_CTRL, (uint8_t[]) {
@@ -399,27 +405,32 @@ static esp_err_t epaper_panel_init(esp_lcd_panel_t *panel)
         0x05
     }, 1), TAG, "SSD1681_CMD_SET_BORDER_WAVEFORM err");
     
-    // --- Temperature Sensor Control
+    // --- Temperature Sensor Control (internal sensor)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_TEMP_SENSOR, (uint8_t[]) {
         0x80
     }, 1), TAG, "SSD1681_CMD_SET_TEMP_SENSOR err");
-    
-    // --- Display Update Control (Must be set BEFORE RAM area - from GxEPD2)
+
+    // --- Display Update Control (match GxEPD2 setup)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_DISP_UPDATE_CTRL, (uint8_t[]) {
-        0x00,  // RED normal
-        0x00   // Source output mode
+        0x00,
+        0x00
     }, 2), TAG, "SSD1681_CMD_DISP_UPDATE_CTRL err");
-    
-    // Set initial RAM area for full screen
-    ESP_RETURN_ON_ERROR(epaper_set_area(io, 0, 0, epaper_panel->width - 1, epaper_panel->height - 1), TAG,
-                        "epaper_set_area error");
-    ESP_RETURN_ON_ERROR(epaper_set_cursor(io, 0, 0), TAG,
-                        "epaper_set_cursor error");
-    
+
     // --- Data Entry Mode (X increase, Y increase)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_DATA_ENTRY_MODE, (uint8_t[]) {
         0x03
     }, 1), TAG, "SSD1681_CMD_DATA_ENTRY_MODE err");
+
+    // Apply panel gap/source shift when defining initial RAM window
+    int start_x = epaper_panel->gap_x;
+    int start_y = epaper_panel->gap_y;
+    int end_x = start_x + epaper_panel->width - 1;
+    int end_y = start_y + epaper_panel->height - 1;
+
+    ESP_RETURN_ON_ERROR(epaper_set_area(io, start_x, start_y, end_x, end_y), TAG,
+                        "epaper_set_area error");
+    ESP_RETURN_ON_ERROR(epaper_set_cursor(io, start_x, start_y), TAG,
+                        "epaper_set_cursor error");
 
     return ESP_OK;
 }

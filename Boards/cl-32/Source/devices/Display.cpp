@@ -14,5 +14,9 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         nullptr         // touch device
     );
 
+    // SSD1681 panels route source lines with an 8-pixel offset; compensate via panel gap
+    config->gapX = 8;
+    config->gapY = 0;
+
     return std::make_shared<Ssd1681Display>(std::move(config));
 }
