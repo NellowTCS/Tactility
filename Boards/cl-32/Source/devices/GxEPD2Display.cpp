@@ -16,12 +16,12 @@ GxEPD2Display::GxEPD2Display(const Configuration& config)
     , _lvglDisplay(nullptr)
     , _drawBuf1(nullptr)
     , _drawBuf2(nullptr)
+    , _xShift(0)
+    , _yShift(0)
     , _queue(nullptr)
     , _workerTaskHandle(nullptr)
     , _spiMutex(nullptr)
     , _workerRunning(false)
-    , _xShift(0)
-    , _yShift(0)
 {
 }
 
