@@ -91,7 +91,7 @@ bool GxEPD2Display::supportsLvgl() const {
     return true; 
 }
 
-static void ensureTimerCreated(GxEPD2Display* self) {
+void GxEPD2Display::ensureTimerCreated(GxEPD2Display* self) {
     if (self->_refreshTimer) return;
     esp_timer_create_args_t args;
     memset(&args, 0, sizeof(args));

@@ -112,7 +112,7 @@ static void test_lvgl(GxEPD2Display* disp)
     // Add a centered label
     lv_obj_t* label = lv_label_create(scr);
     lv_label_set_text(label, "LVGL Test");
-    lv_obj_set_style_text_font(label, lv_font_default(), LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, LV_FONT_MONTSERRAT_14, LV_PART_MAIN);
     lv_obj_center(label);
 
     // Load the screen (LVGL will render next refresh)

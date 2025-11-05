@@ -51,9 +51,6 @@ public:
                        bool invert = false, bool mirror_y = false);
     void refreshDisplay(bool partial);
 
-    // Timer callback used for debouncing partial refreshes
-    static void refreshTimerCb(void* arg);
-
 private:
     Configuration _config;
     std::unique_ptr<GxEPD2_290_GDEY029T71H> _display;
@@ -74,4 +71,10 @@ private:
     
     // Convert RGB565 pixel to monochrome (true=white, false=black)
     static inline bool rgb565ToMono(lv_color_t pixel);
+
+    // Timer callback used for debouncing partial refreshes
+    static void refreshTimerCb(void* arg);
+
+    // Helper to create/start the refresh timer; defined in the .cpp file.
+    static void ensureTimerCreated(GxEPD2Display* self);
 };
