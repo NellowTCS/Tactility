@@ -94,9 +94,9 @@ static esp_err_t epaper_panel_disp_on_off(esp_lcd_panel_t *panel, bool on_off);
 
 static void epaper_driver_gpio_isr_handler(void *arg)
 {
-    epaper_panel_t *epaper_panel = arg;
+    epaper_panel_t *epaper_panel = (epaper_panel_t *)arg;
     // --- Disable ISR handling
-    gpio_intr_disable(epaper_panel->busy_gpio_num);
+    gpio_intr_disable((gpio_num_t)epaper_panel->busy_gpio_num);
 
     // --- Call user callback func
     if (epaper_panel->epaper_refresh_done_isr_callback.callback_ptr) {
@@ -165,16 +165,16 @@ static esp_err_t epaper_set_area(esp_lcd_panel_io_handle_t io, uint32_t start_x,
 {
     // --- Set RAMX Start/End Position
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_RAMX_START_END_POS, (uint8_t[]) {
-        (start_x >> 3) & 0xff,  // start_x
-        (end_x >> 3) & 0xff     // end_x
+        (uint8_t)((start_x >> 3) & 0xff),  // start_x
+        (uint8_t)((end_x >> 3) & 0xff)     // end_x
     }, 2), TAG, "SSD1681_CMD_SET_RAMX_START_END_POS err");
 
     // --- Set RAMY Start/End Position
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_RAMY_START_END_POS, (uint8_t[]) {
-        (start_y) & 0xff,          // start_y[7:0]
-        (start_y >> 8) & 0xff,     // start_y[8]
-        end_y & 0xff,              // end_y[7:0]
-        (end_y >> 8) & 0xff        // end_y[8]
+        (uint8_t)((start_y) & 0xff),          // start_y[7:0]
+        (uint8_t)((start_y >> 8) & 0xff),     // start_y[8]
+        (uint8_t)(end_y & 0xff),              // end_y[7:0]
+        (uint8_t)((end_y >> 8) & 0xff)        // end_y[8]
     }, 4), TAG, "SSD1681_CMD_SET_RAMX_START_END_POS err");
 
     return ESP_OK;
@@ -183,7 +183,7 @@ static esp_err_t epaper_set_area(esp_lcd_panel_io_handle_t io, uint32_t start_x,
 static esp_err_t panel_epaper_wait_busy(esp_lcd_panel_t *panel)
 {
     epaper_panel_t *epaper_panel = __containerof(panel, epaper_panel_t, base);
-    while (gpio_get_level(epaper_panel->busy_gpio_num)) {
+    while (gpio_get_level((gpio_num_t)epaper_panel->busy_gpio_num)) {
         vTaskDelay(pdMS_TO_TICKS(15));
     }
     return ESP_OK;
@@ -225,7 +225,7 @@ esp_err_t epaper_panel_refresh_screen(esp_lcd_panel_t *panel)
         duc_flag  // Color invert flag
     }, 1), TAG, "SSD1681_CMD_DISP_UPDATE_CTRL err");
     // --- Enable refresh done handler isr
-    gpio_intr_enable(epaper_panel->busy_gpio_num);
+    gpio_intr_enable((gpio_num_t)epaper_panel->busy_gpio_num);
     // --- Send refresh command
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1681_CMD_SET_DISP_UPDATE_CTRL, (uint8_t[]) {
         SSD1681_PARAM_DISP_WITH_MODE_2
@@ -245,11 +245,11 @@ esp_lcd_new_panel_ssd1681(const esp_lcd_panel_io_handle_t io, const esp_lcd_pane
     esp_log_level_set(TAG, ESP_LOG_DEBUG);
 #endif
     ESP_RETURN_ON_FALSE(io && panel_dev_config && ret_panel, ESP_ERR_INVALID_ARG, TAG, "1 or more args is NULL");
-    esp_lcd_ssd1681_config_t *epaper_ssd1681_conf = panel_dev_config->vendor_config;
+    esp_lcd_ssd1681_config_t *epaper_ssd1681_conf = (esp_lcd_ssd1681_config_t *)panel_dev_config->vendor_config;
     esp_err_t ret = ESP_OK;
     // --- Allocate epaper_panel memory on HEAP
     epaper_panel_t *epaper_panel = NULL;
-    epaper_panel = calloc(1, sizeof(epaper_panel_t));
+    epaper_panel = (epaper_panel_t *)calloc(1, sizeof(epaper_panel_t));
     ESP_GOTO_ON_FALSE(epaper_panel, ESP_ERR_NO_MEM, err, TAG, "no mem for epaper panel");
 
     // --- Construct panel & implement interface
@@ -285,7 +285,7 @@ esp_lcd_new_panel_ssd1681(const esp_lcd_panel_io_handle_t io, const esp_lcd_pane
     // --- Init framebuffer
     if (!(epaper_panel->_non_copy_mode)) {
         int framebuffer_size = epaper_panel->width * epaper_panel->height / 8;
-        epaper_panel->_framebuffer = heap_caps_malloc(framebuffer_size, MALLOC_CAP_DMA);
+        epaper_panel->_framebuffer = (uint8_t *)heap_caps_malloc(framebuffer_size, MALLOC_CAP_DMA);
         ESP_RETURN_ON_FALSE(epaper_panel->_framebuffer, ESP_ERR_NO_MEM, TAG, "epaper_panel_draw_bitmap allocating buffer memory err");
         ESP_LOGI(TAG, "Allocated %d bytes framebuffer for %dx%d panel", framebuffer_size, epaper_panel->width, epaper_panel->height);
     }
@@ -308,20 +308,20 @@ esp_lcd_new_panel_ssd1681(const esp_lcd_panel_io_handle_t io, const esp_lcd_pane
         io_conf.intr_type = GPIO_INTR_NEGEDGE;
         ESP_LOGI(TAG, "Add handler for GPIO %d", epaper_panel->busy_gpio_num);
         ESP_GOTO_ON_ERROR(gpio_config(&io_conf), err, TAG, "configure GPIO for BUSY line err");
-        ESP_GOTO_ON_ERROR(gpio_isr_handler_add(epaper_panel->busy_gpio_num, epaper_driver_gpio_isr_handler, epaper_panel),
+        ESP_GOTO_ON_ERROR(gpio_isr_handler_add((gpio_num_t)epaper_panel->busy_gpio_num, epaper_driver_gpio_isr_handler, epaper_panel),
                           err, TAG, "configure GPIO for BUSY line err");
         // Enable GPIO intr only before refreshing, to avoid other commands caused intr trigger
-        gpio_intr_disable(epaper_panel->busy_gpio_num);
+        gpio_intr_disable((gpio_num_t)epaper_panel->busy_gpio_num);
     }
     ESP_LOGD(TAG, "new epaper panel @%p", epaper_panel);
     return ret;
 err:
     if (epaper_panel) {
         if (panel_dev_config->reset_gpio_num >= 0) {
-            gpio_reset_pin(panel_dev_config->reset_gpio_num);
+            gpio_reset_pin((gpio_num_t)panel_dev_config->reset_gpio_num);
         }
         if (epaper_ssd1681_conf->busy_gpio_num >= 0) {
-            gpio_reset_pin(epaper_ssd1681_conf->busy_gpio_num);
+            gpio_reset_pin((gpio_num_t)epaper_ssd1681_conf->busy_gpio_num);
         }
         free(epaper_panel);
     }
@@ -333,9 +333,9 @@ static esp_err_t epaper_panel_del(esp_lcd_panel_t *panel)
     epaper_panel_t *epaper_panel = __containerof(panel, epaper_panel_t, base);
     // --- Reset used GPIO pins
     if ((epaper_panel->reset_gpio_num) >= 0) {
-        gpio_reset_pin(epaper_panel->reset_gpio_num);
+        gpio_reset_pin((gpio_num_t)epaper_panel->reset_gpio_num);
     }
-    gpio_reset_pin(epaper_panel->busy_gpio_num);
+    gpio_reset_pin((gpio_num_t)epaper_panel->busy_gpio_num);
     // --- Free allocated RAM
     if ((epaper_panel->_framebuffer) && (!(epaper_panel->_non_copy_mode))) {
         // Should not free if buffer is not allocated by driver
@@ -353,10 +353,10 @@ static esp_err_t epaper_panel_reset(esp_lcd_panel_t *panel)
 
     // perform hardware reset
     if (epaper_panel->reset_gpio_num >= 0) {
-        ESP_RETURN_ON_ERROR(gpio_set_level(epaper_panel->reset_gpio_num, epaper_panel->reset_level), TAG,
+        ESP_RETURN_ON_ERROR(gpio_set_level((gpio_num_t)epaper_panel->reset_gpio_num, epaper_panel->reset_level), TAG,
                             "gpio_set_level error");
         vTaskDelay(pdMS_TO_TICKS(10));
-        ESP_RETURN_ON_ERROR(gpio_set_level(epaper_panel->reset_gpio_num, !epaper_panel->reset_level), TAG,
+        ESP_RETURN_ON_ERROR(gpio_set_level((gpio_num_t)epaper_panel->reset_gpio_num, !epaper_panel->reset_level), TAG,
                             "gpio_set_level error");
         vTaskDelay(pdMS_TO_TICKS(10));
     } else {
@@ -416,7 +416,7 @@ static esp_err_t
 epaper_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int y_start, int x_end, int y_end, const void *color_data)
 {
     epaper_panel_t *epaper_panel = __containerof(panel, epaper_panel_t, base);
-    if (gpio_get_level(epaper_panel->busy_gpio_num)) {
+    if (gpio_get_level((gpio_num_t)epaper_panel->busy_gpio_num)) {
         return ESP_ERR_NOT_FINISHED;
     }
     x_start += epaper_panel->gap_x;
@@ -505,7 +505,7 @@ epaper_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int y_start, int x
     
     // --- Auto-refresh only if display is not busy
     // This prevents blocking the LVGL task and causing watchdog timeouts
-    if (!gpio_get_level(static_cast<gpio_num_t>(epaper_panel->busy_gpio_num))) {
+    if (!gpio_get_level((gpio_num_t)epaper_panel->busy_gpio_num)) {
         ESP_LOGI(TAG, "Triggering e-paper refresh");
         ESP_RETURN_ON_ERROR(epaper_panel_refresh_screen(panel), TAG, "epaper_panel_refresh_screen error");
     } else {
