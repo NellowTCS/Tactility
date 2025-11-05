@@ -394,30 +394,31 @@ static esp_err_t epaper_panel_init(esp_lcd_panel_t *panel)
     
     // --- Driver Output Control (use actual panel dimensions)
     uint8_t output_ctrl[3] = {
-        (uint8_t)((epaper_panel->height - 1) & 0xFF),       // HEIGHT-1 low byte
-        (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF), // HEIGHT-1 high byte  
-        0x00
+        (uint8_t)((epaper_panel->height - 1) & 0xFF),       // HEIGHT-1 low byte (MUX gates = 383 for 384 lines)
+        (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF), // HEIGHT-1 high byte
+        0x00  // GD=0, SM=0, TB=0
     };
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_OUTPUT_CTRL, output_ctrl, 3), 
                         TAG, "SSD1681_CMD_OUTPUT_CTRL err");
 
-    // --- Data Entry Mode (Y increment, X increment)
+    // --- Data Entry Mode (Y increment, X increment) - try MODE_3
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_DATA_ENTRY_MODE, (uint8_t[]) {
-        SSD1681_PARAM_DATA_ENTRY_MODE_1  // 0x01
+        SSD1681_PARAM_DATA_ENTRY_MODE_3  // 0x03 - Y increment, X increment
     }, 1), TAG, "SSD1681_CMD_DATA_ENTRY_MODE err");
     
     // --- Set RAM X address start/end position
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_RAMX_START_END_POS, (uint8_t[]) {
         0x00,                                    // X start
-        (uint8_t)(epaper_panel->width / 8 - 1)  // X end
+        (uint8_t)(epaper_panel->width / 8 - 1)  // X end (20 for 168 pixels = 21 bytes)
     }, 2), TAG, "SSD1681_CMD_SET_RAMX_START_END_POS err");
     
-    // --- Set RAM Y address start/end position  
+    // --- Set RAM Y address start/end position (now 0 to 383 for Y increment)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_RAMY_START_END_POS, (uint8_t[]) {
-        (uint8_t)((epaper_panel->height - 1) & 0xFF),       // Y start low
-        (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF), // Y start high
-        0x00,                                                 // Y end low
-        0x00                                                  // Y end high
+        0x00,                                                 // Y start low (0)
+        0x00,                                                 // Y start high (0)
+        (uint8_t)((epaper_panel->height - 1) & 0xFF),        // Y end low (383)
+        (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF)  // Y end high (1)
+    }, 4), TAG, "SSD1681_CMD_SET_RAMY_START_END_POS err");
     }, 4), TAG, "SSD1681_CMD_SET_RAMY_START_END_POS err");
     
     // --- Border Waveform Control (second setting)
@@ -432,13 +433,13 @@ static esp_err_t epaper_panel_init(esp_lcd_panel_t *panel)
     
     // --- Set RAM X address counter
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_INIT_X_ADDR_COUNTER, (uint8_t[]) {
-        0x00
+        0x00  // Start at X=0
     }, 1), TAG, "SSD1681_CMD_SET_INIT_X_ADDR_COUNTER err");
     
-    // --- Set RAM Y address counter
+    // --- Set RAM Y address counter (now starts at 0 since we're incrementing)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_INIT_Y_ADDR_COUNTER, (uint8_t[]) {
-        (uint8_t)((epaper_panel->height - 1) & 0xFF),
-        (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF)
+        0x00,  // Start at Y=0 (low byte)
+        0x00   // Start at Y=0 (high byte)
     }, 2), TAG, "SSD1681_CMD_SET_INIT_Y_ADDR_COUNTER err");
     
     panel_epaper_wait_busy(panel);
