@@ -5,18 +5,12 @@
 #include <Tactility/hal/Configuration.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <driver/gpio.h>
-#include <esp_log.h>
 
 using namespace tt::hal;
 
 static bool initBoot() {
-    // Install GPIO ISR service (required for e-paper BUSY pin interrupt)
-    esp_err_t err = gpio_install_isr_service(0);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        ESP_LOGE("CL32", "Failed to install GPIO ISR service: %s", esp_err_to_name(err));
-        return false;
-    }
-    
+    // E-paper displays don't have backlights, but we might want to init other things here
+    // For now, just return true
     return true;
 }
 
@@ -46,10 +40,10 @@ extern const Configuration hardwareConfiguration = {
                 .mode = I2C_MODE_MASTER,
                 .sda_io_num = GPIO_NUM_1,
                 .scl_io_num = GPIO_NUM_2,
-                .sda_pullup_en = true,
-                .scl_pullup_en = true,
+                .sda_pullup_en = false,
+                .scl_pullup_en = false,
                 .master = {
-                    .clk_speed = 100000
+                    .clk_speed = 400000
                 },
                 .clk_flags = 0
             }
