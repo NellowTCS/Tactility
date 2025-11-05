@@ -78,25 +78,9 @@ public:
         vendorConfig{configuration->busyPin, false}
     {
         assert(configuration != nullptr);
-        if (configuration->bufferSize == 0) {
-            configuration->bufferSize = configuration->width * configuration->height;
-        }
         
-        // Log memory beofre anything else
-        size_t free_heap_before = esp_get_free_heap_size();
-        size_t free_psram_before = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-        size_t largest_psram_block = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
-        
-        TT_LOG_I(TAG, "Display config: %ux%u, buffer=%lu pixels (%lu bytes RGB565)", 
-                configuration->width, configuration->height, 
-                configuration->bufferSize, configuration->bufferSize * 2);
-        TT_LOG_I(TAG, "Memory before display init - Free heap: %zu, PSRAM: %zu, largest PSRAM block: %zu",
-                free_heap_before, free_psram_before, largest_psram_block);
-        
-        // Check heap integrity
-        if (!heap_caps_check_integrity_all(true)) {
-            TT_LOG_E(TAG, "Heap corruption detected during display constructor!!!");
-        }
+        TT_LOG_I(TAG, "Display config: %ux%u", 
+                configuration->width, configuration->height);
     }
 
     std::string getName() const override { return "SSD1681"; }

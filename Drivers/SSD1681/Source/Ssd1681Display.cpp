@@ -93,9 +93,12 @@ lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_i
     uint32_t logical_width = swap_xy ? configuration->height : configuration->width;
     uint32_t logical_height = swap_xy ? configuration->width : configuration->height;
 
+    // Use a much smaller buffer for e-paper (1/10th of screen)
+    uint32_t buffer_pixels = (logical_width * logical_height) / 10;
+    
     TT_LOG_I(TAG, "LVGL config: physical=%dx%d logical=%dx%d rotation=%d buffer_size=%lu pixels",
              configuration->width, configuration->height, logical_width, logical_height,
-             configuration->rotation, configuration->bufferSize);
+             configuration->rotation, buffer_pixels);
     TT_LOG_I(TAG, "LVGL rotation: swap_xy=%d, mirror_x=%d, mirror_y=%d",
              swap_xy, mirror_x, mirror_y);
 
@@ -103,21 +106,20 @@ lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_i
         .io_handle = ioHandle,
         .panel_handle = panelHandle,
         .control_handle = nullptr,
-        .buffer_size = configuration->bufferSize > 0 ? configuration->bufferSize : (logical_width * logical_height),
+        .buffer_size = buffer_pixels,
         .double_buffer = false,
         .trans_size = 0,
         .hres = logical_width,
         .vres = logical_height,
-        .monochrome = true,
         .rotation = {
             .swap_xy = swap_xy,
             .mirror_x = mirror_x,
             .mirror_y = mirror_y,
         },
-        .color_format = LV_COLOR_FORMAT_RGB565,
+        .color_format = LV_COLOR_FORMAT_I1,
         .flags = {
             .buff_dma = false,
-            .buff_spiram = true,
+            .buff_spiram = false,
             .sw_rotate = false,
             .swap_bytes = false,
             .full_refresh = false,
