@@ -3,6 +3,7 @@
 #include "DisplayTester.h"
 #include <esp_log.h>
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
@@ -15,6 +16,8 @@ GxEPD2Display::GxEPD2Display(const Configuration& config)
     , _lvglDisplay(nullptr)
     , _drawBuf1(nullptr)
     , _drawBuf2(nullptr)
+    , _refreshTimer(nullptr)
+    , _refreshScheduled(false)
 {
 }
 
@@ -88,6 +91,20 @@ bool GxEPD2Display::supportsLvgl() const {
     return true; 
 }
 
+static void ensureTimerCreated(GxEPD2Display* self) {
+    if (self->_refreshTimer) return;
+    esp_timer_create_args_t args;
+    memset(&args, 0, sizeof(args));
+    args.callback = &GxEPD2Display::refreshTimerCb;
+    args.arg = self;
+    args.name = "epd_refresh";
+    esp_err_t err = esp_timer_create(&args, &self->_refreshTimer);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create refresh timer: %d", err);
+        self->_refreshTimer = nullptr;
+    }
+}
+
 bool GxEPD2Display::startLvgl() {
     if (_lvglDisplay != nullptr) {
         ESP_LOGW(TAG, "LVGL already started");
@@ -100,8 +117,8 @@ bool GxEPD2Display::startLvgl() {
 
     // --- LVGL Configuration based on Rotation ---
     // Physical display dimensions (portrait: 168x384)
-    uint16_t lv_width = _config.width;
-    uint16_t lv_height = _config.height;
+    uint16_t lv_rotation_physical_w = _config.width;
+    uint16_t lv_rotation_physical_h = _config.height;
     lv_display_rotation_t lv_rotation = LV_DISPLAY_ROTATION_0;
 
     // Map config rotation to LVGL rotation
@@ -121,25 +138,29 @@ bool GxEPD2Display::startLvgl() {
             break;
     }
 
-    ESP_LOGI(TAG, "Starting LVGL: physical=%ux%u rotation=%d (config.rotation=%d, sw_rotate=implicit)", 
-             lv_width, lv_height, lv_rotation, _config.rotation);
+    // Compute logical dimensions LVGL will use (LVGL swaps width/height when sw_rotate is used)
+    uint16_t lv_logical_w = (_config.rotation == 1 || _config.rotation == 3) ? _config.height : _config.width;
+    uint16_t lv_logical_h = (_config.rotation == 1 || _config.rotation == 3) ? _config.width : _config.height;
 
-    // Allocate draw buffers (RGB565 format - 2 bytes per pixel)
-    const size_t bufSize = lv_width * DRAW_BUF_LINES; 
+    ESP_LOGI(TAG, "Starting LVGL: physical=%ux%u rotation=%d (config.rotation=%d, sw_rotate=implicit) -> logical=%ux%u", 
+             _config.width, _config.height, lv_rotation, _config.rotation, lv_logical_w, lv_logical_h);
+
+    // Allocate draw buffers (RGB565 format - 2 bytes per pixel) using logical width so DRAW_BUF_LINES is correct
+    const size_t bufSize = (size_t)lv_logical_w * DRAW_BUF_LINES;
     _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
     _drawBuf2 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
     if (!_drawBuf1 || !_drawBuf2) {
-        ESP_LOGE(TAG, "Failed to allocate LVGL draw buffers");
+        ESP_LOGE(TAG, "Failed to allocate LVGL draw buffers (requested %zu bytes each)", bufSize * sizeof(lv_color_t));
         if (_drawBuf1) heap_caps_free(_drawBuf1);
         if (_drawBuf2) heap_caps_free(_drawBuf2);
         _drawBuf1 = _drawBuf2 = nullptr;
         return false;
     }
 
-    ESP_LOGI(TAG, "Allocated %zu bytes per buffer", bufSize * sizeof(lv_color_t));
+    ESP_LOGI(TAG, "Allocated %zu bytes per buffer (logical width=%u, draw lines=%zu)", bufSize * sizeof(lv_color_t), lv_logical_w, DRAW_BUF_LINES);
 
-    // Create LVGL display with physical dimensions
-    _lvglDisplay = lv_display_create(lv_width, lv_height);
+    // Create LVGL display with logical dimensions
+    _lvglDisplay = lv_display_create(lv_logical_w, lv_logical_h);
     if (!_lvglDisplay) {
         ESP_LOGE(TAG, "Failed to create LVGL display");
         heap_caps_free(_drawBuf1);
@@ -160,6 +181,9 @@ bool GxEPD2Display::startLvgl() {
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
+    // Create the refresh debounce timer used to batch partial refreshes
+    ensureTimerCreated(this);
+
     ESP_LOGI(TAG, "LVGL started successfully");
     return true;
 }
@@ -177,6 +201,13 @@ bool GxEPD2Display::stopLvgl() {
     if (_drawBuf2) { 
         heap_caps_free(_drawBuf2); 
         _drawBuf2 = nullptr; 
+    }
+
+    if (_refreshTimer) {
+        esp_timer_stop(_refreshTimer);
+        esp_timer_delete(_refreshTimer);
+        _refreshTimer = nullptr;
+        _refreshScheduled = false;
     }
     return true;
 }
@@ -230,6 +261,15 @@ inline bool GxEPD2Display::rgb565ToMono(lv_color_t pixel) {
     return brightness > 127;
 }
 
+void GxEPD2Display::refreshTimerCb(void* arg) {
+    GxEPD2Display* self = static_cast<GxEPD2Display*>(arg);
+    if (!self) return;
+    if (self->_display) {
+        self->_display->refresh(true); // partial refresh
+    }
+    self->_refreshScheduled = false;
+}
+
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* self = static_cast<GxEPD2Display*>(lv_display_get_user_data(disp));
     if (!self || !self->_display) { 
@@ -244,24 +284,9 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     lv_display_rotation_t rotation = lv_display_get_rotation(disp);
     lv_area_t physical_area = *area;
     
-    int32_t hor_res = lv_display_get_horizontal_resolution(disp);
-    int32_t ver_res = lv_display_get_vertical_resolution(disp);
-
-    // expected logical resolution according to physical config and rotation
-    int32_t expected_logical_w = (rotation == LV_DISPLAY_ROTATION_90 || rotation == LV_DISPLAY_ROTATION_270)
-        ? self->_config.height : self->_config.width;
-    int32_t expected_logical_h = (rotation == LV_DISPLAY_ROTATION_90 || rotation == LV_DISPLAY_ROTATION_270)
-        ? self->_config.width : self->_config.height;
-
-    ESP_LOGI(TAG, "LVGL reports logical=%dx%d rot=%d; expected logical=%dx%d physical=%dx%d",
-            hor_res, ver_res, (int)rotation,
-            expected_logical_w, expected_logical_h,
-            self->_config.width, self->_config.height);
-
-    if (hor_res != expected_logical_w || ver_res != expected_logical_h) {
-        ESP_LOGW(TAG, "LVGL logical resolution differs from expected! Mapping/rotation may be incorrect");
-    }
-        
+    // Transform logical area to physical area based on rotation
+    int32_t hor_res = lv_display_get_horizontal_resolution(disp);  // full logical horizontal resolution
+    int32_t ver_res = lv_display_get_vertical_resolution(disp);    // full logical vertical resolution
     if (rotation == LV_DISPLAY_ROTATION_90) {
         // Logical: hor_res x ver_res (e.g. 384x168 logical for 90°) → Physical: 168×384 (portrait)
         // Transformation of the area rectangle:
@@ -361,15 +386,24 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     } else {
         // No rotation (or unhandled rotation) - direct copy. LVGL provides px_map for the area only,
         // so x/y here are relative to area top-left and map into packed[0..epd_w-1,0..epd_h-1]
-        for (int y = 0; y < epd_h; ++y) {
-            lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)y * src_row_bytes);
-            for (int x = 0; x < epd_w; ++x) {
-                lv_color_t pixel = src_row[x];
+        // Use logical_w/logical_h for strides
+        for (int ly = 0; ly < logical_h; ++ly) {
+            lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_bytes);
+            for (int lx = 0; lx < logical_w; ++lx) {
+                lv_color_t pixel = src_row[lx];
                 bool is_white = self->rgb565ToMono(pixel);
 
+                int x_rel = lx;
+                int y_rel = ly;
+
+                // Bounds check (safety)
+                if (x_rel < 0 || x_rel >= epd_w || y_rel < 0 || y_rel >= epd_h) {
+                    continue;
+                }
+
                 // Pack bit into byte (MSB first, horizontal addressing)
-                const int byte_idx = y * epd_row_bytes + (x / 8);
-                const int bit_pos = 7 - (x & 7);  // MSB = leftmost pixel
+                const int byte_idx = y_rel * epd_row_bytes + (x_rel / 8);
+                const int bit_pos = 7 - (x_rel & 7);  // MSB = leftmost pixel
 
                 if (is_white) {
                     packed[byte_idx] |= (1 << bit_pos);   // Set bit (white)
@@ -396,7 +430,17 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
 
     // Write the 1-bit buffer to the e-paper display
     self->_display->writeImage(packed, epd_x, epd_y, epd_w, epd_h, false, false, false);
-    self->_display->refresh(true); // Partial refresh (~400ms)
+
+    // Schedule a debounce refresh (don't call refresh for every chunk)
+    if (self->_refreshTimer) {
+        // Restart timer for debounce (100ms)
+        esp_timer_stop(self->_refreshTimer);
+        esp_timer_start_once(self->_refreshTimer, 100 * 1000); // microseconds
+        self->_refreshScheduled = true;
+    } else {
+        // Fallback: if timer isn't available, do immediate partial refresh
+        self->_display->refresh(true);
+    }
 
     heap_caps_free(packed);
     lv_display_flush_ready(disp);

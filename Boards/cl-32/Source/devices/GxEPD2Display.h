@@ -5,6 +5,7 @@
 #include <driver/spi_common.h>
 #include <memory>
 #include <lvgl.h>
+#include <esp_timer.h>
 
 class GxEPD2_290_GDEY029T71H; // Forward declaration
 
@@ -18,7 +19,7 @@ public:
         gpio_num_t rstPin;
         gpio_num_t busyPin;
         spi_host_device_t spiHost;
-        uint8_t rotation;        // 0=portrait, 2=landscape (90° CW)
+        uint8_t rotation;        // 0=portrait, 1=90° CW, 2=180°, 3=270° CW
     };
 
     explicit GxEPD2Display(const Configuration& config);
@@ -57,10 +58,20 @@ private:
     lv_color_t* _drawBuf1;
     lv_color_t* _drawBuf2;
 
-    static constexpr size_t DRAW_BUF_LINES = 10;
+    // Number of logical rows per LVGL draw buffer. Adjust based on available RAM.
+    // The startLvgl() now allocates buffers using LVGL logical width (swapped for 90/270).
+    static constexpr size_t DRAW_BUF_LINES = 50;
+
+    // Refresh debounce timer - we schedule a single partial refresh shortly after
+    // LVGL writes complete to batch multiple small writes into one panel refresh.
+    esp_timer_handle_t _refreshTimer;
+    bool _refreshScheduled;
 
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
     
     // Convert RGB565 pixel to monochrome (true=white, false=black)
     static inline bool rgb565ToMono(lv_color_t pixel);
+
+    // Timer callback used for debouncing partial refreshes
+    static void refreshTimerCb(void* arg);
 };

@@ -229,9 +229,7 @@ bool GpsService::getCoordinates(minmea_sentence_rmc& rmc) const {
 
 std::shared_ptr<GpsService> findGpsService() {
     auto service = findServiceById(manifest.id);
-    if (service == nullptr) {
-        return nullptr; // Service not registered yet
-    }
+    assert(service != nullptr);
     return std::static_pointer_cast<GpsService>(service);
 }
 
