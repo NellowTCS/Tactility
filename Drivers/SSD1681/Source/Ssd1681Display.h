@@ -75,7 +75,7 @@ public:
     explicit Ssd1681Display(std::unique_ptr<Configuration> inConfiguration) :
         EspLcdDisplay(tt::hal::spi::getLock(inConfiguration->spiHost)),
         configuration(std::move(inConfiguration)),
-        vendorConfig{configuration->busyPin, false, configuration->width, configuration->height}
+        vendorConfig{configuration->busyPin, false, static_cast<int>(configuration->width), static_cast<int>(configuration->height)}
     {
         assert(configuration != nullptr);
         
