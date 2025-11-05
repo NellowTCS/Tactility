@@ -20,6 +20,8 @@ GxEPD2Display::GxEPD2Display(const Configuration& config)
     , _workerTaskHandle(nullptr)
     , _spiMutex(nullptr)
     , _workerRunning(false)
+    , _xShift(0)
+    , _yShift(0)
 {
 }
 
@@ -112,6 +114,12 @@ std::shared_ptr<tt::hal::touch::TouchDevice> GxEPD2Display::getTouchDevice() {
 
 bool GxEPD2Display::supportsLvgl() const { 
     return true; 
+}
+
+void GxEPD2Display::setShift(int16_t xShift, int16_t yShift) {
+    _xShift = xShift;
+    _yShift = yShift;
+    ESP_LOGI(TAG, "Display shift set to x=%d y=%d", _xShift, _yShift);
 }
 
 bool GxEPD2Display::createWorker() {
@@ -240,9 +248,6 @@ bool GxEPD2Display::startLvgl() {
     ESP_LOGI(TAG, "LVGL started successfully (physical=%ux%u logical=%dx%d rotation=%d)",
              _config.width, _config.height, hor_res, ver_res, (int)lv_rotation);
 
-    // Run LVGL test
-    display_tester::runLvglTest(this);
-
     return true;
 }
 
@@ -312,12 +317,12 @@ inline bool GxEPD2Display::rgb565ToMono(lv_color_t pixel) {
     uint8_t r = pixel.red;   
     uint8_t g = pixel.green; 
     uint8_t b = pixel.blue;  
-    
+
     // Calculate brightness using standard luminance weights
     // Y = 0.299*R + 0.587*G + 0.114*B
     // Approximated as (77*R + 151*G + 28*B) / 256 for speed
     uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
-    
+
     // Threshold at 50% gray: >127 = white (bit=1), <=127 = black (bit=0)
     return brightness > 127;
 }
@@ -505,6 +510,10 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 px_abs = lx_abs;
                 py_abs = ly_abs;
             }
+
+            // Apply runtime shift
+            px_abs += self->_xShift;
+            py_abs += self->_yShift;
 
             // Convert to buffer-relative coordinates using computed physical_area origin
             int px_rel = px_abs - epd_x;

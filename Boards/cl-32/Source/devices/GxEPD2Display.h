@@ -55,6 +55,9 @@ public:
                        bool invert = false, bool mirror_y = false);
     void refreshDisplay(bool partial);
 
+    // Runtime shift to fix panel offsets (pixels). Call setShift(-200,0) to move content left 200px.
+    void setShift(int16_t xShift, int16_t yShift);
+
 private:
     Configuration _config;
     std::unique_ptr<GxEPD2_290_GDEY029T71H> _display;
@@ -62,8 +65,11 @@ private:
     lv_color_t* _drawBuf1;
     lv_color_t* _drawBuf2;
 
-    // Number of logical rows per LVGL draw buffer. Adjust based on available RAM.
-    // The startLvgl() will allocate buffers using LVGL logical width (swapped for 90/270).
+    // runtime pixel shift to adjust mapping
+    int16_t _xShift;
+    int16_t _yShift;
+
+    // Number of logical rows per LVGL draw buffer.
     static constexpr size_t DRAW_BUF_LINES = 50;
 
     // Display worker queue item (enqueued by lvglFlushCallback)
@@ -83,7 +89,7 @@ private:
     // Mutex to protect direct access to _display (and to avoid races when tests write directly)
     SemaphoreHandle_t _spiMutex;
 
-    // Refresh debouncing / batching is handled by the worker (it groups writes and then refreshes)
+    // Refresh debouncing/batching handled by worker
     bool _workerRunning;
 
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
