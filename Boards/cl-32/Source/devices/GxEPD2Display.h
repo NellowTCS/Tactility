@@ -6,6 +6,10 @@
 #include <memory>
 #include <lvgl.h>
 #include <esp_timer.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 
 class GxEPD2_290_GDEY029T71H; // Forward declaration
 
@@ -59,22 +63,38 @@ private:
     lv_color_t* _drawBuf2;
 
     // Number of logical rows per LVGL draw buffer. Adjust based on available RAM.
-    // The startLvgl() now allocates buffers using LVGL logical width (swapped for 90/270).
+    // The startLvgl() will allocate buffers using LVGL logical width (swapped for 90/270).
     static constexpr size_t DRAW_BUF_LINES = 50;
 
-    // Refresh debounce timer - we schedule a single partial refresh shortly after
-    // LVGL writes complete to batch multiple small writes into one panel refresh.
-    esp_timer_handle_t _refreshTimer;
-    bool _refreshScheduled;
+    // Display worker queue item (enqueued by lvglFlushCallback)
+    struct QueueItem {
+        uint8_t* buf;   // MALLOC_CAP_DMA allocated buffer (1-bit packed EPD format)
+        uint16_t x;
+        uint16_t y;
+        uint16_t w;
+        uint16_t h;
+    };
+
+    // Worker queue and task
+    QueueHandle_t _queue;
+    TaskHandle_t _workerTaskHandle;
+    static constexpr size_t QUEUE_LENGTH = 32;
+
+    // Mutex to protect direct access to _display (and to avoid races when tests write directly)
+    SemaphoreHandle_t _spiMutex;
+
+    // Refresh debouncing / batching is handled by the worker (it groups writes and then refreshes)
+    bool _workerRunning;
 
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
     
     // Convert RGB565 pixel to monochrome (true=white, false=black)
     static inline bool rgb565ToMono(lv_color_t pixel);
 
-    // Timer callback used for debouncing partial refreshes
-    static void refreshTimerCb(void* arg);
+    // Worker task entry
+    static void displayWorkerTask(void* arg);
 
-    // Helper to create/start the refresh timer; defined in the .cpp file.
-    static void ensureTimerCreated(GxEPD2Display* self);
+    // Helper to create/destroy queue/task
+    bool createWorker();
+    void destroyWorker();
 };

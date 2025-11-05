@@ -16,14 +16,22 @@ GxEPD2Display::GxEPD2Display(const Configuration& config)
     , _lvglDisplay(nullptr)
     , _drawBuf1(nullptr)
     , _drawBuf2(nullptr)
-    , _refreshTimer(nullptr)
-    , _refreshScheduled(false)
+    , _queue(nullptr)
+    , _workerTaskHandle(nullptr)
+    , _spiMutex(nullptr)
+    , _workerRunning(false)
 {
 }
 
 GxEPD2Display::~GxEPD2Display() {
     stopLvgl();
     stop();
+    // destroy worker and mutex if still present
+    destroyWorker();
+    if (_spiMutex) {
+        vSemaphoreDelete(_spiMutex);
+        _spiMutex = nullptr;
+    }
 }
 
 std::string GxEPD2Display::getName() const { 
@@ -57,7 +65,8 @@ bool GxEPD2Display::start() {
         .input_delay_ns = 0,
         .spics_io_num = _config.csPin,
         .flags = 0,
-        .queue_size = 7,
+        // increase queue size to handle bursty LVGL traffic
+        .queue_size = 20,
         .pre_cb = nullptr,
         .post_cb = nullptr
     };
@@ -67,7 +76,15 @@ bool GxEPD2Display::start() {
     _display->clearScreen(0xFF);
     _display->refresh(false);
 
-    // Run hardware tests once
+    // Create SPI mutex so direct calls and worker are serialized
+    if (!_spiMutex) {
+        _spiMutex = xSemaphoreCreateMutex();
+        if (!_spiMutex) {
+            ESP_LOGW(TAG, "Failed to create SPI mutex");
+        }
+    }
+
+    // Run hardware tests once (these use direct writes)
     display_tester::runTests(this);
 
     ESP_LOGI(TAG, "E-paper display started successfully");
@@ -77,8 +94,14 @@ bool GxEPD2Display::start() {
 bool GxEPD2Display::stop() {
     if (_display) {
         ESP_LOGI(TAG, "Stopping display...");
+        // Ensure worker stopped first to avoid it accessing _display after reset
+        destroyWorker();
+
+        // Protect calls with mutex
+        if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
         _display->hibernate();
         _display.reset();
+        if (_spiMutex) xSemaphoreGive(_spiMutex);
     }
     return true;
 }
@@ -91,18 +114,56 @@ bool GxEPD2Display::supportsLvgl() const {
     return true; 
 }
 
-void GxEPD2Display::ensureTimerCreated(GxEPD2Display* self) {
-    if (self->_refreshTimer) return;
-    esp_timer_create_args_t args;
-    memset(&args, 0, sizeof(args));
-    args.callback = &GxEPD2Display::refreshTimerCb;
-    args.arg = self;
-    args.name = "epd_refresh";
-    esp_err_t err = esp_timer_create(&args, &self->_refreshTimer);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to create refresh timer: %d", err);
-        self->_refreshTimer = nullptr;
+bool GxEPD2Display::createWorker() {
+    if (_queue) return true;
+    _queue = xQueueCreate(QUEUE_LENGTH, sizeof(QueueItem));
+    if (!_queue) {
+        ESP_LOGE(TAG, "Failed to create display queue");
+        return false;
     }
+    _workerRunning = true;
+    BaseType_t r = xTaskCreate(
+        displayWorkerTask,
+        "epd_worker",
+        8192, // stack size (adjust needed)
+        this,
+        tskIDLE_PRIORITY + 2,
+        &_workerTaskHandle
+    );
+    if (r != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create worker task");
+        vQueueDelete(_queue);
+        _queue = nullptr;
+        _workerTaskHandle = nullptr;
+        _workerRunning = false;
+        return false;
+    }
+    ESP_LOGI(TAG, "Display worker created");
+    return true;
+}
+
+void GxEPD2Display::destroyWorker() {
+    if (!_queue) return;
+    // send sentinel to stop task
+    QueueItem term;
+    term.buf = nullptr;
+    term.x = term.y = term.w = term.h = 0;
+    // best-effort send; if queue full, try to empty it
+    xQueueSend(_queue, &term, pdMS_TO_TICKS(50));
+    // wait a bit for task to exit
+    if (_workerTaskHandle) {
+        // give worker time to exit
+        vTaskDelay(pdMS_TO_TICKS(100));
+        // if still alive, force delete
+        if (eTaskGetState(_workerTaskHandle) != eDeleted) {
+            vTaskDelete(_workerTaskHandle);
+        }
+        _workerTaskHandle = nullptr;
+    }
+    vQueueDelete(_queue);
+    _queue = nullptr;
+    _workerRunning = false;
+    ESP_LOGI(TAG, "Display worker destroyed");
 }
 
 bool GxEPD2Display::startLvgl() {
@@ -117,8 +178,6 @@ bool GxEPD2Display::startLvgl() {
 
     // --- LVGL Configuration based on Rotation ---
     // Physical display dimensions (portrait: 168x384)
-    uint16_t lv_rotation_physical_w = _config.width;
-    uint16_t lv_rotation_physical_h = _config.height;
     lv_display_rotation_t lv_rotation = LV_DISPLAY_ROTATION_0;
 
     // Map config rotation to LVGL rotation
@@ -170,7 +229,6 @@ bool GxEPD2Display::startLvgl() {
     }
 
     // Set rotation - LVGL will handle dimension swapping and software rotation
-    // This is equivalent to esp_lvgl_port with sw_rotate=true
     lv_display_set_rotation(_lvglDisplay, lv_rotation);
 
     // Use RGB565 format - standard LVGL rendering
@@ -181,8 +239,10 @@ bool GxEPD2Display::startLvgl() {
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
-    // Create the refresh debounce timer used to batch partial refreshes
-    ensureTimerCreated(this);
+    // Create the display worker (queue + task) used to serialize writes and batch refreshes
+    if (!createWorker()) {
+        ESP_LOGW(TAG, "Failed to create display worker - LVGL flushes will still attempt direct writes (risky)");
+    }
 
     ESP_LOGI(TAG, "LVGL started successfully");
     return true;
@@ -203,12 +263,9 @@ bool GxEPD2Display::stopLvgl() {
         _drawBuf2 = nullptr; 
     }
 
-    if (_refreshTimer) {
-        esp_timer_stop(_refreshTimer);
-        esp_timer_delete(_refreshTimer);
-        _refreshTimer = nullptr;
-        _refreshScheduled = false;
-    }
+    // Destroy worker (will flush remaining items and stop)
+    destroyWorker();
+
     return true;
 }
 
@@ -235,12 +292,18 @@ uint16_t GxEPD2Display::getHeight() const {
 void GxEPD2Display::writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, int16_t w, int16_t h, 
                                    bool invert, bool mirror_y) {
     if (!_display) return;
+    // serialize direct writes with mutex so they don't race the worker
+    if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
     _display->writeImage(bitmap, x, y, w, h, invert, mirror_y, false);
+    if (_spiMutex) xSemaphoreGive(_spiMutex);
 }
 
 void GxEPD2Display::refreshDisplay(bool partial) {
     if (!_display) return;
+    // serialize refresh with mutex so it doesn't race writes
+    if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
     _display->refresh(partial);
+    if (_spiMutex) xSemaphoreGive(_spiMutex);
 }
 
 // Helper: Convert RGB565 to monochrome using brightness threshold
@@ -261,13 +324,68 @@ inline bool GxEPD2Display::rgb565ToMono(lv_color_t pixel) {
     return brightness > 127;
 }
 
-void GxEPD2Display::refreshTimerCb(void* arg) {
+void GxEPD2Display::displayWorkerTask(void* arg) {
     GxEPD2Display* self = static_cast<GxEPD2Display*>(arg);
-    if (!self) return;
-    if (self->_display) {
-        self->_display->refresh(true); // partial refresh
+    if (!self) {
+        vTaskDelete(NULL);
+        return;
     }
-    self->_refreshScheduled = false;
+
+    QueueItem item;
+    bool processed_since_refresh = false;
+
+    while (true) {
+        // Wait for an item, but with timeout so we can perform a refresh after bursts
+        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(150))) {
+            // termination sentinel: buf==nullptr => exit
+            if (item.buf == nullptr) {
+                break;
+            }
+
+            // Protect SPI access
+            if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+            // Write image synchronously
+            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
+            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+
+            // free buffer after write
+            heap_caps_free(item.buf);
+            item.buf = nullptr;
+            processed_since_refresh = true;
+
+            // and loop to pick up more items without refreshing yet (batching)
+            continue;
+        } else {
+            // timeout; if we processed things since last refresh, perform a partial refresh
+            if (processed_since_refresh) {
+                if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+                self->_display->refresh(true);
+                if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+                processed_since_refresh = false;
+            }
+            // continue waiting for more items (or termination)
+        }
+    }
+
+    // Before exiting, flush any remaining items in queue
+    while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
+        if (item.buf) {
+            if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
+            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+            heap_caps_free(item.buf);
+        }
+    }
+    // Final refresh if anything was written
+    if (processed_since_refresh) {
+        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+        self->_display->refresh(true);
+        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+    }
+
+    // Mark not running and exit
+    self->_workerRunning = false;
+    vTaskDelete(NULL);
 }
 
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
@@ -342,16 +460,6 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
 
     // Convert and rotate pixels from logical to physical orientation
     if (rotation == LV_DISPLAY_ROTATION_90) {
-        // Correct mapping:
-        // logical coordinates (lx, ly) relative to area -> absolute logical coords:
-        //   lx_abs = area->x1 + lx
-        //   ly_abs = area->y1 + ly
-        // Then for 90° CW:
-        //   px_abs = ly_abs
-        //   py_abs = hor_res - 1 - lx_abs
-        // Finally convert to packed buffer relative coordinates:
-        //   px_rel = px_abs - physical_area.x1   (0..epd_w-1)
-        //   py_rel = py_abs - physical_area.y1   (0..epd_h-1)
         for (int ly = 0; ly < logical_h; ++ly) {
             lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_bytes);
             for (int lx = 0; lx < logical_w; ++lx) {
@@ -367,12 +475,10 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 int px_rel = px_abs - physical_area.x1;
                 int py_rel = py_abs - physical_area.y1;
 
-                // Bounds check (should be inside epd_w x epd_h)
                 if (px_rel < 0 || px_rel >= epd_w || py_rel < 0 || py_rel >= epd_h) {
                     continue;
                 }
 
-                // Pack bit into physical buffer (MSB first, horizontal addressing)
                 const int byte_idx = py_rel * epd_row_bytes + (px_rel / 8);
                 const int bit_pos = 7 - (px_rel & 7);  // MSB = leftmost pixel
 
@@ -384,9 +490,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
             }
         }
     } else {
-        // No rotation (or unhandled rotation) - direct copy. LVGL provides px_map for the area only,
-        // so x/y here are relative to area top-left and map into packed[0..epd_w-1,0..epd_h-1]
-        // Use logical_w/logical_h for strides
+        // No rotation (or unhandled rotation) - direct copy.
         for (int ly = 0; ly < logical_h; ++ly) {
             lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_bytes);
             for (int lx = 0; lx < logical_w; ++lx) {
@@ -401,7 +505,6 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                     continue;
                 }
 
-                // Pack bit into byte (MSB first, horizontal addressing)
                 const int byte_idx = y_rel * epd_row_bytes + (x_rel / 8);
                 const int bit_pos = 7 - (x_rel & 7);  // MSB = leftmost pixel
 
@@ -428,20 +531,34 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         ++s_flush_debug_count;
     }
 
-    // Write the 1-bit buffer to the e-paper display
-    self->_display->writeImage(packed, epd_x, epd_y, epd_w, epd_h, false, false, false);
-
-    // Schedule a debounce refresh (don't call refresh for every chunk)
-    if (self->_refreshTimer) {
-        // Restart timer for debounce (100ms)
-        esp_timer_stop(self->_refreshTimer);
-        esp_timer_start_once(self->_refreshTimer, 100 * 1000); // microseconds
-        self->_refreshScheduled = true;
+    // Enqueue the packed buffer for the worker to consume (batch + refresh)
+    if (self->_queue) {
+        QueueItem qi;
+        qi.buf = packed;
+        qi.x = (uint16_t)epd_x;
+        qi.y = (uint16_t)epd_y;
+        qi.w = (uint16_t)epd_w;
+        qi.h = (uint16_t)epd_h;
+        if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
+            // Queue full or send failed - fallback to direct write (safest)
+            ESP_LOGW(TAG, "Display queue full; performing direct write");
+            if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, pdMS_TO_TICKS(500));
+            self->_display->writeImage(packed, epd_x, epd_y, epd_w, epd_h, false, false, false);
+            self->_display->refresh(true);
+            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+            heap_caps_free(packed);
+        } else {
+            // queued successfully; worker will free the packed buffer
+        }
     } else {
-        // Fallback: if timer isn't available, do immediate partial refresh
+        // No worker created: fallback to direct write + immediate refresh
+        ESP_LOGW(TAG, "No display worker - performing direct write");
+        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, pdMS_TO_TICKS(500));
+        self->_display->writeImage(packed, epd_x, epd_y, epd_w, epd_h, false, false, false);
         self->_display->refresh(true);
+        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+        heap_caps_free(packed);
     }
 
-    heap_caps_free(packed);
     lv_display_flush_ready(disp);
 }
