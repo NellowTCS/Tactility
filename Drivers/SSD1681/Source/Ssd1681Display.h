@@ -75,11 +75,11 @@ public:
     explicit Ssd1681Display(std::unique_ptr<Configuration> inConfiguration) :
         EspLcdDisplay(tt::hal::spi::getLock(inConfiguration->spiHost)),
         configuration(std::move(inConfiguration)),
-        vendorConfig{configuration->busyPin, false}
+        vendorConfig{configuration->busyPin, true, configuration->width, configuration->height}
     {
         assert(configuration != nullptr);
         
-        TT_LOG_I(TAG, "Display config: %ux%u", 
+        TT_LOG_I(TAG, "Display config: %ux%u (non-copy mode)", 
                 configuration->width, configuration->height);
     }
 
