@@ -60,6 +60,7 @@ typedef struct {
     bool _mirror_x;
     uint8_t *_framebuffer;
     bool _invert_color;
+    uint32_t _last_refresh_time_ms;  // Track last refresh to rate-limit
 } epaper_panel_t;
 
 // --- Utility functions
@@ -263,6 +264,7 @@ esp_lcd_new_panel_ssd1681(const esp_lcd_panel_io_handle_t io, const esp_lcd_pane
     epaper_panel->gap_y = 0;
     epaper_panel->bitmap_color = SSD1681_EPAPER_BITMAP_BLACK;
     epaper_panel->full_refresh = true;
+    epaper_panel->_last_refresh_time_ms = 0;
     // configurations
     epaper_panel->io = io;
     epaper_panel->reset_gpio_num = panel_dev_config->reset_gpio_num;
@@ -416,9 +418,10 @@ static esp_err_t
 epaper_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int y_start, int x_end, int y_end, const void *color_data)
 {
     epaper_panel_t *epaper_panel = __containerof(panel, epaper_panel_t, base);
-    if (gpio_get_level((gpio_num_t)epaper_panel->busy_gpio_num)) {
-        return ESP_ERR_NOT_FINISHED;
-    }
+    // Removed BUSY check - always accept draw commands and update VRAM
+    // if (gpio_get_level(epaper_panel->busy_gpio_num)) {
+    //     return ESP_ERR_NOT_FINISHED;
+    // }
     x_start += epaper_panel->gap_x;
     x_end += epaper_panel->gap_x;
     y_start += epaper_panel->gap_y;
@@ -503,11 +506,20 @@ epaper_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int y_start, int x
                             TAG, "panel_epaper_set_vram error");
     }
     
-    // --- Auto-refresh only if display is not busy
-    // This prevents blocking the LVGL task and causing watchdog timeouts
+    // --- Auto-refresh only if display is not busy and enough time has passed
+    // Rate limit to prevent watchdog timeouts (e-paper refresh is slow)
+    uint32_t current_time_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    uint32_t time_since_last_refresh = current_time_ms - epaper_panel->_last_refresh_time_ms;
+    const uint32_t MIN_REFRESH_INTERVAL_MS = 3000;  // Minimum 3 seconds between refreshes
+    
     if (!gpio_get_level((gpio_num_t)epaper_panel->busy_gpio_num)) {
-        ESP_LOGI(TAG, "Triggering e-paper refresh");
-        ESP_RETURN_ON_ERROR(epaper_panel_refresh_screen(panel), TAG, "epaper_panel_refresh_screen error");
+        if (time_since_last_refresh >= MIN_REFRESH_INTERVAL_MS) {
+            ESP_LOGI(TAG, "Triggering e-paper refresh (last refresh was %lu ms ago)", time_since_last_refresh);
+            epaper_panel->_last_refresh_time_ms = current_time_ms;
+            ESP_RETURN_ON_ERROR(epaper_panel_refresh_screen(panel), TAG, "epaper_panel_refresh_screen error");
+        } else {
+            ESP_LOGD(TAG, "Skipping refresh, too soon (only %lu ms since last)", time_since_last_refresh);
+        }
     } else {
         ESP_LOGD(TAG, "Display busy, skipping refresh");
     }
