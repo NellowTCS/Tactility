@@ -186,15 +186,29 @@ bool GxEPD2Display::startLvgl() {
         default: lv_rotation = LV_DISPLAY_ROTATION_0; break;
     }
 
-    // Compute logical dimensions LVGL will use (LVGL swaps width/height when sw_rotate is used)
-    uint16_t lv_logical_w = (_config.rotation == 1 || _config.rotation == 3) ? _config.height : _config.width;
-    uint16_t lv_logical_h = (_config.rotation == 1 || _config.rotation == 3) ? _config.width : _config.height;
+    ESP_LOGI(TAG, "Starting LVGL: requested physical=%ux%u rotation=%d (config.rotation=%d)",
+             _config.width, _config.height, lv_rotation, _config.rotation);
 
-    ESP_LOGI(TAG, "Starting LVGL: physical=%ux%u rotation=%d (config.rotation=%d, sw_rotate=implicit) -> logical=%ux%u", 
-             _config.width, _config.height, lv_rotation, _config.rotation, lv_logical_w, lv_logical_h);
+    // Create the LVGL display using the physical dimensions first.
+    // We'll set rotation, then query LVGL for the actual logical resolution it uses,
+    // and allocate buffers based on that reported resolution so the stride matches.
+    _lvglDisplay = lv_display_create(_config.width, _config.height);
+    if (!_lvglDisplay) {
+        ESP_LOGE(TAG, "Failed to create LVGL display (lv_display_create)");
+        return false;
+    }
 
-    // Allocate draw buffers (RGB565 format - 2 bytes per pixel) using logical width so DRAW_BUF_LINES is correct
-    const size_t bufSize = (size_t)lv_logical_w * DRAW_BUF_LINES;
+    // Set rotation - LVGL will handle dimension swapping internally
+    lv_display_set_rotation(_lvglDisplay, lv_rotation);
+
+    // Query the actual logical resolution LVGL reports AFTER rotation
+    int32_t hor_res = lv_display_get_horizontal_resolution(_lvglDisplay);
+    int32_t ver_res = lv_display_get_vertical_resolution(_lvglDisplay);
+
+    ESP_LOGI(TAG, "LVGL reports logical resolution: %dx%d (after rotation)", hor_res, ver_res);
+
+    // Allocate draw buffers using LVGL's reported horizontal resolution
+    const size_t bufSize = (size_t)hor_res * DRAW_BUF_LINES;
     _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
     _drawBuf2 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
     if (!_drawBuf1 || !_drawBuf2) {
@@ -202,29 +216,19 @@ bool GxEPD2Display::startLvgl() {
         if (_drawBuf1) heap_caps_free(_drawBuf1);
         if (_drawBuf2) heap_caps_free(_drawBuf2);
         _drawBuf1 = _drawBuf2 = nullptr;
+        lv_display_delete(_lvglDisplay);
+        _lvglDisplay = nullptr;
         return false;
     }
 
-    ESP_LOGI(TAG, "Allocated %zu bytes per buffer (logical width=%u, draw lines=%zu)", bufSize * sizeof(lv_color_t), lv_logical_w, DRAW_BUF_LINES);
+    ESP_LOGI(TAG, "Allocated %zu bytes per buffer (hor_res=%d, draw_lines=%zu)", bufSize * sizeof(lv_color_t), (int)hor_res, DRAW_BUF_LINES);
 
-    // Create LVGL display with logical dimensions
-    _lvglDisplay = lv_display_create(lv_logical_w, lv_logical_h);
-    if (!_lvglDisplay) {
-        ESP_LOGE(TAG, "Failed to create LVGL display");
-        heap_caps_free(_drawBuf1);
-        heap_caps_free(_drawBuf2);
-        _drawBuf1 = _drawBuf2 = nullptr;
-        return false;
-    }
-
-    // Set rotation - LVGL will handle dimension swapping and software rotation
-    lv_display_set_rotation(_lvglDisplay, lv_rotation);
-
-    // Use RGB565 format - standard LVGL rendering
+    // Configure LVGL color format and buffers
     lv_display_set_color_format(_lvglDisplay, LV_COLOR_FORMAT_RGB565);
-    lv_display_set_buffers(_lvglDisplay, _drawBuf1, _drawBuf2, 
-                           bufSize * sizeof(lv_color_t), 
+    lv_display_set_buffers(_lvglDisplay, _drawBuf1, _drawBuf2,
+                           bufSize * sizeof(lv_color_t),
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
+    // set flush callback and user data
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
@@ -233,7 +237,8 @@ bool GxEPD2Display::startLvgl() {
         ESP_LOGW(TAG, "Failed to create display worker - LVGL flushes will still attempt direct writes (risky)");
     }
 
-    ESP_LOGI(TAG, "LVGL started successfully");
+    ESP_LOGI(TAG, "LVGL started successfully (physical=%ux%u logical=%dx%d rotation=%d)",
+             _config.width, _config.height, hor_res, ver_res, (int)lv_rotation);
 
     // Run LVGL test
     display_tester::runLvglTest(this);
