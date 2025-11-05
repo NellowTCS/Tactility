@@ -46,8 +46,8 @@ GxEPD2Display::GxEPD2Display(const Configuration& config)
     , _workerTaskHandle(nullptr)
     , _spiMutex(nullptr)
     , _workerRunning(false)
-    , _gapX(200)
-    , _gapY(4)
+    , _gapX(-30)   // default positive shift (lessened to test if the Y and X are flipped, and also if it works)
+    , _gapY(0)
 {
 }
 
@@ -430,25 +430,25 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     int32_t ver_res = lv_display_get_vertical_resolution(disp);    // logical height LVGL is using
 
     // Map logical rectangle -> physical rectangle for known rotations
-    // Use the panel's physical dimensions (self->_config.width/height) to compute the transformed rectangle.
+    // Use LVGL logical resolution (hor_res/ver_res) as rotation pivot.
     if (rotation == LV_DISPLAY_ROTATION_90) {
-        // 90° CW: logical coords (lx,ly) -> physical (px,py) = (ly, panel_width-1 - lx)
+        // 90° CW: logical coords (lx,ly) -> physical (px,py) = (ly, hor_res-1 - lx)
         physical_area.x1 = area->y1;
-        physical_area.y1 = (self->_config.width - 1) - area->x2;
+        physical_area.y1 = (hor_res - 1) - area->x2;
         physical_area.x2 = area->y2;
-        physical_area.y2 = (self->_config.width - 1) - area->x1;
+        physical_area.y2 = (hor_res - 1) - area->x1;
     } else if (rotation == LV_DISPLAY_ROTATION_270) {
-        // 270° CW: logical -> physical (px,py) = (panel_height-1 - ly, lx)
-        physical_area.x1 = (self->_config.height - 1) - area->y2;
+        // 270° CW: logical -> physical (px,py) = (ver_res-1 - ly, lx)
+        physical_area.x1 = (ver_res - 1) - area->y2;
         physical_area.y1 = area->x1;
-        physical_area.x2 = (self->_config.height - 1) - area->y1;
+        physical_area.x2 = (ver_res - 1) - area->y1;
         physical_area.y2 = area->x2;
     } else if (rotation == LV_DISPLAY_ROTATION_180) {
-        // 180°: logical -> physical (px,py) = (panel_width-1 - lx, panel_height-1 - ly)
-        physical_area.x1 = (self->_config.width - 1) - area->x2;
-        physical_area.y1 = (self->_config.height - 1) - area->y2;
-        physical_area.x2 = (self->_config.width - 1) - area->x1;
-        physical_area.y2 = (self->_config.height - 1) - area->y1;
+        // 180°: logical -> physical (px,py) = (hor_res-1 - lx, ver_res-1 - ly)
+        physical_area.x1 = (hor_res - 1) - area->x2;
+        physical_area.y1 = (ver_res - 1) - area->y2;
+        physical_area.x2 = (hor_res - 1) - area->x1;
+        physical_area.y2 = (ver_res - 1) - area->y1;
     } else {
         // LV_DISPLAY_ROTATION_0: no change
         physical_area = *area;
@@ -515,27 +515,26 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 px_abs = lx_abs;
                 py_abs = ly_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_90) {
-                // 90° CW: (lx_abs,ly_abs) -> (px,py) = (ly_abs, panel_width-1 - lx_abs)
+                // 90° CW: (lx_abs,ly_abs) -> (px,py) = (ly_abs, hor_res-1 - lx_abs)
                 px_abs = ly_abs;
-                py_abs = (self->_config.width - 1) - lx_abs;
+                py_abs = (hor_res - 1) - lx_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_180) {
-                px_abs = (self->_config.width - 1) - lx_abs;
-                py_abs = (self->_config.height - 1) - ly_abs;
+                px_abs = (hor_res - 1) - lx_abs;
+                py_abs = (ver_res - 1) - ly_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_270) {
-                // 270° CW: (lx_abs,ly_abs) -> (px,py) = (panel_height-1 - ly_abs, lx_abs)
-                px_abs = (self->_config.height - 1) - ly_abs;
+                // 270° CW: (lx_abs,ly_abs) -> (px,py) = (ver_res-1 - ly_abs, lx_abs)
+                px_abs = (ver_res - 1) - ly_abs;
                 py_abs = lx_abs;
             } else {
                 px_abs = lx_abs;
                 py_abs = ly_abs;
             }
 
-            // Apply gap offsets
+            // Apply gap offsets (user-requested)
             px_abs += self->_gapX;
             py_abs += self->_gapY;
 
-            // Compute dithered black/white using 16x16 Bayer ordered dither:
-            // compute brightness
+            // Compute brightness for dither
             uint8_t r = pixel.red;
             uint8_t g = pixel.green;
             uint8_t b = pixel.blue;
