@@ -10,18 +10,44 @@
 
 static const char* TAG = "GxEPD2Display";
 
+// Bayer helpers (16x16 ordered dither)
+// 2x2 base matrix for recursive construction
+static const uint8_t bayer2x2[2][2] = {
+    {0, 2},
+    {3, 1}
+};
+
+// Compute Bayer matrix value for power-of-two size N using recursive quadrant method.
+// x,y must be in [0..N-1]. N must be power of two.
+static inline int bayer_val_pow2(int x, int y, int N)
+{
+    int v = 0;
+    int n = N;
+    while (n > 1) {
+        int half = n >> 1;
+        int qx = (x >= half) ? 1 : 0; // quadrant x (0 left, 1 right)
+        int qy = (y >= half) ? 1 : 0; // quadrant y (0 top, 1 bottom)
+        int add = bayer2x2[qy][qx];
+        v = (v << 2) + add;
+        if (qx) x -= half;
+        if (qy) y -= half;
+        n = half;
+    }
+    return v; // 0 .. N*N-1
+}
+
 GxEPD2Display::GxEPD2Display(const Configuration& config)
     : _config(config)
     , _display(nullptr)
     , _lvglDisplay(nullptr)
     , _drawBuf1(nullptr)
     , _drawBuf2(nullptr)
-    , _xShift(0)
-    , _yShift(0)
     , _queue(nullptr)
     , _workerTaskHandle(nullptr)
     , _spiMutex(nullptr)
     , _workerRunning(false)
+    , _gapX(-200)
+    , _gapY(-4)
 {
 }
 
@@ -116,12 +142,6 @@ bool GxEPD2Display::supportsLvgl() const {
     return true; 
 }
 
-void GxEPD2Display::setShift(int16_t xShift, int16_t yShift) {
-    _xShift = xShift;
-    _yShift = yShift;
-    ESP_LOGI(TAG, "Display shift set to x=%d y=%d", _xShift, _yShift);
-}
-
 bool GxEPD2Display::createWorker() {
     if (_queue) return true;
     _queue = xQueueCreate(QUEUE_LENGTH, sizeof(QueueItem));
@@ -133,7 +153,7 @@ bool GxEPD2Display::createWorker() {
     BaseType_t r = xTaskCreate(
         displayWorkerTask,
         "epd_worker",
-        8192, // stack size (adjust needed)
+        8192, // stack size (adjust when needed)
         this,
         tskIDLE_PRIORITY + 2,
         &_workerTaskHandle
@@ -317,12 +337,12 @@ inline bool GxEPD2Display::rgb565ToMono(lv_color_t pixel) {
     uint8_t r = pixel.red;   
     uint8_t g = pixel.green; 
     uint8_t b = pixel.blue;  
-
+    
     // Calculate brightness using standard luminance weights
     // Y = 0.299*R + 0.587*G + 0.114*B
     // Approximated as (77*R + 151*G + 28*B) / 256 for speed
     uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
-
+    
     // Threshold at 50% gray: >127 = white (bit=1), <=127 = black (bit=0)
     return brightness > 127;
 }
@@ -482,7 +502,6 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_bytes);
         for (int lx = 0; lx < logical_w; ++lx) {
             lv_color_t pixel = src_row[lx];
-            bool is_white = self->rgb565ToMono(pixel);
 
             // absolute logical coordinates (within LVGL logical screen)
             int lx_abs = area->x1 + lx;
@@ -511,9 +530,23 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 py_abs = ly_abs;
             }
 
-            // Apply runtime shift
-            px_abs += self->_xShift;
-            py_abs += self->_yShift;
+            // Apply gap offsets
+            px_abs += self->_gapX;
+            py_abs += self->_gapY;
+
+            // Compute dithered black/white using 16x16 Bayer ordered dither:
+            // compute brightness
+            uint8_t r = pixel.red;
+            uint8_t g = pixel.green;
+            uint8_t b = pixel.blue;
+            uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8; // 0..255
+
+            // map to local 16x16 Bayer coordinates (wrap)
+            int bx = (px_abs & 15);
+            int by = (py_abs & 15);
+            int bval = bayer_val_pow2(bx, by, 16); // 0..255
+
+            bool is_white = (brightness > (uint8_t)bval);
 
             // Convert to buffer-relative coordinates using computed physical_area origin
             int px_rel = px_abs - epd_x;

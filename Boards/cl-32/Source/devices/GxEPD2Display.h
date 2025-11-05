@@ -10,6 +10,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include <cstdint>
 
 class GxEPD2_290_GDEY029T71H; // Forward declaration
 
@@ -55,8 +56,9 @@ public:
                        bool invert = false, bool mirror_y = false);
     void refreshDisplay(bool partial);
 
-    // Runtime shift to fix panel offsets (pixels). Call setShift(-200,0) to move content left 200px.
-    void setShift(int16_t xShift, int16_t yShift);
+    // Offsets to apply to all physical coordinates (useful to shift panels)
+    void setGap(int16_t gapX, int16_t gapY) { _gapX = gapX; _gapY = gapY; }
+    void getGap(int16_t& gapX, int16_t& gapY) const { gapX = _gapX; gapY = _gapY; }
 
 private:
     Configuration _config;
@@ -65,12 +67,8 @@ private:
     lv_color_t* _drawBuf1;
     lv_color_t* _drawBuf2;
 
-    // runtime pixel shift to adjust mapping
-    int16_t _xShift;
-    int16_t _yShift;
-
-    // Number of logical rows per LVGL draw buffer.
-    static constexpr size_t DRAW_BUF_LINES = 50;
+    // Number of logical rows per LVGL draw buffer. Adjust based on available RAM.
+    static constexpr size_t DRAW_BUF_LINES = 60;
 
     // Display worker queue item (enqueued by lvglFlushCallback)
     struct QueueItem {
@@ -89,8 +87,12 @@ private:
     // Mutex to protect direct access to _display (and to avoid races when tests write directly)
     SemaphoreHandle_t _spiMutex;
 
-    // Refresh debouncing/batching handled by worker
+    // Refresh debouncing/batching is handled by the worker (it groups writes and then refreshes)
     bool _workerRunning;
+
+    // Global pixel offsets (applied to physical coords)
+    int16_t _gapX;
+    int16_t _gapY;
 
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
     
