@@ -21,15 +21,18 @@ static bool initBoot() {
 }
 
 static DeviceVector createDevices() {
+    // Disable display and keyboard to isolate crash
+    // TODO: Re-enable after testing
+    
     // create TCA wrapper and keyboard for CL-32
-    auto tca = std::make_shared<Tca8418>(I2C_NUM_0);
-    auto keyboard = std::make_shared<CL32Keyboard>(tca);
+    // auto tca = std::make_shared<Tca8418>(I2C_NUM_0);
+    // auto keyboard = std::make_shared<CL32Keyboard>(tca);
 
     return {
-        createDisplay(),
+        // createDisplay(),  // DISABLED FOR TESTING
         createSdCard(),
-        tca,
-        keyboard
+        // tca,              // DISABLED FOR TESTING
+        // keyboard          // DISABLED FOR TESTING
     };
 }
 
