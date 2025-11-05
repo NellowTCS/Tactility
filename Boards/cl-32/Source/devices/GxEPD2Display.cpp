@@ -85,7 +85,7 @@ bool GxEPD2Display::start() {
     }
 
     // Run hardware tests once (these use direct writes)
-    display_tester::runTests(this);
+    // display_tester::runTests(this);
 
     ESP_LOGI(TAG, "E-paper display started successfully");
     return true;
@@ -235,7 +235,7 @@ bool GxEPD2Display::startLvgl() {
 
     ESP_LOGI(TAG, "LVGL started successfully");
 
-    // Run hardware tests once (these use direct writes)
+    // Run LVGL test
     display_tester::runLvglTest(_lvglDisplay);
 
     return true;
@@ -471,7 +471,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_bytes);
         for (int lx = 0; lx < logical_w; ++lx) {
             lv_color_t pixel = src_row[lx];
-            bool is_white = rgb565ToMono(pixel);
+            bool is_white = self->rgb565ToMono(pixel);
 
             // absolute logical coordinates (within LVGL logical screen)
             int lx_abs = area->x1 + lx;
@@ -481,21 +481,20 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
             int py_abs = 0;
 
             // Map logical -> physical depending on rotation.
-            // Physical panel dims: width = _config.width, height = _config.height
+            // Physical panel dims: width = self->_config.width, height = self->_config.height
             if (rotation == LV_DISPLAY_ROTATION_0) {
                 px_abs = lx_abs;
                 py_abs = ly_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_90) {
-                // LVGL logical: width = panel height, height = panel width
                 // 90° CW: (lx_abs,ly_abs) -> (px,py) = (ly_abs, panel_width-1 - lx_abs)
                 px_abs = ly_abs;
-                py_abs = (_config.width - 1) - lx_abs;
+                py_abs = (self->_config.width - 1) - lx_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_180) {
-                px_abs = (_config.width - 1) - lx_abs;
-                py_abs = (_config.height - 1) - ly_abs;
+                px_abs = (self->_config.width - 1) - lx_abs;
+                py_abs = (self->_config.height - 1) - ly_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_270) {
-                // 270° CW (or 90° CCW): (lx_abs,ly_abs) -> (px,py) = (panel_height-1 - ly_abs, lx_abs)
-                px_abs = (_config.height - 1) - ly_abs;
+                // 270° CW: (lx_abs,ly_abs) -> (px,py) = (panel_height-1 - ly_abs, lx_abs)
+                px_abs = (self->_config.height - 1) - ly_abs;
                 py_abs = lx_abs;
             } else {
                 // default fallback
