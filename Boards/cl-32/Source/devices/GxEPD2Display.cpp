@@ -234,6 +234,10 @@ bool GxEPD2Display::startLvgl() {
     }
 
     ESP_LOGI(TAG, "LVGL started successfully");
+
+    // Run hardware tests once (these use direct writes)
+    display_tester::runLvglTest(_lvglDisplay);
+
     return true;
 }
 
