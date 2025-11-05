@@ -159,7 +159,11 @@ class StatusbarService final : public Service {
     }
 
     void updateGpsIcon() {
-        auto gps_state = gps::findGpsService()->getState();
+        auto gps_service = gps::findGpsService();
+        if (gps_service == nullptr) {
+            return; // GPS service not registered yet
+        }
+        auto gps_state = gps_service->getState();
         bool show_icon = (gps_state == gps::State::OnPending) || (gps_state == gps::State::On);
         if (gps_last_state != show_icon) {
             if (show_icon) {
