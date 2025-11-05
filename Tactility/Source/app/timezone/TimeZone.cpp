@@ -1,12 +1,13 @@
-#include "Tactility/app/AppContext.h"
-#include "Tactility/app/AppManifest.h"
-#include "Tactility/app/timezone/TimeZone.h"
-#include "Tactility/lvgl/Toolbar.h"
-#include "Tactility/lvgl/LvglSync.h"
-#include "Tactility/service/gui/Gui.h"
-#include "Tactility/service/loader/Loader.h"
+#include <Tactility/app/AppContext.h>
+#include <Tactility/app/AppManifest.h>
+#include <Tactility/app/AppPaths.h>
+#include <Tactility/app/timezone/TimeZone.h>
+#include <Tactility/lvgl/Lvgl.h>
+#include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/lvgl/LvglSync.h>
+#include <Tactility/service/loader/Loader.h>
 
-#include <Tactility/Partitions.h>
+#include <Tactility/MountPoints.h>
 #include <Tactility/StringUtils.h>
 #include <Tactility/Timer.h>
 
@@ -15,10 +16,9 @@
 
 namespace tt::app::timezone {
 
-#define TAG "timezone_select"
-
-#define RESULT_BUNDLE_CODE_INDEX "code"
-#define RESULT_BUNDLE_NAME_INDEX "name"
+constexpr auto* TAG = "TimeZone";
+constexpr auto* RESULT_BUNDLE_CODE_INDEX = "code";
+constexpr auto* RESULT_BUNDLE_NAME_INDEX = "name";
 
 extern const AppManifest manifest;
 
@@ -63,10 +63,7 @@ void setResultCode(Bundle& bundle, const std::string& code) {
 
 // endregion
 
-
-class TimeZoneApp : public App {
-
-private:
+class TimeZoneApp final : public App {
 
     Mutex mutex;
     std::vector<TimeZoneEntry> entries;
@@ -107,9 +104,8 @@ private:
         setResultName(*bundle, entry.name);
         setResultCode(*bundle, entry.code);
 
-        setResult(app::Result::Ok, std::move(bundle));
-
-        service::loader::stopApp();
+        setResult(Result::Ok, std::move(bundle));
+        stop(manifest.appId);
     }
 
     static void createListItem(lv_obj_t* list, const std::string& title, size_t index) {
@@ -117,16 +113,8 @@ private:
         lv_obj_add_event_cb(btn, &onListItemSelectedCallback, LV_EVENT_SHORT_CLICKED, (void*)index);
     }
 
-    static void updateTimerCallback() {
-        auto appContext = getCurrentAppContext();
-        if (appContext != nullptr && appContext->getManifest().id == manifest.id) {
-            auto app = std::static_pointer_cast<TimeZoneApp>(appContext->getApp());
-            app->updateList();
-        }
-    }
-
     void readTimeZones(std::string filter) {
-        auto path = std::string(MOUNT_POINT_SYSTEM) + "/timezones.csv";
+        auto path = std::string(file::MOUNT_POINT_SYSTEM) + "/timezones.csv";
         auto* file = fopen(path.c_str(), "rb");
         if (file == nullptr) {
             TT_LOG_E(TAG, "Failed to open %s", path.c_str());
@@ -139,7 +127,7 @@ private:
         std::vector<TimeZoneEntry> new_entries;
         while (fgets(line, 96, file)) {
             if (parseEntry(line, name, code)) {
-                if (tt::string::lowercase(name).find(filter) != std::string::npos) {
+                if (string::lowercase(name).find(filter) != std::string::npos) {
                     count++;
                     new_entries.push_back({.name = name, .code = code});
 
@@ -168,7 +156,7 @@ private:
 
     void updateList() {
         if (lvgl::lock(100 / portTICK_PERIOD_MS)) {
-            std::string filter = tt::string::lowercase(std::string(lv_textarea_get_text(filterTextareaWidget)));
+            std::string filter = string::lowercase(std::string(lv_textarea_get_text(filterTextareaWidget)));
             readTimeZones(filter);
             lvgl::unlock();
         } else {
@@ -197,6 +185,8 @@ public:
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+
         lvgl::toolbar_create(parent, app);
 
         auto* search_wrapper = lv_obj_create(parent);
@@ -211,7 +201,7 @@ public:
         lv_obj_set_style_image_recolor_opa(icon, 255, 0);
         lv_obj_set_style_image_recolor(icon, lv_theme_get_color_primary(parent), 0);
 
-        std::string icon_path = app.getPaths()->getSystemPathLvgl("search.png");
+        std::string icon_path = lvgl::PATH_PREFIX + app.getPaths()->getAssetsPath("search.png");
         lv_image_set_src(icon, icon_path.c_str());
         lv_obj_set_style_image_recolor(icon, lv_theme_get_color_primary(parent), 0);
 
@@ -221,7 +211,6 @@ public:
         lv_obj_add_event_cb(textarea, onTextareaValueChangedCallback, LV_EVENT_VALUE_CHANGED, this);
         filterTextareaWidget = textarea;
         lv_obj_set_flex_grow(textarea, 1);
-        service::gui::keyboardAddTextArea(textarea);
 
         auto* list = lv_list_create(parent);
         lv_obj_set_width(list, LV_PCT(100));
@@ -231,19 +220,22 @@ public:
     }
 
     void onCreate(AppContext& app) override {
-        updateTimer = std::make_unique<Timer>(Timer::Type::Once, []() { updateTimerCallback(); });
+        updateTimer = std::make_unique<Timer>(Timer::Type::Once, [this] {
+            updateList();
+        });
     }
 };
 
 extern const AppManifest manifest = {
-    .id = "TimeZone",
-    .name = "Select timezone",
-    .type = Type::Hidden,
+    .appId = "TimeZone",
+    .appName = "Select timezone",
+    .appCategory = Category::System,
+    .appFlags = AppManifest::Flags::Hidden,
     .createApp = create<TimeZoneApp>
 };
 
-void start() {
-    service::loader::startApp(manifest.id);
+LaunchId start() {
+    return app::start(manifest.appId);
 }
 
 }

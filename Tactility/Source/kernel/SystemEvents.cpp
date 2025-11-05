@@ -1,13 +1,11 @@
 #include "Tactility/kernel/SystemEvents.h"
 
 #include <Tactility/Mutex.h>
-#include <Tactility/CoreExtraDefines.h>
-
 #include <list>
 
-#define TAG "system_event"
-
 namespace tt::kernel {
+
+constexpr auto* TAG = "SystemEvents";
 
 struct SubscriptionData {
     SystemEventSubscription id;
@@ -38,16 +36,16 @@ static const char* getEventName(SystemEvent event) {
             return TT_STRINGIFY(BootInitUartBegin);
         case BootInitUartEnd:
             return TT_STRINGIFY(BootInitUartEnd);
-        case BootInitLvglBegin:
-            return TT_STRINGIFY(BootInitLvglBegin);
-        case BootInitLvglEnd:
-            return TT_STRINGIFY(BootInitLvglEnd);
         case BootSplash:
             return TT_STRINGIFY(BootSplash);
         case NetworkConnected:
             return TT_STRINGIFY(NetworkConnected);
         case NetworkDisconnected:
             return TT_STRINGIFY(NetworkDisconnected);
+        case LvglStarted:
+            return TT_STRINGIFY(LvglStarted);
+        case LvglStopped:
+            return TT_STRINGIFY(LvglStopped);
         case Time:
             return TT_STRINGIFY(Time);
     }

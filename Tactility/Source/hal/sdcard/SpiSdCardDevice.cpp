@@ -1,16 +1,15 @@
 #ifdef ESP_PLATFORM
 
-#include "Tactility/hal/sdcard/SpiSdCardDevice.h"
-
+#include <Tactility/hal/gpio/Gpio.h>
+#include <Tactility/hal/sdcard/SpiSdCardDevice.h>
 #include <Tactility/Log.h>
 
-#include <driver/gpio.h>
 #include <esp_vfs_fat.h>
 #include <sdmmc_cmd.h>
 
-#define TAG "spi_sdcard"
-
 namespace tt::hal::sdcard {
+
+constexpr auto* TAG = "SpiSdCardDevice";
 
 /**
  * Before we can initialize the sdcard's SPI communications, we have to set all
@@ -27,21 +26,13 @@ bool SpiSdCardDevice::applyGpioWorkAround() {
         pin_bit_mask |= BIT64(pin);
     }
 
-    gpio_config_t sd_gpio_config = {
-        .pin_bit_mask = pin_bit_mask,
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-
-    if (gpio_config(&sd_gpio_config) != ESP_OK) {
+    if (!gpio::configureWithPinBitmask(pin_bit_mask, gpio::Mode::Output, false, false)) {
         TT_LOG_E(TAG, "GPIO init failed");
         return false;
     }
 
     for (auto const& pin: config->csPinWorkAround) {
-        if (gpio_set_level(pin, 1) != ESP_OK) {
+        if (!gpio::setLevel(pin, true)) {
             TT_LOG_E(TAG, "Failed to set board CS pin high");
             return false;
         }
@@ -78,7 +69,7 @@ bool SpiSdCardDevice::mountInternal(const std::string& newMountPath) {
 
     esp_err_t result = esp_vfs_fat_sdspi_mount(newMountPath.c_str(), &host, &slot_config, &mount_config, &card);
 
-    if (result != ESP_OK) {
+    if (result != ESP_OK || card == nullptr) {
         if (result == ESP_FAIL) {
             TT_LOG_E(TAG, "Mounting failed. Ensure the card is formatted with FAT.");
         } else {
@@ -93,12 +84,16 @@ bool SpiSdCardDevice::mountInternal(const std::string& newMountPath) {
 }
 
 bool SpiSdCardDevice::mount(const std::string& newMountPath) {
+    auto lock = getLock()->asScopedLock();
+    lock.lock();
+
     if (!applyGpioWorkAround()) {
-        TT_LOG_E(TAG, "Failed to set SPI CS pins high. This is a pre-requisite for mounting.");
+        TT_LOG_E(TAG, "Failed to apply GPIO work-around");
         return false;
     }
 
     if (mountInternal(newMountPath)) {
+        TT_LOG_I(TAG, "Mounted at %s", newMountPath.c_str());
         sdmmc_card_print_info(stdout, card);
         return true;
     } else {
@@ -108,23 +103,27 @@ bool SpiSdCardDevice::mount(const std::string& newMountPath) {
 }
 
 bool SpiSdCardDevice::unmount() {
+    auto lock = getLock()->asScopedLock();
+    lock.lock();
+
     if (card == nullptr) {
         TT_LOG_E(TAG, "Can't unmount: not mounted");
         return false;
     }
 
-    if (esp_vfs_fat_sdcard_unmount(mountPath.c_str(), card) == ESP_OK) {
-        mountPath = "";
-        card = nullptr;
-        return true;
-    } else {
+    if (esp_vfs_fat_sdcard_unmount(mountPath.c_str(), card) != ESP_OK) {
         TT_LOG_E(TAG, "Unmount failed for %s", mountPath.c_str());
         return false;
     }
+
+    TT_LOG_I(TAG, "Unmounted %s", mountPath.c_str());
+    mountPath = "";
+    card = nullptr;
+    return true;
 }
 
 // TODO: Refactor to "bool getStatus(Status* status)" method so that it can fail when the lvgl lock fails
-SdCardDevice::State SpiSdCardDevice::getState() const {
+SdCardDevice::State SpiSdCardDevice::getState(TickType_t timeout) const {
     if (card == nullptr) {
         return State::Unmounted;
     }
@@ -134,20 +133,17 @@ SdCardDevice::State SpiSdCardDevice::getState() const {
      * Writing and reading to the bus from 2 devices at the same time causes crashes.
      * This work-around ensures that this check is only happening when LVGL isn't rendering.
      */
-    auto lock = getLock().asScopedLock();
-    bool locked = lock.lock(50); // TODO: Refactor to a more reliable locking mechanism
+    auto lock = getLock()->asScopedLock();
+    bool locked = lock.lock(timeout);
     if (!locked) {
-        TT_LOG_E(TAG, LOG_MESSAGE_MUTEX_LOCK_FAILED_FMT, "LVGL");
-        return State::Unknown;
+        return State::Timeout;
     }
 
-    bool result = sdmmc_get_status(card) == ESP_OK;
-
-    if (result) {
-        return State::Mounted;
-    } else {
+    if (sdmmc_get_status(card) != ESP_OK) {
         return State::Error;
     }
+
+    return State::Mounted;
 }
 
 }

@@ -1,9 +1,9 @@
 #pragma once
 
+#include <Tactility/app/App.h>
 #include <Tactility/Bundle.h>
 
 #include <string>
-#include <vector>
 
 /**
  * Start the app by its ID and provide:
@@ -12,7 +12,7 @@
  */
 namespace tt::app::inputdialog {
 
-void start(const std::string& title, const std::string& message, const std::string& prefilled = "");
+LaunchId start(const std::string& title, const std::string& message, const std::string& prefilled = "");
 
 /**
  * @return the text that was in the field when OK was pressed, or otherwise empty string

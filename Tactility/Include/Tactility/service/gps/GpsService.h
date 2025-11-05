@@ -11,8 +11,6 @@ namespace tt::service::gps {
 
 class GpsService final : public Service {
 
-private:
-
     struct GpsDeviceRecord {
         std::shared_ptr<hal::gps::GpsDevice> device = nullptr;
         hal::gps::GpsDevice::GgaSubscriptionId satelliteSubscriptionId = -1;
@@ -25,8 +23,8 @@ private:
     Mutex mutex = Mutex(Mutex::Type::Recursive);
     Mutex stateMutex;
     std::vector<GpsDeviceRecord> deviceRecords;
-    std::shared_ptr<PubSub> statePubSub = std::make_shared<PubSub>();
-    std::unique_ptr<Paths> paths;
+    std::shared_ptr<PubSub<State>> statePubSub = std::make_shared<PubSub<State>>();
+    std::unique_ptr<ServicePaths> paths;
     State state = State::Off;
 
     bool startGpsDevice(GpsDeviceRecord& deviceRecord);
@@ -46,8 +44,8 @@ private:
 
 public:
 
-    void onStart(tt::service::ServiceContext &serviceContext) final;
-    void onStop(tt::service::ServiceContext &serviceContext) final;
+    bool onStart(ServiceContext &serviceContext) override;
+    void onStop(ServiceContext &serviceContext) override;
 
     bool addGpsConfiguration(hal::gps::GpsConfiguration configuration);
     bool removeGpsConfiguration(hal::gps::GpsConfiguration configuration);
@@ -61,7 +59,7 @@ public:
     bool getCoordinates(minmea_sentence_rmc& rmc) const;
 
     /** @return GPS service pubsub that broadcasts State* objects */
-    std::shared_ptr<PubSub> getStatePubsub() const { return statePubSub; }
+    std::shared_ptr<PubSub<State>> getStatePubsub() const { return statePubSub; }
 };
 
 std::shared_ptr<GpsService> findGpsService();

@@ -1,6 +1,4 @@
-#include "Tactility/app/wificonnect/State.h"
-
-#include <cstring>
+#include <Tactility/app/wificonnect/State.h>
 
 namespace tt::app::wificonnect {
 
@@ -17,9 +15,9 @@ bool State::hasConnectionError() const {
     return result;
 }
 
-void State::setApSettings(const service::wifi::settings::WifiApSettings* newSettings) {
+void State::setApSettings(const service::wifi::settings::WifiApSettings& newSettings) {
     lock.lock();
-    memcpy(&this->apSettings, newSettings, sizeof(service::wifi::settings::WifiApSettings));
+    this->apSettings = newSettings;
     lock.unlock();
 }
 

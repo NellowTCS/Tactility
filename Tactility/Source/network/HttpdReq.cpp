@@ -1,16 +1,17 @@
-#include "Tactility/network/HttpdReq.h"
+#include <Tactility/network/HttpdReq.h>
+#include <Tactility/Log.h>
+#include <Tactility/StringUtils.h>
+#include <Tactility/file/File.h>
 
 #include <memory>
 #include <ranges>
 #include <sstream>
-#include <Tactility/Log.h>
-#include <Tactility/StringUtils.h>
 
 #ifdef ESP_PLATFORM
 
-#define TAG "network"
-
 namespace tt::network {
+
+constexpr auto* TAG = "HttpdReq";
 
 bool getHeaderOrSendError(httpd_req_t* request, const std::string& name, std::string& value) {
     size_t header_size = httpd_req_get_hdr_value_len(request, name.c_str());
@@ -73,11 +74,17 @@ std::unique_ptr<char[]> receiveByteArray(httpd_req_t* request, size_t length, si
     assert(length > 0);
     bytesRead = 0;
 
-    auto result = std::make_unique<char[]>(length);
+    // We have to use malloc() because make_unique() throws an exception
+    // and we don't have exceptions enabled in the compiler settings
+    auto* buffer = static_cast<char*>(malloc(length));
+    if (buffer == nullptr) {
+        TT_LOG_E(TAG, LOG_MESSAGE_ALLOC_FAILED_FMT, length);
+        return nullptr;
+    }
 
     while (bytesRead < length) {
         size_t read_size = length - bytesRead;
-        size_t bytes_received = httpd_req_recv(request, result.get() + bytesRead, read_size);
+        size_t bytes_received = httpd_req_recv(request, buffer + bytesRead, read_size);
         if (bytes_received <= 0) {
             TT_LOG_W(TAG, "Received %zu / %zu", bytesRead + bytes_received, length);
             return nullptr;
@@ -86,7 +93,7 @@ std::unique_ptr<char[]> receiveByteArray(httpd_req_t* request, size_t length, si
         bytesRead += bytes_received;
     }
 
-    return result;
+    return std::unique_ptr<char[]>(std::move(buffer));
 }
 
 std::string receiveTextUntil(httpd_req_t* request, const std::string& terminator) {
@@ -153,6 +160,39 @@ bool readAndDiscardOrSendError(httpd_req_t* request, const std::string& toRead) 
     }
 
     return true;
+}
+
+size_t receiveFile(httpd_req_t* request, size_t length, const std::string& filePath) {
+    constexpr auto BUFFER_SIZE = 512;
+    char buffer[BUFFER_SIZE];
+    size_t bytes_received = 0;
+
+    auto lock = file::getLock(filePath)->asScopedLock();
+    lock.lock();
+
+    auto* file = fopen(filePath.c_str(), "wb");
+    if (file == nullptr) {
+        TT_LOG_E(TAG, "Failed to open file for writing: %s", filePath.c_str());
+        return 0;
+    }
+
+    while (bytes_received < length) {
+        auto expected_chunk_size = std::min<size_t>(BUFFER_SIZE, length - bytes_received);
+        size_t receive_chunk_size = httpd_req_recv(request, buffer, expected_chunk_size);
+        if (receive_chunk_size <= 0) {
+            TT_LOG_E(TAG, "Receive failed");
+            break;
+        }
+        if (fwrite(buffer, 1, receive_chunk_size, file) != receive_chunk_size) {
+            TT_LOG_E(TAG, "Failed to write all bytes");
+            break;
+        }
+        bytes_received += receive_chunk_size;
+    }
+
+    // Write file
+    fclose(file);
+    return bytes_received;
 }
 
 }

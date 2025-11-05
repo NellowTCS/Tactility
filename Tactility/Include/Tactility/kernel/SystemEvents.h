@@ -14,18 +14,21 @@ enum class SystemEvent {
     BootInitSpiEnd,
     BootInitUartBegin,
     BootInitUartEnd,
-    BootInitLvglBegin,
-    BootInitLvglEnd,
     BootSplash,
     /** Gained IP address */
     NetworkConnected,
     NetworkDisconnected,
+    /** LVGL devices are initialized and usable */
+    LvglStarted,
+    /** LVGL devices were removed and not usable anymore */
+    LvglStopped,
     /** An important system time-related event, such as NTP update or time-zone change */
     Time,
 };
 
 /** Value 0 mean "no subscription" */
 typedef uint32_t SystemEventSubscription;
+constexpr SystemEventSubscription NoSystemEventSubscription = 0U;
 
 typedef std::function<void(SystemEvent)> OnSystemEvent;
 

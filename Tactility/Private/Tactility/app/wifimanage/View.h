@@ -3,19 +3,18 @@
 #include "./Bindings.h"
 #include "./State.h"
 
-#include "Tactility/app/AppContext.h"
+#include <Tactility/app/AppContext.h>
+#include <Tactility/app/AppPaths.h>
 
 #include <lvgl.h>
 
 namespace tt::app::wifimanage {
 
-class View {
-
-private:
+class View final {
 
     Bindings* bindings;
     State* state;
-    std::unique_ptr<app::Paths> paths;
+    std::unique_ptr<AppPaths> paths;
     lv_obj_t* root = nullptr;
     lv_obj_t* enable_switch = nullptr;
     lv_obj_t* enable_on_boot_switch = nullptr;
@@ -28,7 +27,10 @@ private:
     void updateScanning();
     void updateNetworkList();
     void updateConnectToHidden();
-    void createSsidListItem(const service::wifi::ApRecord& record, bool isConnecting);
+    void createSsidListItem(const service::wifi::ApRecord& record, bool isConnecting, size_t index);
+
+    static void showDetails(lv_event_t* event);
+    static void connect(lv_event_t* event);
 
 public:
 

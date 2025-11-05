@@ -1,8 +1,8 @@
 #pragma once
 
-#include "Tactility/app/AppContext.h"
-#include "Tactility/app/AppManifest.h"
-#include "Tactility/app/ElfApp.h"
+#include <Tactility/app/AppContext.h>
+#include <Tactility/app/AppManifest.h>
+#include <Tactility/app/ElfApp.h>
 
 #include <Tactility/Bundle.h>
 #include <Tactility/Mutex.h>
@@ -13,11 +13,11 @@
 namespace tt::app {
 
 enum class State {
-    Initial, // App is being activated in loader
-    Started, // App is in memory
-    Showing, // App view is created
-    Hiding,  // App view is destroyed
-    Stopped  // App is not in memory
+    Initial, // AppInstance was created, but the state hasn't advanced yet
+    Created, // App was placed into memory
+    Showing, // App view was created
+    Hiding,  // App view was destroyed
+    Destroyed  // App was removed from memory
 };
 
 /**
@@ -29,7 +29,7 @@ class AppInstance : public AppContext {
     const std::shared_ptr<AppManifest> manifest;
     State state = State::Initial;
     LaunchId launchId;
-    Flags flags = { .showStatusbar = true };
+    Flags flags = { .hideStatusbar = true };
     /** @brief Optional parameters to start the app with
      * When these are stored in the app struct, the struct takes ownership.
      * Do not mutate after app creation.
@@ -41,10 +41,10 @@ class AppInstance : public AppContext {
     static std::shared_ptr<App> createApp(
         const std::shared_ptr<AppManifest>& manifest
     ) {
-        if (manifest->location.isInternal()) {
+        if (manifest->appLocation.isInternal()) {
             assert(manifest->createApp != nullptr);
             return manifest->createApp();
-        } else if (manifest->location.isExternal()) {
+        } else if (manifest->appLocation.isExternal()) {
             if (manifest->createApp != nullptr) {
                 TT_LOG_W("", "Manifest specifies createApp, but this is not used with external apps");
             }
@@ -88,7 +88,7 @@ public:
 
     std::shared_ptr<const Bundle> getParameters() const override;
 
-    std::unique_ptr<Paths> getPaths() const override;
+    std::unique_ptr<AppPaths> getPaths() const override;
 
     std::shared_ptr<App> getApp() const override { return app; }
 };

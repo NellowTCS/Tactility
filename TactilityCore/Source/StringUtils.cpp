@@ -29,25 +29,51 @@ std::string getLastPathSegment(const std::string& path) {
     }
 }
 
-std::vector<std::string> split(const std::string&input, const std::string&delimiter) {
+void split(const std::string& input, const std::string& delimiter, std::function<void(const std::string&)> callback) {
     size_t token_index = 0;
     size_t delimiter_index;
     const size_t delimiter_length = delimiter.length();
-    std::string token;
-    std::vector<std::string> result;
 
     while ((delimiter_index = input.find(delimiter, token_index)) != std::string::npos) {
-        token = input.substr(token_index, delimiter_index - token_index);
+        std::string token = input.substr(token_index, delimiter_index - token_index);
         token_index = delimiter_index + delimiter_length;
-        result.push_back(token);
+        callback(token);
     }
 
     auto end_token = input.substr(token_index);
     if (!end_token.empty()) {
-        result.push_back(end_token);
+        callback(end_token);
+    }
+}
+
+std::vector<std::string> split(const std::string&input, const std::string&delimiter) {
+    std::vector<std::string> result;
+    split(input, delimiter, [&result](const std::string& token) {
+        result.push_back(token);
+    });
+    return result;
+}
+
+std::string join(const std::vector<const char*>& input, const std::string& delimiter) {
+    std::stringstream stream;
+    size_t size = input.size();
+
+    if (size == 0) {
+        return "";
+    } else if (size == 1) {
+        return input.front();
+    } else {
+        auto iterator = input.begin();
+        while (iterator != input.end()) {
+            stream << *iterator;
+            iterator++;
+            if (iterator != input.end()) {
+                stream << delimiter;
+            }
+        }
     }
 
-    return result;
+    return stream.str();
 }
 
 std::string join(const std::vector<std::string>& input, const std::string& delimiter) {

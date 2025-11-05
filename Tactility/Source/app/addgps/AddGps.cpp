@@ -74,6 +74,7 @@ public:
 
     void onShow(AppContext& app, lv_obj_t* parent) final {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
         lvgl::toolbar_create(parent, app);
 
@@ -171,15 +172,16 @@ public:
 };
 
 extern const AppManifest manifest = {
-    .id = "AddGps",
-    .name = "Add GPS",
-    .icon = LV_SYMBOL_GPS,
-    .type = Type::Hidden,
+    .appId = "AddGps",
+    .appName = "Add GPS",
+    .appIcon = LV_SYMBOL_GPS,
+    .appCategory = Category::System,
+    .appFlags = AppManifest::Flags::Hidden,
     .createApp = create<AddGpsApp>
 };
 
 void start() {
-    app::start(manifest.id);
+    app::start(manifest.appId);
 }
 
 } // namespace

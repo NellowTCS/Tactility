@@ -1,21 +1,19 @@
-#include "Tactility/TactilityConfig.h"
+#include <Tactility/Tactility.h>
+#include <Tactility/TactilityConfig.h>
 
 #include <Tactility/Timer.h>
 #include <Tactility/kernel/Kernel.h>
 
 #if TT_FEATURE_SCREENSHOT_ENABLED
 
-#include "Tactility/app/App.h"
-#include "Tactility/app/AppManifest.h"
-#include "Tactility/lvgl/LvglSync.h"
-#include "Tactility/lvgl/Toolbar.h"
-#include "Tactility/service/gui/Gui.h"
-#include "Tactility/service/loader/Loader.h"
-#include "Tactility/service/screenshot/Screenshot.h"
+#include <Tactility/app/App.h>
+#include <Tactility/app/AppManifest.h>
+#include <Tactility/lvgl/Lvgl.h>
+#include <Tactility/lvgl/LvglSync.h>
+#include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/service/screenshot/Screenshot.h>
 
-#include <Tactility/TactilityHeadless.h>
-
-#define TAG "screenshot"
+constexpr auto* TAG = "Screenshot";
 
 namespace tt::app::screenshot {
 
@@ -39,7 +37,7 @@ class ScreenshotApp final : public App {
 public:
 
     ScreenshotApp();
-    ~ScreenshotApp() final;
+    ~ScreenshotApp() override;
 
     void onShow(AppContext& app, lv_obj_t* parent) override;
     void onStartPressed();
@@ -51,7 +49,7 @@ public:
 /** Returns the app data if the app is active. Note that this could clash if the same app is started twice and a background thread is slow. */
 std::shared_ptr<ScreenshotApp> _Nullable optApp() {
     auto appContext = getCurrentAppContext();
-    if (appContext != nullptr && appContext->getManifest().id == manifest.id) {
+    if (appContext != nullptr && appContext->getManifest().appId == manifest.appId) {
         return std::static_pointer_cast<ScreenshotApp>(appContext->getApp());
     } else {
         return nullptr;
@@ -207,13 +205,13 @@ void ScreenshotApp::createFilePathWidgets(lv_obj_t* parent) {
             TT_LOG_W(TAG, "Found multiple SD card devices - picking first");
         }
         if (!sdcard_devices.empty() && sdcard_devices.front()->isMounted()) {
-            std::string lvgl_mount_path = "A:" + sdcard_devices.front()->getMountPath();
+            std::string lvgl_mount_path = lvgl::PATH_PREFIX + sdcard_devices.front()->getMountPath();
             lv_textarea_set_text(pathTextArea, lvgl_mount_path.c_str());
         } else {
             lv_textarea_set_text(pathTextArea, "Error: no SD card");
         }
     } else { // PC
-        lv_textarea_set_text(pathTextArea, "A:");
+        lv_textarea_set_text(pathTextArea, lvgl::PATH_PREFIX);
     }
 }
 
@@ -258,6 +256,8 @@ void ScreenshotApp::onShow(AppContext& appContext, lv_obj_t* parent) {
     }
 
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+
     auto* toolbar = lvgl::toolbar_create(parent, appContext);
     lv_obj_align(toolbar, LV_ALIGN_TOP_MID, 0, 0);
 
@@ -271,9 +271,6 @@ void ScreenshotApp::onShow(AppContext& appContext, lv_obj_t* parent) {
     createFilePathWidgets(wrapper);
     createTimerSettingsWidgets(wrapper);
 
-    service::gui::keyboardAddTextArea(delayTextArea);
-    service::gui::keyboardAddTextArea(pathTextArea);
-
     updateScreenshotMode();
 
     if (!updateTimer->isRunning()) {
@@ -282,10 +279,10 @@ void ScreenshotApp::onShow(AppContext& appContext, lv_obj_t* parent) {
 }
 
 extern const AppManifest manifest = {
-    .id = "Screenshot",
-    .name = "Screenshot",
-    .icon = LV_SYMBOL_IMAGE,
-    .type = Type::System,
+    .appId = "Screenshot",
+    .appName = "Screenshot",
+    .appIcon = LV_SYMBOL_IMAGE,
+    .appCategory = Category::System,
     .createApp = create<ScreenshotApp>
 };
 

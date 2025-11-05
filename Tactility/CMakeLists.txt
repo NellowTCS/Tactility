@@ -6,7 +6,27 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if (DEFINED ENV{ESP_IDF_VERSION})
     file(GLOB_RECURSE SOURCE_FILES Source/*.c*)
 
-    list(APPEND REQUIRES_LIST TactilityCore lvgl driver elf_loader lv_screenshot QRCode esp_lvgl_port minmea esp_wifi nvs_flash spiffs vfs fatfs lwip esp_http_server)
+    list(APPEND REQUIRES_LIST
+        TactilityCore
+        lvgl
+        driver
+        elf_loader
+        lv_screenshot
+        QRCode
+        esp_http_server
+        esp_http_client
+        esp-tls
+        esp_lvgl_port
+        esp_wifi
+        json
+        minitar
+        minmea
+        nvs_flash
+        spiffs
+        vfs
+        fatfs
+        lwip
+    )
     if ("${IDF_TARGET}" STREQUAL "esp32s3")
         list(APPEND REQUIRES_LIST esp_tinyusb)
     endif ()
@@ -50,11 +70,13 @@ else()
     add_definitions(-D_Nonnull=)
 
     target_link_libraries(Tactility
+        PUBLIC cJSON
         PUBLIC TactilityCore
         PUBLIC freertos_kernel
         PUBLIC lvgl
         PUBLIC lv_screenshot
         PUBLIC minmea
+        PUBLIC minitar
     )
 endif()
 

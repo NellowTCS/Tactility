@@ -1,9 +1,10 @@
-#include "Tactility/service/gps/GpsService.h"
-#include "Tactility/service/ServiceManifest.h"
-#include "Tactility/service/ServiceRegistry.h"
+#include <Tactility/service/gps/GpsService.h>
 
-#include <Tactility/Log.h>
 #include <Tactility/file/File.h>
+#include <Tactility/Log.h>
+#include <Tactility/service/ServicePaths.h>
+#include <Tactility/service/ServiceManifest.h>
+#include <Tactility/service/ServiceRegistration.h>
 
 using tt::hal::gps::GpsDevice;
 
@@ -12,8 +13,8 @@ namespace tt::service::gps {
 constexpr const char* TAG = "GpsService";
 extern const ServiceManifest manifest;
 
-constexpr inline bool hasTimeElapsed(TickType_t now, TickType_t timeInThePast, TickType_t expireTimeInTicks) {
-    return (TickType_t)(now - timeInThePast) >= expireTimeInTicks;
+constexpr bool hasTimeElapsed(TickType_t now, TickType_t timeInThePast, TickType_t expireTimeInTicks) {
+    return (now - timeInThePast) >= expireTimeInTicks;
 }
 
 GpsService::GpsDeviceRecord* _Nullable GpsService::findGpsRecord(const std::shared_ptr<GpsDevice>& device) {
@@ -58,14 +59,14 @@ void GpsService::removeGpsDevice(const std::shared_ptr<GpsDevice>& device) {
     });
 }
 
-void GpsService::onStart(tt::service::ServiceContext& serviceContext) {
+bool GpsService::onStart(ServiceContext& serviceContext) {
     auto lock = mutex.asScopedLock();
     lock.lock();
-
     paths = serviceContext.getPaths();
+    return true;
 }
 
-void GpsService::onStop(tt::service::ServiceContext& serviceContext) {
+void GpsService::onStop(ServiceContext& serviceContext) {
     if (getState() == State::On) {
         stopReceiving();
     }
@@ -208,7 +209,7 @@ void GpsService::setState(State newState) {
     lock.lock();
     state = newState;
     lock.unlock();
-    statePubSub->publish(&state);
+    statePubSub->publish(state);
 }
 
 bool GpsService::hasCoordinates() const {

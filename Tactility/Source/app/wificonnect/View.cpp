@@ -1,20 +1,18 @@
-#include "Tactility/app/wificonnect/View.h"
-#include "Tactility/app/wificonnect/WifiConnect.h"
-
-#include "Tactility/lvgl/Style.h"
-#include "Tactility/lvgl/Toolbar.h"
-#include "Tactility/lvgl/Spinner.h"
-#include "Tactility/service/gui/Gui.h"
-
 #include <Tactility/TactilityCore.h>
-#include <Tactility/service/wifi/WifiSettings.h>
+
+#include <Tactility/app/wificonnect/View.h>
+#include <Tactility/app/wificonnect/WifiConnect.h>
+#include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/lvgl/Spinner.h>
+#include <Tactility/service/wifi/WifiApSettings.h>
+#include <Tactility/service/wifi/WifiGlobals.h>
 
 #include <lvgl.h>
 #include <cstring>
 
 namespace tt::app::wificonnect {
 
-#define TAG "wifi_connect"
+constexpr auto* TAG = "WifiConnect";
 
 void View::resetErrors() {
     lv_obj_add_flag(password_error, LV_OBJ_FLAG_HIDDEN);
@@ -52,14 +50,14 @@ static void onConnect(TT_UNUSED lv_event_t* event) {
     view.setLoading(true);
 
     service::wifi::settings::WifiApSettings settings;
-    strcpy((char*)settings.password, password);
-    strcpy((char*)settings.ssid, ssid);
+    settings.password = password;
+    settings.ssid = ssid;
     settings.channel = 0;
-    settings.auto_connect = TT_WIFI_AUTO_CONNECT; // No UI yet, so use global setting:w
+    settings.autoConnect = TT_WIFI_AUTO_CONNECT; // No UI yet, so use global setting:w
 
     auto* bindings = &wifi->getBindings();
     bindings->onConnectSsid(
-        &settings,
+        settings,
         store,
         bindings->onConnectSsidContext
     );
@@ -85,9 +83,9 @@ void View::createBottomButtons(lv_obj_t* parent) {
     auto* button_container = lv_obj_create(parent);
     lv_obj_set_width(button_container, LV_PCT(100));
     lv_obj_set_height(button_container, LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(button_container, 0, 0);
-    lv_obj_set_style_pad_gap(button_container, 0, 0);
-    lv_obj_set_style_border_width(button_container, 0, 0);
+    lv_obj_set_style_pad_all(button_container, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_gap(button_container, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(button_container, 0, LV_STATE_DEFAULT);
 
     remember_switch = lv_switch_create(button_container);
     lv_obj_add_state(remember_switch, LV_STATE_CHECKED);
@@ -111,8 +109,9 @@ void View::createBottomButtons(lv_obj_t* parent) {
 
 // TODO: Standardize dialogs
 void View::init(AppContext& app, lv_obj_t* parent) {
-
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+
     lvgl::toolbar_create(parent, app);
 
     auto* wrapper = lv_obj_create(parent);
@@ -125,17 +124,17 @@ void View::init(AppContext& app, lv_obj_t* parent) {
     auto* ssid_wrapper = lv_obj_create(wrapper);
     lv_obj_set_width(ssid_wrapper, LV_PCT(100));
     lv_obj_set_height(ssid_wrapper, LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(ssid_wrapper, 0, 0);
-    lv_obj_set_style_pad_gap(ssid_wrapper, 0, 0);
-    lv_obj_set_style_border_width(ssid_wrapper, 0, 0);
+    lv_obj_set_style_pad_all(ssid_wrapper, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_gap(ssid_wrapper, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(ssid_wrapper, 0, LV_STATE_DEFAULT);
 
     auto* ssid_label_wrapper = lv_obj_create(ssid_wrapper);
     lv_obj_set_width(ssid_label_wrapper, LV_PCT(50));
     lv_obj_set_height(ssid_label_wrapper, LV_SIZE_CONTENT);
-    lv_obj_align(ssid_label_wrapper, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_obj_set_style_border_width(ssid_label_wrapper, 0, 0);
-    lv_obj_set_style_pad_left(ssid_label_wrapper, 0, 0);
-    lv_obj_set_style_pad_right(ssid_label_wrapper, 0, 0);
+    lv_obj_align(ssid_label_wrapper, LV_ALIGN_LEFT_MID, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(ssid_label_wrapper, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_left(ssid_label_wrapper, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(ssid_label_wrapper, 0, LV_STATE_DEFAULT);
 
     auto* ssid_label = lv_label_create(ssid_label_wrapper);
     lv_label_set_text(ssid_label, "Network:");
@@ -146,7 +145,7 @@ void View::init(AppContext& app, lv_obj_t* parent) {
     lv_obj_set_width(ssid_textarea, LV_PCT(50));
 
     ssid_error = lv_label_create(wrapper);
-    lv_obj_set_style_text_color(ssid_error, lv_color_make(255, 50, 50), 0);
+    lv_obj_set_style_text_color(ssid_error, lv_color_make(255, 50, 50), LV_STATE_DEFAULT);
     lv_obj_add_flag(ssid_error, LV_OBJ_FLAG_HIDDEN);
 
     // Password
@@ -154,17 +153,17 @@ void View::init(AppContext& app, lv_obj_t* parent) {
     auto* password_wrapper = lv_obj_create(wrapper);
     lv_obj_set_width(password_wrapper, LV_PCT(100));
     lv_obj_set_height(password_wrapper, LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(password_wrapper, 0, 0);
-    lv_obj_set_style_pad_gap(password_wrapper, 0, 0);
-    lv_obj_set_style_border_width(password_wrapper, 0, 0);
+    lv_obj_set_style_pad_all(password_wrapper, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_gap(password_wrapper, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(password_wrapper, 0, LV_STATE_DEFAULT);
 
     auto* password_label_wrapper = lv_obj_create(password_wrapper);
     lv_obj_set_width(password_label_wrapper, LV_PCT(50));
     lv_obj_set_height(password_label_wrapper, LV_SIZE_CONTENT);
     lv_obj_align_to(password_label_wrapper, password_wrapper, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_obj_set_style_border_width(password_label_wrapper, 0, 0);
-    lv_obj_set_style_pad_left(password_label_wrapper, 0, 0);
-    lv_obj_set_style_pad_right(password_label_wrapper, 0, 0);
+    lv_obj_set_style_border_width(password_label_wrapper, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_left(password_label_wrapper, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(password_label_wrapper, 0, LV_STATE_DEFAULT);
 
     auto* password_label = lv_label_create(password_label_wrapper);
     lv_label_set_text(password_label, "Password:");
@@ -176,20 +175,16 @@ void View::init(AppContext& app, lv_obj_t* parent) {
     lv_obj_set_width(password_textarea, LV_PCT(50));
 
     password_error = lv_label_create(wrapper);
-    lv_obj_set_style_text_color(password_error, lv_color_make(255, 50, 50), 0);
+    lv_obj_set_style_text_color(password_error, lv_color_make(255, 50, 50), LV_STATE_DEFAULT);
     lv_obj_add_flag(password_error, LV_OBJ_FLAG_HIDDEN);
 
     // Connection error
     connection_error = lv_label_create(wrapper);
-    lv_obj_set_style_text_color(connection_error, lv_color_make(255, 50, 50), 0);
+    lv_obj_set_style_text_color(connection_error, lv_color_make(255, 50, 50), LV_STATE_DEFAULT);
     lv_obj_add_flag(connection_error, LV_OBJ_FLAG_HIDDEN);
 
     // Bottom buttons
     createBottomButtons(wrapper);
-
-    // Keyboard bindings
-    service::gui::keyboardAddTextArea(ssid_textarea);
-    service::gui::keyboardAddTextArea(password_textarea);
 
     // Init from app parameters
     auto bundle = app.getParameters();

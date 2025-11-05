@@ -1,14 +1,17 @@
-#include "Tactility/TactilityCore.h"
+#include "Tactility/lvgl/Lvgl.h"
 
-#include "Tactility/app/AppContext.h"
-#include "Tactility/app/display/DisplaySettings.h"
-#include "Tactility/service/loader/Loader.h"
-#include "Tactility/lvgl/Style.h"
-
-#include "Tactility/hal/display/DisplayDevice.h"
+#include <Tactility/TactilityCore.h>
 #include <Tactility/TactilityPrivate.h>
+#include <Tactility/app/AppContext.h>
+#include <Tactility/app/AppPaths.h>
+#include <Tactility/CpuAffinity.h>
+#include <Tactility/hal/display/DisplayDevice.h>
 #include <Tactility/hal/usb/Usb.h>
 #include <Tactility/kernel/SystemEvents.h>
+#include <Tactility/lvgl/Style.h>
+#include <Tactility/service/loader/Loader.h>
+#include <Tactility/settings/BootSettings.h>
+#include <Tactility/settings/DisplaySettings.h>
 
 #include <lvgl.h>
 
@@ -20,93 +23,142 @@
 #define CONFIG_TT_SPLASH_DURATION 0
 #endif
 
-#define TAG "boot"
-
 namespace tt::app::boot {
 
-static std::shared_ptr<tt::hal::display::DisplayDevice> getHalDisplay() {
+constexpr auto* TAG = "Boot";
+extern const AppManifest manifest;
+
+static std::shared_ptr<hal::display::DisplayDevice> getHalDisplay() {
     return hal::findFirstDevice<hal::display::DisplayDevice>(hal::Device::Type::Display);
 }
 
 class BootApp : public App {
 
-private:
+    Thread thread = Thread(
+        "boot",
+        5120,
+        [] { return bootThreadCallback(); },
+        getCpuAffinityConfiguration().system
+    );
 
-    Thread thread = Thread("boot", 4096, [this]() { return bootThreadCallback(); });
+    static void setupDisplay() {
+        const auto hal_display = getHalDisplay();
+        if (hal_display == nullptr) {
+            return;
+        }
 
-    int32_t bootThreadCallback() {
-        TickType_t start_time = kernel::getTicks();
+        settings::display::DisplaySettings settings;
+        if (settings::display::load(settings)) {
+            if (hal_display->getGammaCurveCount() > 0) {
+                hal_display->setGammaCurve(settings.gammaCurve);
+                TT_LOG_I(TAG, "Gamma curve %du", settings.gammaCurve);
+            }
+        } else {
+            settings = settings::display::getDefault();
+        }
 
-        kernel::publishSystemEvent(kernel::SystemEvent::BootSplash);
-
-        auto hal_display = getHalDisplay();
-        assert(hal_display != nullptr);
         if (hal_display->supportsBacklightDuty()) {
-            uint8_t backlight_duty = 200;
-            app::display::getBacklightDuty(backlight_duty);
-            TT_LOG_I(TAG, "backlight %du", backlight_duty);
-            hal_display->setBacklightDuty(backlight_duty);
+            TT_LOG_I(TAG, "Backlight %du", settings.backlightDuty);
+            hal_display->setBacklightDuty(settings.backlightDuty);
         } else {
             TT_LOG_I(TAG, "no backlight");
         }
+    }
 
-        if (hal_display->getGammaCurveCount() > 0) {
-            uint8_t gamma_curve;
-            if (app::display::getGammaCurve(gamma_curve)) {
-                hal_display->setGammaCurve(gamma_curve);
-                TT_LOG_I(TAG, "gamma %du", gamma_curve);
+    static bool setupUsbBootMode() {
+        if (!hal::usb::isUsbBootMode()) {
+            return false;
+        }
+
+        TT_LOG_I(TAG, "Rebooting into mass storage device mode");
+        auto mode = hal::usb::getUsbBootMode();  // Get mode before reset
+        hal::usb::resetUsbBootMode();
+        if (mode == hal::usb::BootMode::Flash) {
+            if (!hal::usb::startMassStorageWithFlash()) {
+                TT_LOG_E(TAG, "Unable to start flash mass storage");
+                return false;
+            }
+        } else if (mode == hal::usb::BootMode::Sdmmc) {
+            if (!hal::usb::startMassStorageWithSdmmc()) {
+                TT_LOG_E(TAG, "Unable to start SD mass storage");
+                return false;
             }
         }
 
-        if (hal::usb::isUsbBootMode()) {
-            TT_LOG_I(TAG, "Rebooting into mass storage device mode");
-            hal::usb::resetUsbBootMode();
-            hal::usb::startMassStorageWithSdmmc();
-        } else {
-            initFromBootApp();
+        return true;
+    }
 
-            TickType_t end_time = tt::kernel::getTicks();
-            TickType_t ticks_passed = end_time - start_time;
-            TickType_t minimum_ticks = (CONFIG_TT_SPLASH_DURATION / portTICK_PERIOD_MS);
-            if (minimum_ticks > ticks_passed) {
-                kernel::delayTicks(minimum_ticks - ticks_passed);
-            }
+    static void waitForMinimalSplashDuration(TickType_t startTime) {
+        const auto end_time = kernel::getTicks();
+        const auto ticks_passed = end_time - startTime;
+        constexpr auto minimum_ticks = (CONFIG_TT_SPLASH_DURATION / portTICK_PERIOD_MS);
+        if (minimum_ticks > ticks_passed) {
+            kernel::delayTicks(minimum_ticks - ticks_passed);
+        }
+    }
 
-            tt::service::loader::stopApp();
+    static int32_t bootThreadCallback() {
+        TT_LOG_I(TAG, "Starting boot thread");
+        const auto start_time = kernel::getTicks();
+
+        // Give the UI some time to redraw
+        // If we don't do this, various init calls will read files and block SPI IO for the display
+        // This would result in a blank/black screen being shown during this phase of the boot process
+        // This works with 5 ms on a T-Lora Pager, so we give it 10 ms to be safe
+        TT_LOG_I(TAG, "Delay");
+        kernel::delayMillis(10);
+
+        // TODO: Support for multiple displays
+        TT_LOG_I(TAG, "Setup display");
+        setupDisplay(); // Set backlight
+        prepareFileSystems();
+
+        if (!setupUsbBootMode()) {
+            TT_LOG_I(TAG, "initFromBootApp");
+            registerApps();
+            waitForMinimalSplashDuration(start_time);
+            stop(manifest.appId);
             startNextApp();
         }
+
+        // This event will likely block as other systems are initialized
+        // e.g. Wi-Fi reads AP configs from SD card
+        TT_LOG_I(TAG, "Publish event");
+        kernel::publishSystemEvent(kernel::SystemEvent::BootSplash);
 
         return 0;
     }
 
     static void startNextApp() {
 #ifdef ESP_PLATFORM
-        esp_reset_reason_t reason = esp_reset_reason();
-        if (reason == ESP_RST_PANIC) {
-            app::crashdiagnostics::start();
+        if (esp_reset_reason() == ESP_RST_PANIC) {
+            crashdiagnostics::start();
             return;
         }
 #endif
 
-        auto* config = tt::getConfiguration();
-        assert(!config->launcherAppId.empty());
-        tt::service::loader::startApp(config->launcherAppId);
+        settings::BootSettings boot_properties;
+        std::string launcher_app_id;
+        if (settings::loadBootSettings(boot_properties) && boot_properties.launcherAppId.empty()) {
+            TT_LOG_E(TAG, "Failed to load launcher configuration, or launcher not configured");
+            launcher_app_id = boot_properties.launcherAppId;
+        } else {
+            launcher_app_id = "Launcher";
+        }
+
+        start(launcher_app_id);
+    }
+
+    static int getSmallestDimension() {
+        auto* display = lv_display_get_default();
+        int width = lv_display_get_horizontal_resolution(display);
+        int height = lv_display_get_vertical_resolution(display);
+        return std::min(width, height);
     }
 
 public:
 
-    void onShow(TT_UNUSED AppContext& app, lv_obj_t* parent) override {
-        auto* image = lv_image_create(parent);
-        lv_obj_set_size(image, LV_PCT(100), LV_PCT(100));
-
-        auto paths = app.getPaths();
-        const char* logo = hal::usb::isUsbBootMode() ? "logo_usb.png" : "logo.png";
-        auto logo_path = paths->getSystemPathLvgl(logo);
-        TT_LOG_I(TAG, "%s", logo_path.c_str());
-        lv_image_set_src(image, logo_path.c_str());
-
-        lvgl::obj_set_style_bg_blacken(parent);
-
+    void onCreate(AppContext& app) override {
         // Just in case this app is somehow resumed
         if (thread.getState() == Thread::State::Stopped) {
             thread.start();
@@ -116,12 +168,35 @@ public:
     void onDestroy(AppContext& app) override {
         thread.join();
     }
+
+    void onShow(TT_UNUSED AppContext& app, lv_obj_t* parent) override {
+        lvgl::obj_set_style_bg_blacken(parent);
+        lv_obj_set_style_border_width(parent, 0, LV_STATE_DEFAULT);
+        lv_obj_set_style_radius(parent, 0, LV_STATE_DEFAULT);
+
+        auto* image = lv_image_create(parent);
+        lv_obj_set_size(image, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_align(image, LV_ALIGN_CENTER, 0, 0);
+
+        const auto paths = app.getPaths();
+        const char* logo;
+        // TODO: Replace with automatic asset buckets like on Android
+        if (getSmallestDimension() < 150) { // e.g. Cardputer
+            logo = hal::usb::isUsbBootMode() ? "logo_usb.png" : "logo_small.png";
+        } else {
+            logo = hal::usb::isUsbBootMode() ? "logo_usb.png" : "logo.png";
+        }
+        const auto logo_path = lvgl::PATH_PREFIX + paths->getAssetsPath(logo);
+        TT_LOG_I(TAG, "%s", logo_path.c_str());
+        lv_image_set_src(image, logo_path.c_str());
+    }
 };
 
 extern const AppManifest manifest = {
-    .id = "Boot",
-    .name = "Boot",
-    .type = Type::Boot,
+    .appId = "Boot",
+    .appName = "Boot",
+    .appCategory = Category::System,
+    .appFlags = AppManifest::Flags::HideStatusBar | AppManifest::Flags::Hidden,
     .createApp = create<BootApp>
 };
 

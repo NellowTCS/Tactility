@@ -1,19 +1,21 @@
 #include <Tactility/app/AppManifest.h>
-#include <Tactility/file/File.h>
-#include <Tactility/lvgl/Keyboard.h>
-#include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/Assets.h>
-#include <lvgl.h>
-
 #include <Tactility/app/fileselection/FileSelection.h>
-#include <Tactility/hal/sdcard/SdCardDevice.h>
+#include <Tactility/file/FileLock.h>
+#include <Tactility/lvgl/Toolbar.h>
 #include <Tactility/lvgl/LvglSync.h>
+#include <Tactility/service/loader/Loader.h>
+#include <Tactility/Assets.h>
+
+#include <Tactility/file/File.h>
+
+#include <lvgl.h>
 
 namespace tt::app::notes {
 
-constexpr const char* TAG = "Notes";
+constexpr auto* TAG = "Notes";
+constexpr auto* NOTES_FILE_ARGUMENT = "file";
 
-class NotesApp : public App {
+class NotesApp final : public App {
 
     lv_obj_t* uiCurrentFileName;
     lv_obj_t* uiDropDownMenu;
@@ -81,7 +83,7 @@ class NotesApp : public App {
 
     void openFile(const std::string& path) {
         // We might be reading from the SD card, which could share a SPI bus with other devices (display)
-        hal::sdcard::withSdCardLock<void>(path, [this, path]() {
+        file::getLock(path)->withLock([this, path] {
             auto data = file::readString(path);
             if (data != nullptr) {
                auto lock = lvgl::getSyncLock()->asScopedLock();
@@ -96,24 +98,34 @@ class NotesApp : public App {
 
     bool saveFile(const std::string& path) {
         // We might be writing to SD card, which could share a SPI bus with other devices (display)
-        return hal::sdcard::withSdCardLock<bool>(path, [this, path]() {
+        bool result = false;
+        file::getLock(path)->withLock([&result, this, path] {
            if (file::writeString(path, saveBuffer.c_str())) {
                TT_LOG_I(TAG, "Saved to %s", path.c_str());
                filePath = path;
-               return true;
-           } else {
-               return false;
+               result = true;
            }
         });
+        return result;
     }
 
 #pragma endregion Open_Events_Functions
 
+    void onCreate(AppContext& appContext) override {
+        auto parameters = appContext.getParameters();
+        std::string file_path;
+        if (parameters != nullptr && parameters->optString(NOTES_FILE_ARGUMENT, file_path)) {
+            if (!file_path.empty()) {
+                filePath = file_path;
+            }
+        }
+    }
     void onShow(AppContext& context, lv_obj_t* parent) override {
         lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
-        lv_obj_t* toolbar = tt::lvgl::toolbar_create(parent, context);
+        lv_obj_t* toolbar = lvgl::toolbar_create(parent, context);
         lv_obj_align(toolbar, LV_ALIGN_TOP_MID, 0, 0);
 
         uiDropDownMenu = lv_dropdown_create(toolbar);
@@ -168,12 +180,9 @@ class NotesApp : public App {
         lv_label_set_text(uiCurrentFileName, "Untitled");
         lv_obj_align(uiCurrentFileName, LV_ALIGN_CENTER, 0, 0);
 
-        //TODO: Move this to SD Card?
-        if (!file::findOrCreateDirectory(context.getPaths()->getDataDirectory(), 0777)) {
-            TT_LOG_E(TAG, "Failed to find or create path %s", context.getPaths()->getDataDirectory().c_str());
+        if (!filePath.empty()) {
+            openFile(filePath);
         }
-
-        lvgl::keyboard_add_textarea(uiNoteText);
     }
 
     void onResult(AppContext& appContext, LaunchId launchId, Result result, std::unique_ptr<Bundle> resultData) override {
@@ -198,10 +207,16 @@ class NotesApp : public App {
 };
 
 extern const AppManifest manifest = {
-    .id = "Notes",
-    .name = "Notes",
-    .icon = TT_ASSETS_APP_ICON_NOTES,
+    .appId = "Notes",
+    .appName = "Notes",
+    .appIcon = TT_ASSETS_APP_ICON_NOTES,
     .createApp = create<NotesApp>
 };
+
+LaunchId start(const std::string& filePath) {
+    auto parameters = std::make_shared<Bundle>();
+    parameters->putString(NOTES_FILE_ARGUMENT, filePath);
+    return app::start(manifest.appId, parameters);
+}
 
 } // namespace tt::app::notes

@@ -20,7 +20,10 @@ namespace tt {
 class Mutex final : public Lock {
 
 public:
-
+    /**
+     * A "Normal" mutex can only be locked once. Even from within the same task/thread.
+     * A "Recursive" mutex can be locked again from the same task/thread.
+     */
     enum class Type {
         Normal,
         Recursive,
@@ -43,18 +46,18 @@ public:
     using Lock::lock;
 
     explicit Mutex(Type type = Type::Normal);
-    ~Mutex() final = default;
+    ~Mutex() override = default;
 
     /** Attempt to lock the mutex. Blocks until timeout passes or lock is acquired.
      * @param[in] timeout
      * @return success result
      */
-    bool lock(TickType_t timeout) const final;
+    bool lock(TickType_t timeout) const override;
 
     /** Attempt to unlock the mutex.
      * @return success result
      */
-    bool unlock() const final;
+    bool unlock() const override;
 
     /** @return the owner of the thread */
     ThreadId getOwner() const;

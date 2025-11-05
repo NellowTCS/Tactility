@@ -14,8 +14,10 @@ public:
 
     Type getType() const override { return Type::Keyboard; }
 
-    virtual bool start(lv_display_t* display) = 0;
-    virtual bool stop() = 0;
+    virtual bool startLvgl(lv_display_t* display) = 0;
+    virtual bool stopLvgl() = 0;
+
+    /** @return true when the keyboard currently is physically attached */
     virtual bool isAttached() const = 0;
 
     virtual lv_indev_t* _Nullable getLvglIndev() = 0;

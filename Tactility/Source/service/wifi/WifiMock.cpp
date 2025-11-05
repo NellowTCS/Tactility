@@ -1,28 +1,23 @@
-#include "Tactility/service/wifi/Wifi.h"
-
 #ifndef ESP_PLATFORM
 
-#include "Tactility/service/ServiceContext.h"
+#include <Tactility/service/wifi/Wifi.h>
 
 #include <Tactility/Check.h>
 #include <Tactility/Log.h>
 #include <Tactility/Mutex.h>
 #include <Tactility/PubSub.h>
+#include <Tactility/service/Service.h>
+#include <Tactility/service/ServiceManifest.h>
 
 namespace tt::service::wifi {
 
-#define TAG "wifi"
-#define WIFI_CONNECTED_BIT BIT0
-#define WIFI_FAIL_BIT BIT1
+constexpr auto* TAG = "Wifi";
 
 struct Wifi {
-    Wifi() = default;
-    ~Wifi() = default;
-
     /** @brief Locking mechanism for modifying the Wifi instance */
     Mutex mutex = Mutex(Mutex::Type::Recursive);
     /** @brief The public event bus */
-    std::shared_ptr<PubSub> pubsub = std::make_shared<PubSub>();
+    std::shared_ptr<PubSub<WifiEvent>> pubsub = std::make_shared<PubSub<WifiEvent>>();
     /** @brief The internal message queue */
     bool scan_active = false;
     bool secure_connection = false;
@@ -34,16 +29,15 @@ static Wifi* wifi = nullptr;
 
 // region Static
 
-static void publish_event_simple(Wifi* wifi, EventType type) {
-    Event turning_on_event = { .type = type };
-    wifi->pubsub->publish(&turning_on_event);
+static void publish_event(WifiEvent event) {
+    wifi->pubsub->publish(event);
 }
 
 // endregion Static
 
 // region Public functions
 
-std::shared_ptr<PubSub> getPubsub() {
+std::shared_ptr<PubSub<WifiEvent>> getPubsub() {
     assert(wifi);
     return wifi->pubsub;
 }
@@ -66,7 +60,7 @@ bool isScanning() {
     return wifi->scan_active;
 }
 
-void connect(const settings::WifiApSettings* ap, bool remember) {
+void connect(const settings::WifiApSettings& ap, bool remember) {
     assert(wifi);
     // TODO: implement
 }
@@ -145,12 +139,13 @@ class WifiService final : public Service {
 
 public:
 
-    void onStart(TT_UNUSED ServiceContext& service) final {
+    bool onStart(TT_UNUSED ServiceContext& service) override {
         tt_check(wifi == nullptr);
         wifi = new Wifi();
+        return true;
     }
 
-    void onStop(TT_UNUSED ServiceContext& service) final {
+    void onStop(TT_UNUSED ServiceContext& service) override {
         tt_check(wifi != nullptr);
         delete wifi;
         wifi = nullptr;

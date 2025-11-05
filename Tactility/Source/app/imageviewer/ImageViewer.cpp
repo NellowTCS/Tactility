@@ -1,7 +1,7 @@
-#include "Tactility/lvgl/Style.h"
-#include "Tactility/lvgl/Toolbar.h"
-#include "Tactility/service/loader/Loader.h"
-
+#include <Tactility/lvgl/Lvgl.h>
+#include <Tactility/lvgl/Style.h>
+#include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/service/loader/Loader.h>
 #include <Tactility/TactilityCore.h>
 #include <Tactility/StringUtils.h>
 
@@ -11,10 +11,10 @@ namespace tt::app::imageviewer {
 
 extern const AppManifest manifest;
 
-#define TAG "image_viewer"
-#define IMAGE_VIEWER_FILE_ARGUMENT "file"
+constexpr auto* TAG = "ImageViewer";
+constexpr auto* IMAGE_VIEWER_FILE_ARGUMENT = "file";
 
-class ImageViewerApp : public App {
+class ImageViewerApp final : public App {
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         auto wrapper = lv_obj_create(parent);
@@ -30,7 +30,8 @@ class ImageViewerApp : public App {
         lv_obj_align_to(image_wrapper, toolbar, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
         lv_obj_set_width(image_wrapper, LV_PCT(100));
         auto parent_height = lv_obj_get_height(wrapper);
-        lv_obj_set_height(image_wrapper, parent_height - TOOLBAR_HEIGHT);
+        auto toolbar_height = lv_obj_get_height(toolbar);
+        lv_obj_set_height(image_wrapper, parent_height - toolbar_height);
         lv_obj_set_flex_flow(image_wrapper, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_flex_align(image_wrapper, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_pad_all(image_wrapper, 0, 0);
@@ -47,7 +48,7 @@ class ImageViewerApp : public App {
         tt_check(bundle != nullptr, "Parameters not set");
         std::string file_argument;
         if (bundle->optString(IMAGE_VIEWER_FILE_ARGUMENT, file_argument)) {
-            std::string prefixed_path = "A:" + file_argument;
+            std::string prefixed_path = lvgl::PATH_PREFIX + file_argument;
             TT_LOG_I(TAG, "Opening %s", prefixed_path.c_str());
             lv_img_set_src(image, prefixed_path.c_str());
             auto path = string::getLastPathSegment(file_argument);
@@ -59,16 +60,17 @@ class ImageViewerApp : public App {
 };
 
 extern const AppManifest manifest = {
-    .id = "ImageViewer",
-    .name = "Image Viewer",
-    .type = Type::Hidden,
+    .appId = "ImageViewer",
+    .appName = "Image Viewer",
+    .appCategory = Category::System,
+    .appFlags = AppManifest::Flags::Hidden,
     .createApp = create<ImageViewerApp>
 };
 
-void start(const std::string& file) {
+LaunchId start(const std::string& file) {
     auto parameters = std::make_shared<Bundle>();
     parameters->putString(IMAGE_VIEWER_FILE_ARGUMENT, file);
-    service::loader::startApp(manifest.id, parameters);
+    return app::start(manifest.appId, parameters);
 }
 
 } // namespace

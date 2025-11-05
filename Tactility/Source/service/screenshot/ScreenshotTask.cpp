@@ -11,6 +11,7 @@
 #include <Tactility/TactilityCore.h>
 
 #include <format>
+#include <Tactility/CpuAffinity.h>
 
 namespace tt::service::screenshot {
 
@@ -83,10 +84,10 @@ void ScreenshotTask::taskMain() {
             auto appContext = app::getCurrentAppContext();
             if (appContext != nullptr) {
                 const app::AppManifest& manifest = appContext->getManifest();
-                if (manifest.id != last_app_id) {
+                if (manifest.appId != last_app_id) {
                     kernel::delayMillis(100);
-                    last_app_id = manifest.id;
-                    auto filename = std::format("{}/screenshot-{}.png", work.path, manifest.id);
+                    last_app_id = manifest.appId;
+                    auto filename = std::format("{}/screenshot-{}.png", work.path, manifest.appId);
                     makeScreenshot(filename);
                 }
             }
@@ -109,10 +110,11 @@ void ScreenshotTask::taskStart() {
     thread = new Thread(
         "screenshot",
         8192,
-        [this]() {
+        [this] {
             this->taskMain();
             return 0;
-        }
+        },
+        getCpuAffinityConfiguration().graphics
     );
     thread->start();
 }

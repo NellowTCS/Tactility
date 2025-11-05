@@ -1,12 +1,13 @@
-#include "Tactility/TactilityHeadless.h"
-#include "Tactility/Timer.h"
-#include "Tactility/app/AppManifest.h"
-#include "Tactility/app/alertdialog/AlertDialog.h"
-#include "Tactility/lvgl/LvglSync.h"
-#include "Tactility/lvgl/Toolbar.h"
-#include "Tactility/service/gps/GpsUtil.h"
-#include "Tactility/service/loader/Loader.h"
+#include <Tactility/Tactility.h>
+
+#include <Tactility/app/AppManifest.h>
+#include <Tactility/app/alertdialog/AlertDialog.h>
+#include <Tactility/lvgl/LvglSync.h>
+#include <Tactility/lvgl/Toolbar.h>
 #include <Tactility/service/gps/GpsService.h>
+#include <Tactility/service/gps/GpsState.h>
+#include <Tactility/service/loader/Loader.h>
+#include <Tactility/Timer.h>
 
 #include <cstring>
 #include <format>
@@ -18,11 +19,11 @@ extern AppManifest manifest;
 
 namespace tt::app::gpssettings {
 
-constexpr const char* TAG = "GpsSettings";
-
 extern const AppManifest manifest;
 
 class GpsSettingsApp final : public App {
+
+    static constexpr auto* TAG = "GpsSettings";
 
     std::unique_ptr<Timer> timer;
     std::shared_ptr<GpsSettingsApp*> appReference = std::make_shared<GpsSettingsApp*>(this);
@@ -34,13 +35,8 @@ class GpsSettingsApp final : public App {
     lv_obj_t* gpsConfigWrapper = nullptr;
     lv_obj_t* addGpsWrapper = nullptr;
     bool hasSetInfo = false;
-    PubSub::SubscriptionHandle serviceStateSubscription = nullptr;
+    PubSub<service::gps::State>::SubscriptionHandle serviceStateSubscription = nullptr;
     std::shared_ptr<service::gps::GpsService> service;
-
-    static void onServiceStateChangedCallback(const void* data, void* context) {
-        auto* app = (GpsSettingsApp*)context;
-        app->onServiceStateChanged();
-    }
 
     void onServiceStateChanged() {
         auto lock = lvgl::getSyncLock()->asScopedLock();
@@ -62,7 +58,7 @@ class GpsSettingsApp final : public App {
     }
 
     void onAddGps() {
-        app::start(addgps::manifest.id);
+        app::start(addgps::manifest.appId);
     }
 
     void startReceivingUpdates() {
@@ -272,14 +268,15 @@ class GpsSettingsApp final : public App {
 public:
 
     GpsSettingsApp() {
-        timer = std::make_unique<Timer>(Timer::Type::Periodic, [this]() {
+        timer = std::make_unique<Timer>(Timer::Type::Periodic, [this] {
             updateViews();
         });
         service = service::gps::findGpsService();
     }
 
-    void onShow(AppContext& app, lv_obj_t* parent) final {
+    void onShow(AppContext& app, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
         auto* toolbar = lvgl::toolbar_create(parent, app);
 
@@ -313,7 +310,9 @@ public:
         lv_obj_set_style_pad_all(infoContainerWidget, 0, 0);
         hasSetInfo = false;
 
-        serviceStateSubscription = service->getStatePubsub()->subscribe(onServiceStateChangedCallback, this);
+        serviceStateSubscription = service->getStatePubsub()->subscribe([this](auto) {
+            onServiceStateChanged();
+        });
 
         gpsConfigWrapper = lv_obj_create(main_wrapper);
         lv_obj_set_size(gpsConfigWrapper, LV_PCT(100), LV_SIZE_CONTENT);
@@ -338,22 +337,22 @@ public:
         updateViews();
     }
 
-    void onHide(AppContext& app) final {
+    void onHide(AppContext& app) override {
         service->getStatePubsub()->unsubscribe(serviceStateSubscription);
         serviceStateSubscription = nullptr;
     }
 };
 
 extern const AppManifest manifest = {
-    .id = "GpsSettings",
-    .name = "GPS",
-    .icon = LV_SYMBOL_GPS,
-    .type = Type::Settings,
+    .appId = "GpsSettings",
+    .appName = "GPS",
+    .appIcon = LV_SYMBOL_GPS,
+    .appCategory = Category::Settings,
     .createApp = create<GpsSettingsApp>
 };
 
 void start() {
-    app::start(manifest.id);
+    app::start(manifest.appId);
 }
 
 } // namespace

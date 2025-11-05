@@ -1,13 +1,12 @@
-#include "Tactility/app/i2cscanner/I2cScannerPrivate.h"
-#include "Tactility/app/i2cscanner/I2cScannerThread.h"
-#include "Tactility/app/i2cscanner/I2cHelpers.h"
+#include <Tactility/app/i2cscanner/I2cScannerPrivate.h>
+#include <Tactility/app/i2cscanner/I2cHelpers.h>
 
-#include "Tactility/Preferences.h"
-#include "Tactility/app/AppContext.h"
-#include "Tactility/hal/i2c/I2cDevice.h"
-#include "Tactility/lvgl/LvglSync.h"
-#include "Tactility/lvgl/Toolbar.h"
-#include "Tactility/service/loader/Loader.h"
+#include <Tactility/Preferences.h>
+#include <Tactility/app/AppContext.h>
+#include <Tactility/hal/i2c/I2cDevice.h>
+#include <Tactility/lvgl/LvglSync.h>
+#include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/service/loader/Loader.h>
 
 #include <Tactility/Assets.h>
 #include <Tactility/Tactility.h>
@@ -15,16 +14,14 @@
 
 #include <format>
 
-#define START_SCAN_TEXT "Scan"
-#define STOP_SCAN_TEXT "Stop scan"
-
 namespace tt::app::i2cscanner {
 
 extern const AppManifest manifest;
 
-class I2cScannerApp : public App {
+class I2cScannerApp final : public App {
 
-private:
+    static constexpr auto* START_SCAN_TEXT = "Scan";
+    static constexpr auto* STOP_SCAN_TEXT = "Stop scan";
 
     // Core
     Mutex mutex = Mutex(Mutex::Type::Recursive);
@@ -72,7 +69,7 @@ public:
 /** Returns the app data if the app is active. Note that this could clash if the same app is started twice and a background thread is slow. */
 std::shared_ptr<I2cScannerApp> _Nullable optApp() {
     auto appContext = getCurrentAppContext();
-    if (appContext != nullptr && appContext->getManifest().id == manifest.id) {
+    if (appContext != nullptr && appContext->getManifest().appId == manifest.appId) {
         return std::static_pointer_cast<I2cScannerApp>(appContext->getApp());
     } else {
         return nullptr;
@@ -97,6 +94,7 @@ int32_t I2cScannerApp::getLastBusIndex() {
 
 void I2cScannerApp::onShow(AppContext& app, lv_obj_t* parent) {
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
     lvgl::toolbar_create(parent, app);
 
@@ -139,12 +137,12 @@ void I2cScannerApp::onShow(AppContext& app, lv_obj_t* parent) {
     lv_obj_add_flag(scan_list, LV_OBJ_FLAG_HIDDEN);
     scanListWidget = scan_list;
 
-    auto i2c_devices = tt::getConfiguration()->hardware->i2c;
-    if (selected_bus )
-    assert(selected_bus < i2c_devices.size());
-    port = i2c_devices[selected_bus].port;
-
-    selectBus(selected_bus);
+    auto i2c_devices = getConfiguration()->hardware->i2c;
+    if (!i2c_devices.empty()) {
+        assert(selected_bus < i2c_devices.size());
+        port = i2c_devices[selected_bus].port;
+        selectBus(selected_bus);
+    }
 }
 
 void I2cScannerApp::onHide(AppContext& app) {
@@ -179,13 +177,6 @@ void I2cScannerApp::onPressScanCallback(lv_event_t* event) {
     auto* app = (I2cScannerApp*)lv_event_get_user_data(event);
     if (app != nullptr) {
         app->onPressScan(event);
-    }
-}
-
-void I2cScannerApp::onScanTimerCallback() {
-    auto app = optApp();
-    if (app != nullptr) {
-        app->onScanTimer();
     }
 }
 
@@ -286,8 +277,8 @@ void I2cScannerApp::startScanning() {
         lv_obj_clean(scanListWidget);
 
         scanState = ScanStateScanning;
-        scanTimer = std::make_unique<Timer>(Timer::Type::Once, [](){
-            onScanTimerCallback();
+        scanTimer = std::make_unique<Timer>(Timer::Type::Once, [this]{
+            onScanTimer();
         });
         scanTimer->start(10);
         mutex.unlock();
@@ -312,7 +303,7 @@ void I2cScannerApp::onSelectBus(lv_event_t* event) {
 }
 
 void I2cScannerApp::selectBus(int32_t selected) {
-    auto i2c_devices = tt::getConfiguration()->hardware->i2c;
+    auto i2c_devices = getConfiguration()->hardware->i2c;
     assert(selected < i2c_devices.size());
 
     if (mutex.lock(100 / portTICK_PERIOD_MS)) {
@@ -323,7 +314,7 @@ void I2cScannerApp::selectBus(int32_t selected) {
     }
 
     TT_LOG_I(TAG, "Selected %ld", selected);
-    setLastBusIndex((int32_t)selected);
+    setLastBusIndex(selected);
 
     startScanning();
 
@@ -412,15 +403,15 @@ void I2cScannerApp::onScanTimerFinished() {
 }
 
 extern const AppManifest manifest = {
-    .id = "I2cScanner",
-    .name = "I2C Scanner",
-    .icon = TT_ASSETS_APP_ICON_I2C_SETTINGS,
-    .type = Type::System,
+    .appId = "I2cScanner",
+    .appName = "I2C Scanner",
+    .appIcon = TT_ASSETS_APP_ICON_I2C_SETTINGS,
+    .appCategory = Category::System,
     .createApp = create<I2cScannerApp>
 };
 
-void start() {
-    service::loader::startApp(manifest.id);
+LaunchId start() {
+    return app::start(manifest.appId);
 }
 
 } // namespace

@@ -22,21 +22,30 @@ namespace tt::app::alertdialog {
 
 extern const AppManifest manifest;
 
-void start(const std::string& title, const std::string& message, const std::vector<std::string>& buttonLabels) {
+LaunchId start(const std::string& title, const std::string& message, const std::vector<std::string>& buttonLabels) {
     std::string items_joined = string::join(buttonLabels, PARAMETER_ITEM_CONCATENATION_TOKEN);
     auto bundle = std::make_shared<Bundle>();
     bundle->putString(PARAMETER_BUNDLE_KEY_TITLE, title);
     bundle->putString(PARAMETER_BUNDLE_KEY_MESSAGE, message);
     bundle->putString(PARAMETER_BUNDLE_KEY_BUTTON_LABELS, items_joined);
-    service::loader::startApp(manifest.id, bundle);
+    return app::start(manifest.appId, bundle);
 }
 
-void start(const std::string& title, const std::string& message) {
+LaunchId start(const std::string& title, const std::string& message, const std::vector<const char*>& buttonLabels) {
+    std::string items_joined = string::join(buttonLabels, PARAMETER_ITEM_CONCATENATION_TOKEN);
+    auto bundle = std::make_shared<Bundle>();
+    bundle->putString(PARAMETER_BUNDLE_KEY_TITLE, title);
+    bundle->putString(PARAMETER_BUNDLE_KEY_MESSAGE, message);
+    bundle->putString(PARAMETER_BUNDLE_KEY_BUTTON_LABELS, items_joined);
+    return app::start(manifest.appId, bundle);
+}
+
+LaunchId start(const std::string& title, const std::string& message) {
     auto bundle = std::make_shared<Bundle>();
     bundle->putString(PARAMETER_BUNDLE_KEY_TITLE, title);
     bundle->putString(PARAMETER_BUNDLE_KEY_MESSAGE, message);
     bundle->putString(PARAMETER_BUNDLE_KEY_BUTTON_LABELS, "OK");
-    service::loader::startApp(manifest.id, bundle);
+    return app::start(manifest.appId, bundle);
 }
 
 int32_t getResultIndex(const Bundle& bundle) {
@@ -57,8 +66,6 @@ static std::string getTitleParameter(std::shared_ptr<const Bundle> bundle) {
 
 class AlertDialogApp : public App {
 
-private:
-
     static void onButtonClickedCallback(lv_event_t* e) {
         auto app = std::static_pointer_cast<AlertDialogApp>(getCurrentApp());
         assert(app != nullptr);
@@ -66,15 +73,14 @@ private:
     }
 
     void onButtonClicked(lv_event_t* e) {
-        lv_event_code_t code = lv_event_get_code(e);
         auto index = reinterpret_cast<std::size_t>(lv_event_get_user_data(e));
         TT_LOG_I(TAG, "Selected item at index %d", index);
 
         auto bundle = std::make_unique<Bundle>();
         bundle->putInt32(RESULT_BUNDLE_KEY_INDEX, (int32_t)index);
-        setResult(app::Result::Ok, std::move(bundle));
+        setResult(Result::Ok, std::move(bundle));
 
-        service::loader::stopApp();
+        stop(manifest.appId);
     }
 
     static void createButton(lv_obj_t* parent, const std::string& text, size_t index) {
@@ -126,9 +132,10 @@ public:
 };
 
 extern const AppManifest manifest = {
-    .id = "AlertDialog",
-    .name = "Alert Dialog",
-    .type = Type::Hidden,
+    .appId = "AlertDialog",
+    .appName = "Alert Dialog",
+    .appCategory = Category::System,
+    .appFlags = AppManifest::Flags::Hidden,
     .createApp = create<AlertDialogApp>
 };
 

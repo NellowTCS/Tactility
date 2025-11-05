@@ -8,7 +8,6 @@
 #include <cassert>
 
 namespace tt::hal {
-
 /** Base class for HAL-related devices. */
 class Device {
 
@@ -20,6 +19,7 @@ public:
         Touch,
         SdCard,
         Keyboard,
+        Encoder,
         Power,
         Gps
     };
@@ -36,7 +36,7 @@ public:
     virtual ~Device() = default;
 
     /** Unique identifier */
-    inline Id getId() const { return id; }
+    Id getId() const { return id; }
 
     /** The type of device */
     virtual Type getType() const = 0;
@@ -95,6 +95,17 @@ std::vector<std::shared_ptr<DeviceType>> findDevices(Device::Type type) {
     }
 }
 
+template<class DeviceType>
+void findDevices(Device::Type type, std::function<bool(const std::shared_ptr<DeviceType>&)> onDeviceFound) {
+    auto devices_view = findDevices(type);
+    for (auto& device : devices_view) {
+        auto typed_device = std::static_pointer_cast<DeviceType>(device);
+        if (!onDeviceFound(typed_device)) {
+            break;
+        }
+    }
+}
+
 /** Find the first device of the specified type and cast it to the specified class */
 template<class DeviceType>
 std::shared_ptr<DeviceType> findFirstDevice(Device::Type type) {
@@ -106,5 +117,8 @@ std::shared_ptr<DeviceType> findFirstDevice(Device::Type type) {
         return std::static_pointer_cast<DeviceType>(first);
     }
 }
+
+/** @return true if there are 1 or more devices of the specified type */
+bool hasDevice(Device::Type type);
 
 }

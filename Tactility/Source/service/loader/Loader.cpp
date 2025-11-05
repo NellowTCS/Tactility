@@ -1,28 +1,25 @@
-#include "Tactility/service/loader/Loader.h"
-#include "Tactility/app/AppInstance.h"
-#include "Tactility/app/AppManifest.h"
-#include "Tactility/app/ManifestRegistry.h"
+#include <Tactility/service/loader/Loader.h>
+#include <Tactility/app/AppInstance.h>
+#include <Tactility/app/AppManifest.h>
+#include <Tactility/app/AppRegistration.h>
 
-#include <Tactility/RtosCompat.h>
 #include <Tactility/DispatcherThread.h>
 #include <Tactility/service/ServiceManifest.h>
-#include <Tactility/service/ServiceRegistry.h>
+#include <Tactility/service/ServiceRegistration.h>
 
-#include <stack>
+#include <vector>
 
 #ifdef ESP_PLATFORM
-#include <Tactility/TactilityHeadless.h>
 #include <esp_heap_caps.h>
 #include <utility>
-#else
-#include "Tactility/lvgl/LvglSync.h"
 #endif
 
 namespace tt::service::loader {
 
-#define TAG "loader"
-#define LOADER_TIMEOUT (100 / portTICK_PERIOD_MS)
+constexpr auto* TAG = "Loader";
+constexpr auto LOADER_TIMEOUT = (100 / portTICK_PERIOD_MS);
 
+// Forward declaration
 extern const ServiceManifest manifest;
 
 static const char* appStateToString(app::State state) {
@@ -30,66 +27,23 @@ static const char* appStateToString(app::State state) {
         using enum app::State;
         case Initial:
             return "initial";
-        case Started:
+        case Created:
             return "started";
         case Showing:
             return "showing";
         case Hiding:
             return "hiding";
-        case Stopped:
+        case Destroyed:
             return "stopped";
         default:
             return "?";
     }
 }
 
-// region AppManifest
-
-class LoaderService final : public Service {
-
-    std::shared_ptr<PubSub> pubsubExternal = std::make_shared<PubSub>();
-    Mutex mutex = Mutex(Mutex::Type::Recursive);
-    std::stack<std::shared_ptr<app::AppInstance>> appStack;
-    app::LaunchId nextLaunchId = 0;
-
-    /** The dispatcher thread needs a callstack large enough to accommodate all the dispatched methods.
-     * This includes full LVGL redraw via Gui::redraw()
-     */
-    std::unique_ptr<DispatcherThread> dispatcherThread = std::make_unique<DispatcherThread>("loader_dispatcher", 6144); // Files app requires ~5k
-
-    void onStartAppMessage(const std::string& id, app::LaunchId launchId, std::shared_ptr<const Bundle> parameters);
-    void onStopAppMessage(const std::string& id);
-
-    void transitionAppToState(const std::shared_ptr<app::AppInstance>& app, app::State state);
-
-public:
-
-    void onStart(TT_UNUSED ServiceContext& service) final {
-        dispatcherThread->start();
-    }
-
-    void onStop(TT_UNUSED ServiceContext& service) final {
-        // Send stop signal to thread and wait for thread to finish
-        mutex.withLock([this]() {
-            dispatcherThread->stop();
-        });
-    }
-
-    app::LaunchId startApp(const std::string& id, std::shared_ptr<const Bundle> parameters);
-    void stopApp();
-    std::shared_ptr<app::AppContext> _Nullable getCurrentAppContext();
-
-    std::shared_ptr<PubSub> getPubsub() const { return pubsubExternal; }
-};
-
-std::shared_ptr<LoaderService> _Nullable optScreenshotService() {
-    return service::findServiceById<LoaderService>(manifest.id);
-}
-
 void LoaderService::onStartAppMessage(const std::string& id, app::LaunchId launchId, std::shared_ptr<const Bundle> parameters) {
     TT_LOG_I(TAG, "Start by id %s", id.c_str());
 
-    auto app_manifest = app::findAppById(id);
+    auto app_manifest = app::findAppManifestById(id);
     if (app_manifest == nullptr) {
         TT_LOG_E(TAG, "App not found: %s", id.c_str());
         return;
@@ -101,27 +55,22 @@ void LoaderService::onStartAppMessage(const std::string& id, app::LaunchId launc
         return;
     }
 
-    auto previous_app = !appStack.empty() ? appStack.top() : nullptr;
+    auto previous_app = !appStack.empty() ? appStack[appStack.size() - 1]: nullptr;
     auto new_app = std::make_shared<app::AppInstance>(app_manifest, launchId, parameters);
 
-    new_app->mutableFlags().showStatusbar = (app_manifest->type != app::Type::Boot);
-
-    appStack.push(new_app);
-    transitionAppToState(new_app, app::State::Initial);
-    transitionAppToState(new_app, app::State::Started);
+    new_app->mutableFlags().hideStatusbar = (app_manifest->appFlags & app::AppManifest::Flags::HideStatusBar);
 
     // We might have to hide the previous app first
     if (previous_app != nullptr) {
         transitionAppToState(previous_app, app::State::Hiding);
     }
 
+    appStack.push_back(new_app);
+    transitionAppToState(new_app, app::State::Created);
     transitionAppToState(new_app, app::State::Showing);
-
-    LoaderEvent event_external = { .type = LoaderEventTypeApplicationStarted };
-    pubsubExternal->publish(&event_external);
 }
 
-void LoaderService::onStopAppMessage(const std::string& id) {
+void LoaderService::onStopTopAppMessage(const std::string& id) {
     auto lock = mutex.asScopedLock();
     if (!lock.lock(LOADER_TIMEOUT)) {
         TT_LOG_E(TAG, LOG_MESSAGE_MUTEX_LOCK_FAILED);
@@ -136,14 +85,14 @@ void LoaderService::onStopAppMessage(const std::string& id) {
     }
 
     // Stop current app
-    auto app_to_stop = appStack.top();
+    auto app_to_stop = appStack[appStack.size() - 1];
 
-    if (app_to_stop->getManifest().id != id) {
-        TT_LOG_E(TAG, "Stop app: id mismatch (wanted %s but found %s on top of stack)", id.c_str(), app_to_stop->getManifest().id.c_str());
+    if (app_to_stop->getManifest().appId != id) {
+        TT_LOG_E(TAG, "Stop app: id mismatch (wanted %s but found %s on top of stack)", id.c_str(), app_to_stop->getManifest().appId.c_str());
         return;
     }
 
-    if (original_stack_size == 1 && app_to_stop->getManifest().type != app::Type::Boot) {
+    if (original_stack_size == 1 && app_to_stop->getManifest().appName != "Boot") {
         TT_LOG_E(TAG, "Stop app: can't stop root app");
         return;
     }
@@ -158,18 +107,18 @@ void LoaderService::onStopAppMessage(const std::string& id) {
     auto app_to_stop_launch_id = app_to_stop->getLaunchId();
 
     transitionAppToState(app_to_stop, app::State::Hiding);
-    transitionAppToState(app_to_stop, app::State::Stopped);
+    transitionAppToState(app_to_stop, app::State::Destroyed);
 
-    appStack.pop();
+    appStack.pop_back();
 
     // We only expect the app to be referenced within the current scope
     if (app_to_stop.use_count() > 1) {
-        TT_LOG_W(TAG, "Memory leak: Stopped %s, but use count is %ld", app_to_stop->getManifest().id.c_str(), app_to_stop.use_count() - 1);
+        TT_LOG_W(TAG, "Memory leak: Stopped %s, but use count is %ld", app_to_stop->getManifest().appId.c_str(), app_to_stop.use_count() - 1);
     }
 
     // Refcount is expected to be 2: 1 within app_to_stop and 1 within the current scope
     if (app_to_stop->getApp().use_count() > 2) {
-        TT_LOG_W(TAG, "Memory leak: Stopped %s, but use count is %ld", app_to_stop->getManifest().id.c_str(), app_to_stop->getApp().use_count() - 2);
+        TT_LOG_W(TAG, "Memory leak: Stopped %s, but use count is %ld", app_to_stop->getManifest().appId.c_str(), app_to_stop->getApp().use_count() - 2);
     }
 
 #ifdef ESP_PLATFORM
@@ -179,7 +128,7 @@ void LoaderService::onStopAppMessage(const std::string& id) {
     std::shared_ptr<app::AppInstance> instance_to_resume;
     // If there's a previous app, resume it
     if (!appStack.empty()) {
-        instance_to_resume = appStack.top();
+        instance_to_resume = appStack[appStack.size() - 1];
         assert(instance_to_resume);
         transitionAppToState(instance_to_resume, app::State::Showing);
     }
@@ -187,9 +136,6 @@ void LoaderService::onStopAppMessage(const std::string& id) {
     // Unlock so that we can send results to app and they can also start/stop new apps while processing these results
     lock.unlock();
     // WARNING: After this point we cannot change the app states from this method directly anymore as we don't have a lock!
-
-    LoaderEvent event_external = { .type = LoaderEventTypeApplicationStopped };
-    pubsubExternal->publish(&event_external);
 
     if (instance_to_resume != nullptr) {
         if (result_set) {
@@ -209,7 +155,6 @@ void LoaderService::onStopAppMessage(const std::string& id) {
                 );
             }
         } else {
-            const Bundle empty_bundle;
             instance_to_resume->getApp()->onResult(
                 *instance_to_resume,
                 app_to_stop_launch_id,
@@ -220,6 +165,70 @@ void LoaderService::onStopAppMessage(const std::string& id) {
     }
 }
 
+int LoaderService::findAppInStack(const std::string& id) const {
+    auto lock = mutex.asScopedLock();
+    lock.lock();
+    for (size_t i = 0; i < appStack.size(); i++) {
+        if (appStack[i]->getManifest().appId == id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void LoaderService::onStopAllAppMessage(const std::string& id) {
+    auto lock = mutex.asScopedLock();
+    if (!lock.lock(LOADER_TIMEOUT)) {
+        TT_LOG_E(TAG, LOG_MESSAGE_MUTEX_LOCK_FAILED);
+        return;
+    }
+
+    if (!isRunning(id)) {
+        TT_LOG_E(TAG, "Stop all: %s not running", id.c_str());
+        return;
+    }
+
+    int app_to_stop_index = findAppInStack(id);
+    if (app_to_stop_index < 0) {
+        TT_LOG_E(TAG, "Stop all: %s not found in stack", id.c_str());
+        return;
+    }
+
+
+    // Find an app to resume, if any
+    std::shared_ptr<app::AppInstance> instance_to_resume;
+    if (app_to_stop_index > 0) {
+        instance_to_resume = appStack[app_to_stop_index - 1];
+        assert(instance_to_resume);
+    }
+
+    // Stop all apps and find the LaunchId of the last-closed app, so we can call onResult() if needed
+    app::LaunchId last_launch_id = 0;
+    for (int i = appStack.size() - 1; i >= app_to_stop_index; i--) {
+        auto app_to_stop = appStack[i];
+        // Hide the app first in case it's still being shown
+        if (app_to_stop->getState() == app::State::Showing) {
+            transitionAppToState(app_to_stop, app::State::Hiding);
+        }
+        transitionAppToState(app_to_stop, app::State::Destroyed);
+        last_launch_id = app_to_stop->getLaunchId();
+
+        appStack.pop_back();
+    }
+
+    if (instance_to_resume != nullptr) {
+        TT_LOG_I(TAG, "Resuming %s", instance_to_resume->getManifest().appId.c_str());
+        transitionAppToState(instance_to_resume, app::State::Showing);
+
+        instance_to_resume->getApp()->onResult(
+            *instance_to_resume,
+            last_launch_id,
+            app::Result::Cancelled,
+            nullptr
+        );
+    }
+}
+
 void LoaderService::transitionAppToState(const std::shared_ptr<app::AppInstance>& app, app::State state) {
     const app::AppManifest& app_manifest = app->getManifest();
     const app::State old_state = app->getState();
@@ -227,7 +236,7 @@ void LoaderService::transitionAppToState(const std::shared_ptr<app::AppInstance>
     TT_LOG_I(
         TAG,
         "App \"%s\" state: %s -> %s",
-        app_manifest.id.c_str(),
+        app_manifest.appId.c_str(),
         appStateToString(old_state),
         appStateToString(state)
     );
@@ -235,91 +244,87 @@ void LoaderService::transitionAppToState(const std::shared_ptr<app::AppInstance>
     switch (state) {
         using enum app::State;
         case Initial:
-            break;
-        case Started:
+            tt_crash(LOG_MESSAGE_ILLEGAL_STATE);
+        case Created:
+            assert(app->getState() == app::State::Initial);
             app->getApp()->onCreate(*app);
+            pubsubExternal->publish(Event::ApplicationStarted);
             break;
         case Showing: {
-            LoaderEvent event_showing = { .type = LoaderEventTypeApplicationShowing };
-            pubsubExternal->publish(&event_showing);
+            assert(app->getState() == app::State::Hiding || app->getState() == app::State::Created);
+            pubsubExternal->publish(Event::ApplicationShowing);
             break;
         }
         case Hiding: {
-            LoaderEvent event_hiding = { .type = LoaderEventTypeApplicationHiding };
-            pubsubExternal->publish(&event_hiding);
+            assert(app->getState() == app::State::Showing);
+            pubsubExternal->publish(Event::ApplicationHiding);
             break;
         }
-        case Stopped:
-            // TODO: Verify manifest
+        case Destroyed:
             app->getApp()->onDestroy(*app);
+            pubsubExternal->publish(Event::ApplicationStopped);
             break;
     }
 
     app->setState(state);
 }
 
-app::LaunchId LoaderService::startApp(const std::string& id, std::shared_ptr<const Bundle> parameters) {
-    auto launch_id = nextLaunchId++;
+app::LaunchId LoaderService::start(const std::string& id, std::shared_ptr<const Bundle> parameters) {
+    const auto launch_id = nextLaunchId++;
     dispatcherThread->dispatch([this, id, launch_id, parameters]() {
         onStartAppMessage(id, launch_id, parameters);
     });
     return launch_id;
 }
 
-void LoaderService::stopApp() {
-    TT_LOG_I(TAG, "stopApp()");
-    auto id = getCurrentAppContext()->getManifest().id;
-    dispatcherThread->dispatch([this, id]() {
-        onStopAppMessage(id);
+void LoaderService::stopTop() {
+    const auto& id = getCurrentAppContext()->getManifest().appId;
+    stopTop(id);
+}
+
+void LoaderService::stopTop(const std::string& id) {
+    TT_LOG_I(TAG, "dispatching stopTop(%s)", id.c_str());
+    dispatcherThread->dispatch([this, id] {
+        onStopTopAppMessage(id);
     });
-    TT_LOG_I(TAG, "dispatched");
+}
+
+void LoaderService::stopAll(const std::string& id) {
+    TT_LOG_I(TAG, "dispatching stopAll(%s)", id.c_str());
+    dispatcherThread->dispatch([this, id] {
+        onStopAllAppMessage(id);
+    });
 }
 
 std::shared_ptr<app::AppContext> _Nullable LoaderService::getCurrentAppContext() {
-    auto lock = mutex.asScopedLock();
+    const auto lock = mutex.asScopedLock();
     lock.lock();
-    return appStack.top();
+    if (appStack.empty()) {
+        return nullptr;
+    } else {
+        return appStack[appStack.size() - 1];
+    }
 }
 
-// region Public API
-
-app::LaunchId startApp(const std::string& id, std::shared_ptr<const Bundle> parameters) {
-    TT_LOG_I(TAG, "Start app %s", id.c_str());
-    auto service = optScreenshotService();
-    assert(service);
-    return service->startApp(id, std::move(parameters));
+bool LoaderService::isRunning(const std::string& id) const {
+    const auto lock = mutex.asScopedLock();
+    lock.lock();
+    for (const auto& app : appStack) {
+        if (app->getManifest().appId == id) {
+            return true;
+        }
+    }
+    return false;
 }
 
-void stopApp() {
-    TT_LOG_I(TAG, "Stop app");
-    auto service = optScreenshotService();
-    service->stopApp();
+std::shared_ptr<LoaderService> _Nullable findLoaderService() {
+    return service::findServiceById<LoaderService>(manifest.id);
 }
-
-std::shared_ptr<app::AppContext> _Nullable getCurrentAppContext() {
-    auto service = optScreenshotService();
-    assert(service);
-    return service->getCurrentAppContext();
-}
-
-std::shared_ptr<app::App> _Nullable getCurrentApp() {
-    auto app_context = getCurrentAppContext();
-    return app_context != nullptr ? app_context->getApp() : nullptr;
-}
-
-std::shared_ptr<PubSub> getPubsub() {
-    auto service = optScreenshotService();
-    assert(service);
-    return service->getPubsub();
-}
-
-// endregion Public API
 
 extern const ServiceManifest manifest = {
     .id = "Loader",
     .createService = create<LoaderService>
 };
 
-// endregion
 
 } // namespace

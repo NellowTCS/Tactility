@@ -1,19 +1,18 @@
-#include "Tactility/service/ServiceContext.h"
-#include "Tactility/TactilityHeadless.h"
-#include "Tactility/service/ServiceRegistry.h"
+#include <Tactility/service/ServiceContext.h>
+#include <Tactility/service/ServiceRegistration.h>
 
 #include <Tactility/Mutex.h>
+#include <Tactility/Tactility.h>
 #include <Tactility/Timer.h>
-
-#define TAG "sdcard_service"
+#include <Tactility/hal/sdcard/SdCardDevice.h>
 
 namespace tt::service::sdcard {
+
+constexpr auto* TAG = "SdcardService";
 
 extern const ServiceManifest manifest;
 
 class SdCardService final : public Service {
-
-private:
 
     Mutex mutex;
     std::unique_ptr<Timer> updateTimer;
@@ -28,14 +27,17 @@ private:
     }
 
     void update() {
-        auto sdcard = tt::hal::getConfiguration()->sdcard;
-        assert(sdcard);
+        // TODO: Support multiple SD cards
+        auto sdcard = hal::findFirstDevice<hal::sdcard::SdCardDevice>(hal::Device::Type::SdCard);
+        if (sdcard == nullptr) {
+            return;
+        }
 
         if (lock(50)) {
             auto new_state = sdcard->getState();
 
             if (new_state == hal::sdcard::SdCardDevice::State::Error) {
-                TT_LOG_W(TAG, "Sdcard error - unmounting. Did you eject the card in an unsafe manner?");
+                TT_LOG_E(TAG, "Sdcard error - unmounting. Did you eject the card in an unsafe manner?");
                 sdcard->unmount();
             }
 
@@ -51,20 +53,24 @@ private:
 
 public:
 
-    void onStart(ServiceContext& serviceContext) final {
-        if (hal::getConfiguration()->sdcard != nullptr) {
-            auto service = findServiceById<SdCardService>(manifest.id);
-            updateTimer = std::make_unique<Timer>(Timer::Type::Periodic, [service]() {
-                service->update();
-            });
-            // We want to try and scan more often in case of startup or scan lock failure
-            updateTimer->start(1000);
-        } else {
-            TT_LOG_I(TAG, "Timer not started: no SD card config");
+    bool onStart(ServiceContext& serviceContext) override {
+        if (hal::findFirstDevice<hal::sdcard::SdCardDevice>(hal::Device::Type::SdCard) == nullptr) {
+            TT_LOG_W(TAG, "No SD card device found - not starting Service");
+            return false;
         }
+
+        auto service = findServiceById<SdCardService>(manifest.id);
+        updateTimer = std::make_unique<Timer>(Timer::Type::Periodic, [service]() {
+            service->update();
+        });
+
+        // We want to try and scan more often in case of startup or scan lock failure
+        updateTimer->start(1000);
+
+        return true;
     }
 
-    void onStop(ServiceContext& serviceContext) final {
+    void onStop(ServiceContext& serviceContext) override {
         if (updateTimer != nullptr) {
             // Stop thread
             updateTimer->stop();

@@ -3,7 +3,7 @@
 #include "./Bindings.h"
 #include "./State.h"
 
-#include "Tactility/app/AppContext.h"
+#include <Tactility/app/AppContext.h>
 
 #include <lvgl.h>
 
@@ -11,9 +11,7 @@ namespace tt::app::wificonnect {
 
 class WifiConnect;
 
-class View {
-
-private:
+class View final {
 
     Bindings* bindings;
     State* state;

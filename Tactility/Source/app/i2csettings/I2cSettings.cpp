@@ -75,6 +75,7 @@ class I2cSettingsApp : public App {
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
         lvgl::toolbar_create(parent, app);
 
         auto* wrapper = lv_obj_create(parent);
@@ -92,10 +93,10 @@ class I2cSettingsApp : public App {
 };
 
 extern const AppManifest manifest = {
-    .id = "I2cSettings",
-    .name = "I2C",
-    .icon = TT_ASSETS_APP_ICON_I2C_SETTINGS,
-    .type = Type::Settings,
+    .appId = "I2cSettings",
+    .appName = "I2C",
+    .appIcon = TT_ASSETS_APP_ICON_I2C_SETTINGS,
+    .appCategory = Category::Settings,
     .createApp = create<I2cSettingsApp>
 };
 

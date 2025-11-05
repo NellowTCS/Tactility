@@ -2,10 +2,42 @@
 
 #include <cstring>
 #include <fstream>
+#include <unistd.h>
+#include <Tactility/StringUtils.h>
+
+namespace tt::hal::sdcard {
+class SdCardDevice;
+}
 
 namespace tt::file {
 
-#define TAG "file"
+constexpr auto* TAG = "file";
+
+class NoLock final : public Lock {
+    bool lock(TickType_t timeout) const override { return true; }
+    bool unlock() const override { return true; }
+};
+
+static std::shared_ptr<Lock> noLock = std::make_shared<NoLock>();
+static std::function<std::shared_ptr<Lock>(const std::string&)> findLockFunction = nullptr;
+
+std::shared_ptr<Lock> getLock(const std::string& path) {
+    if (findLockFunction == nullptr) {
+        TT_LOG_W(TAG, "File lock function not set!");
+        return noLock;
+    }
+
+    auto lock = findLockFunction(path);
+    if (lock == nullptr) {
+        return noLock;
+    }
+
+    return lock;
+}
+
+void setFindLockFunction(const FindLockFunction& function) {
+    findLockFunction = function;
+}
 
 std::string getChildPath(const std::string& basePath, const std::string& childPath) {
     // Postfix with "/" when the current path isn't "/"
@@ -30,12 +62,40 @@ bool direntSortAlphaAndType(const dirent& left, const dirent& right) {
     }
 }
 
+bool listDirectory(
+    const std::string& path,
+    std::function<void(const dirent&)> onEntry
+) {
+    auto lock = getLock(path)->asScopedLock();
+    lock.lock();
+
+    TT_LOG_I(TAG, "listDir start %s", path.c_str());
+    DIR* dir = opendir(path.c_str());
+    if (dir == nullptr) {
+        TT_LOG_E(TAG, "Failed to open dir %s", path.c_str());
+        return false;
+    }
+
+    dirent* current_entry;
+    while ((current_entry = readdir(dir)) != nullptr) {
+        onEntry(*current_entry);
+    }
+
+    closedir(dir);
+
+    TT_LOG_I(TAG, "listDir stop %s", path.c_str());
+    return true;
+}
+
 int scandir(
     const std::string& path,
     std::vector<dirent>& outList,
     ScandirFilter _Nullable filterMethod,
     ScandirSort _Nullable sortMethod
 ) {
+    auto lock = getLock(path)->asScopedLock();
+    lock.lock();
+
     TT_LOG_I(TAG, "scandir start");
     DIR* dir = opendir(path.c_str());
     if (dir == nullptr) {
@@ -45,7 +105,7 @@ int scandir(
 
     dirent* current_entry;
     while ((current_entry = readdir(dir)) != nullptr) {
-        if (filterMethod(current_entry) == 0) {
+        if (filterMethod == nullptr || filterMethod(current_entry) == 0) {
             outList.push_back(*current_entry);
         }
     }
@@ -159,6 +219,9 @@ bool writeString(const std::string& filepath, const std::string& content) {
 }
 
 static bool findOrCreateDirectoryInternal(std::string path, mode_t mode) {
+    auto lock = getLock(path)->asScopedLock();
+    lock.lock();
+
     struct stat dir_stat;
     if (mkdir(path.c_str(), mode) == 0) {
         return true;
@@ -179,7 +242,29 @@ static bool findOrCreateDirectoryInternal(std::string path, mode_t mode) {
     return true;
 }
 
-bool findOrCreateDirectory(std::string path, mode_t mode) {
+std::string getLastPathSegment(const std::string& path) {
+    auto index = path.find_last_of('/');
+    if (index != std::string::npos) {
+        return path.substr(index + 1);
+    } else {
+        return path;
+    }
+}
+
+std::string getFirstPathSegment(const std::string& path) {
+    if (path.empty()) {
+        return path;
+    }
+    auto start_index = path[0] == SEPARATOR ? 1 : 0;
+    auto index = path.find_first_of(SEPARATOR, start_index);
+    if (index != std::string::npos) {
+        return path.substr(0, index);
+    } else {
+        return path;
+    }
+}
+
+bool findOrCreateDirectory(const std::string& path, mode_t mode) {
     if (path.empty()) {
         return true;
     }
@@ -206,6 +291,99 @@ bool findOrCreateDirectory(std::string path, mode_t mode) {
     }
 
     return true;
+}
+
+bool findOrCreateParentDirectory(const std::string& path, mode_t mode) {
+    std::string parent;
+    if (!string::getPathParent(path, parent)) {
+        return false;
+    }
+    return findOrCreateDirectory(parent, mode);
+}
+
+bool deleteRecursively(const std::string& path) {
+    if (path.empty()) {
+        return true;
+    }
+
+    if (isDirectory(path)) {
+        std::vector<dirent> entries;
+        if (scandir(path, entries) < 0) {
+            TT_LOG_E(TAG, "Failed to scan directory %s", path.c_str());
+            return false;
+        }
+
+        for (const auto& entry : entries) {
+            auto child_path = path + "/" + entry.d_name;
+            if (!deleteRecursively(child_path)) {
+                return false;
+            }
+        }
+        TT_LOG_I(TAG, "Deleting %s", path.c_str());
+        return deleteDirectory(path);
+    } else if (isFile(path)) {
+        TT_LOG_I(TAG, "Deleting %s", path.c_str());
+        return deleteFile(path);
+    } else if (path == "/" || path == "." || path == "..") {
+        // No-op
+        return true;
+    } else {
+        TT_LOG_E(TAG, "Failed to delete \"%s\": unknown type", path.c_str());
+        return false;
+    }
+}
+
+bool deleteFile(const std::string& path) {
+    auto lock = getLock(path)->asScopedLock();
+    lock.lock();
+    return remove(path.c_str()) == 0;
+}
+
+bool deleteDirectory(const std::string& path) {
+    auto lock = getLock(path)->asScopedLock();
+    lock.lock();
+    return rmdir(path.c_str()) == 0;
+}
+
+bool isFile(const std::string& path) {
+    auto lock = getLock(path)->asScopedLock();
+    lock.lock();
+    return access(path.c_str(), F_OK) == 0;
+}
+
+bool isDirectory(const std::string& path) {
+    auto lock = getLock(path)->asScopedLock();
+    lock.lock();
+    struct stat stat_result;
+    return stat(path.c_str(), &stat_result) == 0 && S_ISDIR(stat_result.st_mode);
+}
+
+bool readLines(const std::string& filePath, bool stripNewLine, std::function<void(const char* line)> callback) {
+    auto lock = getLock(filePath)->asScopedLock();
+    lock.lock();
+
+    auto* file = fopen(filePath.c_str(), "r");
+    if (file == nullptr) {
+        return false;
+    }
+
+    char line[1024];
+
+    while (fgets(line, sizeof(line), file) != nullptr) {
+        // Strip newline
+        if (stripNewLine) {
+            size_t line_length = strlen(line);
+            if (line_length > 0 && line[line_length - 1] == '\n') {
+                line[line_length - 1] = '\0';
+            }
+        }
+        // Publish
+        callback(line);
+    }
+
+    bool success = feof(file);
+    fclose(file);
+    return success;
 }
 
 }

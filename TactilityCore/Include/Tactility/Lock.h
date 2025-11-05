@@ -4,7 +4,6 @@
 #include "RtosCompat.h"
 #include <memory>
 #include <functional>
-#include <algorithm>
 
 namespace tt {
 
@@ -43,9 +42,6 @@ public:
 
     void withLock(const std::function<void()>& onLockAcquired, const std::function<void()>& onLockFailed) const { withLock(portMAX_DELAY, onLockAcquired, onLockFailed); }
 
-    [[deprecated("use asScopedLock()")]]
-    std::unique_ptr<ScopedLock> scoped() const;
-
     ScopedLock asScopedLock() const;
 };
 
@@ -66,7 +62,7 @@ public:
 
     explicit ScopedLock(const Lock& lockable) : lockable(lockable) {}
 
-    ~ScopedLock() final {
+    ~ScopedLock() override {
         lockable.unlock(); // We don't care whether it succeeded or not
     }
 

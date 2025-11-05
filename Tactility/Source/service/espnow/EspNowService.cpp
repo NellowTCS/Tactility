@@ -1,10 +1,11 @@
 #ifdef ESP_PLATFORM
 
-#include "Tactility/service/espnow/EspNowService.h"
-#include "Tactility/TactilityHeadless.h"
-#include "Tactility/service/ServiceManifest.h"
-#include "Tactility/service/ServiceRegistry.h"
-#include "Tactility/service/espnow/EspNowWifi.h"
+#include <Tactility/Tactility.h>
+#include <Tactility/service/espnow/EspNowService.h>
+#include <Tactility/service/ServiceManifest.h>
+#include <Tactility/service/ServiceRegistration.h>
+#include <Tactility/service/espnow/EspNowWifi.h>
+
 #include <cstring>
 #include <esp_now.h>
 #include <esp_random.h>
@@ -19,11 +20,13 @@ static uint8_t BROADCAST_MAC[ESP_NOW_ETH_ALEN];
 
 constexpr bool isBroadcastAddress(uint8_t address[ESP_NOW_ETH_ALEN]) { return memcmp(address, BROADCAST_MAC, ESP_NOW_ETH_ALEN) == 0; }
 
-void EspNowService::onStart(ServiceContext& service) {
+bool EspNowService::onStart(ServiceContext& service) {
     auto lock = mutex.asScopedLock();
     lock.lock();
 
     memset(BROADCAST_MAC, 0xFF, sizeof(BROADCAST_MAC));
+
+    return true;
 }
 
 void EspNowService::onStop(ServiceContext& service) {

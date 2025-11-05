@@ -1,17 +1,14 @@
 #pragma once
 
-#include "./WifiGlobals.h"
-#include "./WifiSettings.h"
-
 #include <Tactility/PubSub.h>
 
-#include <cstdio>
 #include <string>
 #include <vector>
 
+#include "WifiApSettings.h"
+
 #ifdef ESP_PLATFORM
 #include "esp_wifi.h"
-#include "WifiSettings.h"
 #else
 #include <cstdint>
 // From esp_wifi_types.h in ESP-IDF 5.2
@@ -36,7 +33,7 @@ typedef enum {
 
 namespace tt::service::wifi {
 
-enum class EventType {
+enum class WifiEvent {
     /** Radio was turned on */
     RadioStateOn,
     /** Radio is turning on. */
@@ -64,10 +61,6 @@ enum class RadioState {
     Off,
 };
 
-struct Event {
-    EventType type;
-};
-
 struct ApRecord {
     std::string ssid;
     int8_t rssi;
@@ -79,7 +72,7 @@ struct ApRecord {
  * @brief Get wifi pubsub that broadcasts Event objects
  * @return PubSub
  */
-std::shared_ptr<PubSub> getPubsub();
+std::shared_ptr<PubSub<WifiEvent>> getPubsub();
 
 /** @return Get the current radio state */
 RadioState getRadioState();
@@ -124,7 +117,7 @@ std::string getIp();
  * @param[in] ap
  * @param[in] remember whether to save the ap data to the settings upon successful connection
  */
-void connect(const settings::WifiApSettings* ap, bool remember);
+void connect(const settings::WifiApSettings& ap, bool remember);
 
 /** @brief Disconnect from the access point. Doesn't have any effect when not connected. */
 void disconnect();

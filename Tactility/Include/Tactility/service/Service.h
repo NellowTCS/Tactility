@@ -4,6 +4,13 @@
 
 namespace tt::service {
 
+enum class State {
+    Starting,
+    Started,
+    Stopping,
+    Stopped
+};
+
 // Forward declaration
 class ServiceContext;
 
@@ -14,7 +21,7 @@ public:
     Service() = default;
     virtual ~Service() = default;
 
-    virtual void onStart(ServiceContext& serviceContext) {}
+    virtual bool onStart(ServiceContext& serviceContext) { return true; }
     virtual void onStop(ServiceContext& serviceContext) {}
 };
 

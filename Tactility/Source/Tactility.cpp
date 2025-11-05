@@ -1,28 +1,53 @@
-#include "Tactility/Tactility.h"
+#include <Tactility/Tactility.h>
+#include <Tactility/TactilityConfig.h>
 
-#include "Tactility/app/ManifestRegistry.h"
-#include "Tactility/lvgl/Init_i.h"
-#include "Tactility/service/ServiceManifest.h"
-
-#include <Tactility/TactilityHeadless.h>
-#include <Tactility/service/ServiceRegistry.h>
+#include <Tactility/app/AppManifestParsing.h>
+#include <Tactility/app/AppRegistration.h>
+#include <Tactility/DispatcherThread.h>
+#include <Tactility/file/File.h>
+#include <Tactility/file/FileLock.h>
+#include <Tactility/file/PropertiesFile.h>
+#include <Tactility/hal/HalPrivate.h>
+#include <Tactility/lvgl/LvglPrivate.h>
+#include <Tactility/MountPoints.h>
+#include <Tactility/network/NtpPrivate.h>
+#include <Tactility/service/ServiceManifest.h>
+#include <Tactility/service/ServiceRegistration.h>
 #include <Tactility/service/loader/Loader.h>
+#include <Tactility/settings/TimePrivate.h>
+
+#include <map>
+#include <format>
+
+#ifdef ESP_PLATFORM
+#include <Tactility/InitEsp.h>
+#endif
 
 namespace tt {
 
-#define TAG "tactility"
+constexpr auto* TAG = "Tactility";
 
 static const Configuration* config_instance = nullptr;
+static Dispatcher mainDispatcher;
 
 // region Default services
-
 namespace service {
+    // Primary
+    namespace gps { extern const ServiceManifest manifest; }
+    namespace wifi { extern const ServiceManifest manifest; }
+    namespace sdcard { extern const ServiceManifest manifest; }
+#ifdef ESP_PLATFORM
+    namespace development { extern const ServiceManifest manifest; }
+    namespace espnow { extern const ServiceManifest manifest; }
+#endif
+    // Secondary (UI)
     namespace gui { extern const ServiceManifest manifest; }
     namespace loader { extern const ServiceManifest manifest; }
     namespace statusbar { extern const ServiceManifest manifest; }
 #if TT_FEATURE_SCREENSHOT_ENABLED
     namespace screenshot { extern const ServiceManifest manifest; }
 #endif
+
 }
 
 // endregion
@@ -31,30 +56,30 @@ namespace service {
 
 namespace app {
     namespace addgps { extern const AppManifest manifest; }
+    namespace apphub { extern const AppManifest manifest; }
+    namespace apphubdetails { extern const AppManifest manifest; }
     namespace alertdialog { extern const AppManifest manifest; }
+    namespace appdetails { extern const AppManifest manifest; }
     namespace applist { extern const AppManifest manifest; }
+    namespace appsettings { extern const AppManifest manifest; }
     namespace boot { extern const AppManifest manifest; }
-    namespace calculator { extern const AppManifest manifest; }
     namespace chat { extern const AppManifest manifest; }
     namespace development { extern const AppManifest manifest; }
     namespace display { extern const AppManifest manifest; }
-    namespace filebrowser { extern const AppManifest manifest; }
+    namespace files { extern const AppManifest manifest; }
     namespace fileselection { extern const AppManifest manifest; }
-    namespace gpio { extern const AppManifest manifest; }
     namespace gpssettings { extern const AppManifest manifest; }
     namespace i2cscanner { extern const AppManifest manifest; }
     namespace i2csettings { extern const AppManifest manifest; }
     namespace imageviewer { extern const AppManifest manifest; }
     namespace inputdialog { extern const AppManifest manifest; }
     namespace launcher { extern const AppManifest manifest; }
-    namespace log { extern const AppManifest manifest; }
+    namespace localesettings { extern const AppManifest manifest; }
     namespace notes { extern const AppManifest manifest; }
     namespace power { extern const AppManifest manifest; }
     namespace selectiondialog { extern const AppManifest manifest; }
-    namespace serialconsole { extern const AppManifest manifest; }
     namespace settings { extern const AppManifest manifest; }
     namespace systeminfo { extern const AppManifest manifest; }
-    namespace textviewer { extern const AppManifest manifest; }
     namespace timedatesettings { extern const AppManifest manifest; }
     namespace timezone { extern const AppManifest manifest; }
     namespace usbsettings { extern const AppManifest manifest; }
@@ -75,59 +100,117 @@ namespace app {
 // endregion
 
 // List of all apps excluding Boot app (as Boot app calls this function indirectly)
-static void registerSystemApps() {
-    addApp(app::addgps::manifest);
-    addApp(app::alertdialog::manifest);
-    addApp(app::applist::manifest);
-    addApp(app::calculator::manifest);
-    addApp(app::display::manifest);
-    addApp(app::filebrowser::manifest);
-    addApp(app::fileselection::manifest);
-    addApp(app::gpio::manifest);
-    addApp(app::gpssettings::manifest);
-    addApp(app::i2cscanner::manifest);
-    addApp(app::i2csettings::manifest);
-    addApp(app::imageviewer::manifest);
-    addApp(app::inputdialog::manifest);
-    addApp(app::launcher::manifest);
-    addApp(app::log::manifest);
-    addApp(app::notes::manifest);
-    addApp(app::serialconsole::manifest);
-    addApp(app::settings::manifest);
-    addApp(app::selectiondialog::manifest);
-    addApp(app::systeminfo::manifest);
-    addApp(app::textviewer::manifest);
-    addApp(app::timedatesettings::manifest);
-    addApp(app::timezone::manifest);
-    addApp(app::usbsettings::manifest);
-    addApp(app::wifiapsettings::manifest);
-    addApp(app::wificonnect::manifest);
-    addApp(app::wifimanage::manifest);
+static void registerInternalApps() {
+    TT_LOG_I(TAG, "Registering internal apps");
+
+    addAppManifest(app::alertdialog::manifest);
+    addAppManifest(app::appdetails::manifest);
+    addAppManifest(app::apphub::manifest);
+    addAppManifest(app::apphubdetails::manifest);
+    addAppManifest(app::applist::manifest);
+    addAppManifest(app::appsettings::manifest);
+    addAppManifest(app::display::manifest);
+    addAppManifest(app::files::manifest);
+    addAppManifest(app::fileselection::manifest);
+    addAppManifest(app::imageviewer::manifest);
+    addAppManifest(app::inputdialog::manifest);
+    addAppManifest(app::launcher::manifest);
+    addAppManifest(app::localesettings::manifest);
+    addAppManifest(app::notes::manifest);
+    addAppManifest(app::settings::manifest);
+    addAppManifest(app::selectiondialog::manifest);
+    addAppManifest(app::systeminfo::manifest);
+    addAppManifest(app::timedatesettings::manifest);
+    addAppManifest(app::timezone::manifest);
+    addAppManifest(app::wifiapsettings::manifest);
+    addAppManifest(app::wificonnect::manifest);
+    addAppManifest(app::wifimanage::manifest);
+
+#if defined(CONFIG_TINYUSB_MSC_ENABLED) && CONFIG_TINYUSB_MSC_ENABLED
+    addAppManifest(app::usbsettings::manifest);
+#endif
 
 #if TT_FEATURE_SCREENSHOT_ENABLED
-    addApp(app::screenshot::manifest);
+    addAppManifest(app::screenshot::manifest);
 #endif
 
 #ifdef ESP_PLATFORM
-    addApp(app::chat::manifest);
-    addApp(app::crashdiagnostics::manifest);
-    addApp(app::development::manifest);
+    addAppManifest(app::chat::manifest);
+    addAppManifest(app::crashdiagnostics::manifest);
+    addAppManifest(app::development::manifest);
 #endif
 
-    if (getConfiguration()->hardware->power != nullptr) {
-        addApp(app::power::manifest);
+    if (!hal::getConfiguration()->i2c.empty()) {
+        addAppManifest(app::i2cscanner::manifest);
+        addAppManifest(app::i2csettings::manifest);
+    }
+
+    if (!hal::getConfiguration()->uart.empty()) {
+        addAppManifest(app::addgps::manifest);
+        addAppManifest(app::gpssettings::manifest);
+    }
+
+    if (hal::hasDevice(hal::Device::Type::Power)) {
+        addAppManifest(app::power::manifest);
     }
 }
 
-static void registerUserApps(const std::vector<const app::AppManifest*>& apps) {
-    TT_LOG_I(TAG, "Registering user apps");
-    for (auto* manifest : apps) {
-        assert(manifest != nullptr);
-        addApp(*manifest);
+static void registerInstalledApp(std::string path) {
+    TT_LOG_I(TAG, "Registering app at %s", path.c_str());
+    std::string manifest_path = path + "/manifest.properties";
+    if (!file::isFile(manifest_path)) {
+        TT_LOG_E(TAG, "Manifest not found at %s", manifest_path.c_str());
+        return;
+    }
+
+    std::map<std::string, std::string> properties;
+    if (!file::loadPropertiesFile(manifest_path, properties)) {
+        TT_LOG_E(TAG, "Failed to load manifest at %s", manifest_path.c_str());
+        return;
+    }
+
+    app::AppManifest manifest;
+    if (!app::parseManifest(properties, manifest)) {
+        TT_LOG_E(TAG, "Failed to parse manifest at %s", manifest_path.c_str());
+        return;
+    }
+
+    manifest.appCategory = app::Category::User;
+    manifest.appLocation = app::Location::external(path);
+
+    app::addAppManifest(manifest);
+}
+
+static void registerInstalledApps(const std::string& path) {
+    TT_LOG_I(TAG, "Registering apps from %s", path.c_str());
+
+    file::listDirectory(path, [&path](const auto& entry) {
+        auto absolute_path = std::format("{}/{}", path, entry.d_name);
+        if (file::isDirectory(absolute_path)) {
+            registerInstalledApp(absolute_path);
+        }
+    });
+}
+
+static void registerInstalledAppsFromSdCard(const std::shared_ptr<hal::sdcard::SdCardDevice>& sdcard) {
+    auto sdcard_root_path = sdcard->getMountPath();
+    auto app_path = std::format("{}/app", sdcard_root_path);
+    if (file::isDirectory(app_path)) {
+        registerInstalledApps(app_path);
     }
 }
 
-static void registerAndStartSystemServices() {
+static void registerInstalledAppsFromSdCards() {
+    auto sdcard_devices = hal::findDevices<hal::sdcard::SdCardDevice>(hal::Device::Type::SdCard);
+    for (const auto& sdcard : sdcard_devices) {
+        if (sdcard->isMounted()) {
+            TT_LOG_I(TAG, "Registering apps from %s", sdcard->getMountPath().c_str());
+            registerInstalledAppsFromSdCard(sdcard);
+        }
+    }
+}
+
+static void registerAndStartSecondaryServices() {
     TT_LOG_I(TAG, "Registering and starting system services");
     addService(service::loader::manifest);
     addService(service::gui::manifest);
@@ -137,27 +220,62 @@ static void registerAndStartSystemServices() {
 #endif
 }
 
-static void registerAndStartUserServices(const std::vector<const service::ServiceManifest*>& manifests) {
-    TT_LOG_I(TAG, "Registering and starting user services");
-    for (auto* manifest : manifests) {
-        assert(manifest != nullptr);
-        addService(*manifest);
+static void registerAndStartPrimaryServices() {
+    TT_LOG_I(TAG, "Registering and starting system services");
+    addService(service::gps::manifest);
+    if (hal::hasDevice(hal::Device::Type::SdCard)) {
+        addService(service::sdcard::manifest);
+    }
+    addService(service::wifi::manifest);
+#ifdef ESP_PLATFORM
+    addService(service::development::manifest);
+    addService(service::espnow::manifest);
+#endif
+}
+
+void createTempDirectory(const std::string& rootPath) {
+    auto temp_path = std::format("{}/tmp", rootPath);
+    if (!file::isDirectory(temp_path)) {
+        auto lock = file::getLock(rootPath)->asScopedLock();
+        if (lock.lock(1000 / portTICK_PERIOD_MS)) {
+            if (mkdir(temp_path.c_str(), 0777) == 0) {
+                TT_LOG_I(TAG, "Created %s", temp_path.c_str());
+            } else {
+                TT_LOG_E(TAG, "Failed to create %s", temp_path.c_str());
+            }
+        } else {
+            TT_LOG_E(TAG, LOG_MESSAGE_MUTEX_LOCK_FAILED_FMT, rootPath.c_str());
+        }
+    } else {
+        TT_LOG_I(TAG, "Found existing %s", temp_path.c_str());
     }
 }
 
-void initFromBootApp() {
-    auto configuration = getConfiguration();
-    // Then we register system apps. They are not used/started yet.
-    registerSystemApps();
-    // Then we register and start user services. They are started after system app
-    // registration just in case they want to figure out which system apps are installed.
-    registerAndStartUserServices(configuration->services);
-    // Now we register the user apps, as they might rely on the user services.
-    registerUserApps(configuration->apps);
+void prepareFileSystems() {
+    // Temporary directories for SD cards
+    auto sdcard_devices = hal::findDevices<hal::sdcard::SdCardDevice>(hal::Device::Type::SdCard);
+    for (const auto& sdcard : sdcard_devices) {
+        if (sdcard->isMounted()) {
+            createTempDirectory(sdcard->getMountPath());
+        }
+    }
+    // Temporary directory for /data
+    if (file::isDirectory(file::MOUNT_POINT_DATA)) {
+        createTempDirectory(file::MOUNT_POINT_DATA);
+    }
+}
+
+void registerApps() {
+    registerInternalApps();
+    auto data_apps_path = std::format("{}/apps", file::MOUNT_POINT_DATA);
+    if (file::isDirectory(data_apps_path)) {
+        registerInstalledApps(data_apps_path);
+    }
+    registerInstalledAppsFromSdCards();
 }
 
 void run(const Configuration& config) {
-    TT_LOG_D(TAG, "run");
+    TT_LOG_I(TAG, "Tactility v%s on %s (%s)", TT_VERSION, CONFIG_TT_BOARD_NAME, CONFIG_TT_BOARD_ID);
 
     assert(config.hardware);
     const hal::Configuration& hardware = *config.hardware;
@@ -165,27 +283,37 @@ void run(const Configuration& config) {
     // Assign early so starting services can use it
     config_instance = &config;
 
-    initHeadless(hardware);
+#ifdef ESP_PLATFORM
+    initEsp();
+#endif
+    file::setFindLockFunction(file::findLock);
+    settings::initTimeZone();
+    hal::init(*config.hardware);
+    network::ntp::init();
 
+    registerAndStartPrimaryServices();
     lvgl::init(hardware);
+    registerAndStartSecondaryServices();
 
-    registerAndStartSystemServices();
+    TT_LOG_I(TAG, "Core systems ready");
 
-    TT_LOG_I(TAG, "starting boot app");
+    TT_LOG_I(TAG, "Starting boot app");
     // The boot app takes care of registering system apps, user services and user apps
-    addApp(app::boot::manifest);
-    service::loader::startApp(app::boot::manifest.id);
+    addAppManifest(app::boot::manifest);
+    app::start(app::boot::manifest.appId);
 
-    TT_LOG_I(TAG, "init complete");
-
-    TT_LOG_I(TAG, "Processing main dispatcher");
+    TT_LOG_I(TAG, "Main dispatcher ready");
     while (true) {
-        getMainDispatcher().consume();
+        mainDispatcher.consume();
     }
 }
 
 const Configuration* _Nullable getConfiguration() {
     return config_instance;
+}
+
+Dispatcher& getMainDispatcher() {
+    return mainDispatcher;
 }
 
 } // namespace

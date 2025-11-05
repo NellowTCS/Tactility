@@ -1,80 +1,117 @@
 #ifdef ESP_PLATFORM
 
-#include "Tactility/app/ElfApp.h"
-#include "Tactility/file/File.h"
-#include "Tactility/service/loader/Loader.h"
-
-#include "Tactility/hal/sdcard/SdCardDevice.h"
+#include <Tactility/app/alertdialog/AlertDialog.h>
+#include <Tactility/app/ElfApp.h>
+#include <Tactility/file/File.h>
+#include <Tactility/file/FileLock.h>
 #include <Tactility/Log.h>
+#include <Tactility/service/loader/Loader.h>
 #include <Tactility/StringUtils.h>
 
-#include "esp_elf.h"
+#include <esp_elf.h>
 
 #include <string>
 #include <utility>
 
 namespace tt::app {
 
-#define TAG "elf_app"
+constexpr auto* TAG = "ElfApp";
 
-struct ElfManifest {
-    /** The user-readable name of the app. Used in UI. */
-    std::string name;
-    /** Optional icon. */
-    std::string icon;
-    CreateData _Nullable createData = nullptr;
-    DestroyData _Nullable destroyData = nullptr;
-    OnCreate _Nullable onCreate = nullptr;
-    OnDestroy _Nullable onDestroy = nullptr;
-    OnShow _Nullable onShow = nullptr;
-    OnHide _Nullable onHide = nullptr;
-    OnResult _Nullable onResult = nullptr;
-};
+static std::string getErrorCodeString(int error_code) {
+    switch (error_code) {
+        case ENOMEM:
+            return "out of memory";
+        case ENOSYS:
+            return "missing symbol";
+        case EINVAL:
+            return "invalid argument or main() missing";
+        default:
+            return std::format("code {}", error_code);
+    }
+}
 
-static size_t elfManifestSetCount = 0;
-static ElfManifest elfManifest;
+class ElfApp final : public App {
 
-class ElfApp : public App {
+public:
 
-    const std::string filePath;
+    struct Parameters {
+        CreateData _Nullable createData = nullptr;
+        DestroyData _Nullable destroyData = nullptr;
+        OnCreate _Nullable onCreate = nullptr;
+        OnDestroy _Nullable onDestroy = nullptr;
+        OnShow _Nullable onShow = nullptr;
+        OnHide _Nullable onHide = nullptr;
+        OnResult _Nullable onResult = nullptr;
+    };
+
+    static void setParameters(const Parameters& parameters) {
+        staticParameters = parameters;
+        staticParametersSetCount++;
+    }
+
+private:
+
+    static Parameters staticParameters;
+    static size_t staticParametersSetCount;
+    static std::shared_ptr<Lock> staticParametersLock;
+
+    const std::string appPath;
     std::unique_ptr<uint8_t[]> elfFileData;
-    esp_elf_t elf;
+    esp_elf_t elf {
+        .psegment = nullptr,
+        .svaddr = 0,
+        .ptext = nullptr,
+        .pdata = nullptr,
+        .sec = { },
+        .entry = nullptr
+    };
     bool shouldCleanupElf = false; // Whether we have to clean up the above "elf" object
-    std::unique_ptr<ElfManifest> manifest;
+    std::unique_ptr<Parameters> manifest;
     void* data = nullptr;
+    std::string lastError = "";
 
     bool startElf() {
-        TT_LOG_I(TAG, "Starting ELF %s", filePath.c_str());
+        const std::string elf_path = std::format("{}/elf/{}.elf", appPath, CONFIG_IDF_TARGET);
+        TT_LOG_I(TAG, "Starting ELF %s", elf_path.c_str());
         assert(elfFileData == nullptr);
 
         size_t size = 0;
-        hal::sdcard::withSdCardLock<void>(filePath, [this, &size](){
-            elfFileData = file::readBinary(filePath, size);
+        file::getLock(elf_path)->withLock([this, &elf_path, &size]{
+            elfFileData = file::readBinary(elf_path, size);
         });
 
         if (elfFileData == nullptr) {
             return false;
         }
 
-        if (esp_elf_init(&elf) < 0) {
-            TT_LOG_E(TAG, "Failed to initialize");
-            shouldCleanupElf = true;
+        if (esp_elf_init(&elf) != ESP_OK) {
+            lastError = "Failed to initialize";
+            TT_LOG_E(TAG, "%s", lastError.c_str());
+            elfFileData  = nullptr;
             return false;
         }
 
-        if (esp_elf_relocate(&elf, elfFileData.get()) < 0) {
-            TT_LOG_E(TAG, "Failed to load executable");
+        auto relocate_result = esp_elf_relocate(&elf, elfFileData.get());
+        if (relocate_result != 0) {
+            // Note: the result code maps to values from cstdlib's errno.h
+            lastError = getErrorCodeString(-relocate_result);
+            TT_LOG_E(TAG, "Application failed to load: %s", lastError.c_str());
+            elfFileData  = nullptr;
             return false;
         }
 
         int argc = 0;
         char* argv[] = {};
 
-        if (esp_elf_request(&elf, 0, argc, argv) < 0) {
-            TT_LOG_W(TAG, "Executable returned error code");
+        if (esp_elf_request(&elf, 0, argc, argv) != ESP_OK) {
+            lastError = "Executable returned error code";
+            TT_LOG_E(TAG, "%s", lastError.c_str());
+            esp_elf_deinit(&elf);
+            elfFileData  = nullptr;
             return false;
         }
 
+        shouldCleanupElf = true;
         return true;
     }
 
@@ -92,24 +129,37 @@ class ElfApp : public App {
 
 public:
 
-    explicit ElfApp(std::string filePath) : filePath(std::move(filePath)) {}
+    explicit ElfApp(std::string appPath) : appPath(std::move(appPath)) {}
 
     void onCreate(AppContext& appContext) override {
-        auto initial_count = elfManifestSetCount;
-        if (startElf()) {
-            if (elfManifestSetCount > initial_count) {
-                manifest = std::make_unique<ElfManifest>(elfManifest);
+        // Because we use global variables, we have to ensure that we are not starting 2 apps in parallel
+        // We use a ScopedLock so we don't have to safeguard all branches
+        auto lock = staticParametersLock->asScopedLock();
+        lock.lock();
 
-                if (manifest->createData != nullptr) {
-                    data = manifest->createData();
-                }
+        staticParametersSetCount = 0;
+        if (!startElf()) {
+            stop();
+            auto message = lastError.empty() ? "Application failed to start." : std::format("Application failed to start: {}", lastError);
+            alertdialog::start("Error", message);
+            return;
+        }
 
-                if (manifest->onCreate != nullptr) {
-                    manifest->onCreate(&appContext, data);
-                }
-            }
-        } else {
-            service::loader::stopApp();
+        if (staticParametersSetCount == 0) {
+            stop();
+            alertdialog::start("Error", "Application failed to start: application failed to register itself");
+            return;
+        }
+
+        manifest = std::make_unique<Parameters>(staticParameters);
+        lock.unlock();
+
+        if (manifest->createData != nullptr) {
+            data = manifest->createData();
+        }
+
+        if (manifest->onCreate != nullptr) {
+            manifest->onCreate(&appContext, data);
         }
     }
 
@@ -148,9 +198,11 @@ public:
     }
 };
 
-void setElfAppManifest(
-    const char* name,
-    const char* _Nullable icon,
+ElfApp::Parameters ElfApp::staticParameters;
+size_t ElfApp::staticParametersSetCount = 0;
+std::shared_ptr<Lock> ElfApp::staticParametersLock = std::make_shared<Mutex>();
+
+void setElfAppParameters(
     CreateData _Nullable createData,
     DestroyData _Nullable destroyData,
     OnCreate _Nullable onCreate,
@@ -159,9 +211,7 @@ void setElfAppManifest(
     OnHide _Nullable onHide,
     OnResult _Nullable onResult
 ) {
-    elfManifest = ElfManifest {
-        .name = name ? name : "",
-        .icon = icon ? icon : "",
+    ElfApp::setParameters({
         .createData = createData,
         .destroyData = destroyData,
         .onCreate = onCreate,
@@ -169,31 +219,14 @@ void setElfAppManifest(
         .onShow = onShow,
         .onHide = onHide,
         .onResult = onResult
-    };
-    elfManifestSetCount++;
-}
-
-std::string getElfAppId(const std::string& filePath) {
-    return filePath;
-}
-
-void registerElfApp(const std::string& filePath) {
-    if (findAppById(filePath) == nullptr) {
-        auto manifest = AppManifest {
-            .id = getElfAppId(filePath),
-            .name = tt::string::removeFileExtension(tt::string::getLastPathSegment(filePath)),
-            .type = Type::User,
-            .location = Location::external(filePath)
-        };
-        addApp(manifest);
-    }
+    });
 }
 
 std::shared_ptr<App> createElfApp(const std::shared_ptr<AppManifest>& manifest) {
     TT_LOG_I(TAG, "createElfApp");
     assert(manifest != nullptr);
-    assert(manifest->location.isExternal());
-    return std::make_shared<ElfApp>(manifest->location.getPath());
+    assert(manifest->appLocation.isExternal());
+    return std::make_shared<ElfApp>(manifest->appLocation.getPath());
 }
 
 } // namespace

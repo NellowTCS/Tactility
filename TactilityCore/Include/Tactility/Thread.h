@@ -1,6 +1,5 @@
 #pragma once
 
-#include "CoreDefines.h"
 #include "RtosCompatTask.h"
 
 #include <functional>
@@ -11,7 +10,7 @@ namespace tt {
 
 typedef TaskHandle_t ThreadId;
 
-class Thread {
+class Thread final {
 
 public:
 
@@ -97,6 +96,11 @@ public:
      * @param[in] stackSize stack size in bytes
      */
     void setStackSize(size_t stackSize);
+
+    /** Set CPU core pinning for this thread.
+     * @param[in] affinity -1 means not pinned, otherwise it's the core id (e.g. 0 or 1 on ESP32)
+     */
+    void setAffinity(portBASE_TYPE affinity);
 
     /** Set Thread callback
      * @param[in] callback ThreadCallback, called upon thread run
@@ -184,8 +188,8 @@ public:
     static uint32_t awaitFlags(uint32_t flags, uint32_t options, uint32_t timeout);
 };
 
-#define THREAD_PRIORITY_SERVICE Thread::Priority::High
-#define THREAD_PRIORITY_RENDER Thread::Priority::Higher
-#define THREAD_PRIORITY_ISR Thread::Priority::Critical
+constexpr auto THREAD_PRIORITY_SERVICE = Thread::Priority::High;
+constexpr auto THREAD_PRIORITY_RENDER = Thread::Priority::Higher;
+constexpr auto THREAD_PRIORITY_ISR = Thread::Priority::Critical;
 
 } // namespace

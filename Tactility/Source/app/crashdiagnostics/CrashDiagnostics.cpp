@@ -1,21 +1,25 @@
 #ifdef ESP_PLATFORM
 
-#include "Tactility/app/crashdiagnostics/QrHelpers.h"
-#include "Tactility/app/crashdiagnostics/QrUrl.h"
-#include "Tactility/app/launcher/Launcher.h"
-#include "Tactility/lvgl/Statusbar.h"
-#include "Tactility/service/loader/Loader.h"
+#include "Tactility/hal/Device.h"
+
+#include <Tactility/app/crashdiagnostics/QrHelpers.h>
+#include <Tactility/app/crashdiagnostics/QrUrl.h>
+#include <Tactility/app/launcher/Launcher.h>
+#include <Tactility/lvgl/Statusbar.h>
+#include <Tactility/service/loader/Loader.h>
 
 #include <lvgl.h>
 #include <qrcode.h>
 
-#define TAG "crash_diagnostics"
+#define TAG "CrashDiagnostics"
 
 namespace tt::app::crashdiagnostics {
 
+extern const AppManifest manifest;
+
 void onContinuePressed(TT_UNUSED lv_event_t* event) {
-    tt::service::loader::stopApp();
-    tt::app::launcher::start();
+    stop(manifest.appId);
+    launcher::start();
 }
 
 class CrashDiagnosticsApp : public App {
@@ -24,7 +28,7 @@ public:
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         auto* display = lv_obj_get_display(parent);
-        int32_t parent_height = lv_display_get_vertical_resolution(display) - STATUSBAR_HEIGHT;
+        int32_t parent_height = lv_display_get_vertical_resolution(display) - lvgl::STATUSBAR_HEIGHT;
 
         lv_obj_add_event_cb(parent, onContinuePressed, LV_EVENT_SHORT_CLICKED, nullptr);
         auto* top_label = lv_label_create(parent);
@@ -32,7 +36,11 @@ public:
         lv_obj_align(top_label, LV_ALIGN_TOP_MID, 0, 2);
 
         auto* bottom_label = lv_label_create(parent);
-        lv_label_set_text(bottom_label, "Tap screen to continue");
+        if (hal::hasDevice(hal::Device::Type::Touch)) {
+            lv_label_set_text(bottom_label, "Tap screen to continue");
+        } else {
+            lv_label_set_text(bottom_label, "Reboot device to continue");
+        }
         lv_obj_align(bottom_label, LV_ALIGN_BOTTOM_MID, 0, -2);
 
         std::string url = getUrlFromCrashData();
@@ -42,7 +50,7 @@ public:
         int qr_version;
         if (!getQrVersionForBinaryDataLength(url_length, qr_version)) {
             TT_LOG_E(TAG, "QR is too large");
-            service::loader::stopApp();
+            stop(manifest.appId);
             return;
         }
 
@@ -50,7 +58,7 @@ public:
         auto qrcodeData = std::make_shared<uint8_t[]>(qrcode_getBufferSize(qr_version));
         if (qrcodeData == nullptr) {
             TT_LOG_E(TAG, "Failed to allocate QR buffer");
-            service::loader::stopApp();
+            stop();
             return;
         }
 
@@ -58,7 +66,7 @@ public:
         TT_LOG_I(TAG, "QR init text");
         if (qrcode_initText(&qrcode, qrcodeData.get(), qr_version, ECC_LOW, url.c_str()) != 0) {
             TT_LOG_E(TAG, "QR init text  failed");
-            service::loader::stopApp();
+            stop(manifest.appId);
             return;
         }
 
@@ -78,7 +86,7 @@ public:
             pixel_size = 1;
         } else {
             TT_LOG_E(TAG, "QR code won't fit screen");
-            service::loader::stopApp();
+            stop(manifest.appId);
             return;
         }
 
@@ -93,7 +101,7 @@ public:
         auto* draw_buf = lv_draw_buf_create(pixel_size * qrcode.size, pixel_size * qrcode.size, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
         if (draw_buf == nullptr) {
             TT_LOG_E(TAG, "Draw buffer alloc");
-            service::loader::stopApp();
+            stop(manifest.appId);
             return;
         }
 
@@ -116,14 +124,15 @@ public:
 };
 
 extern const AppManifest manifest = {
-    .id = "CrashDiagnostics",
-    .name = "Crash Diagnostics",
-    .type = Type::Hidden,
+    .appId = "CrashDiagnostics",
+    .appName = "Crash Diagnostics",
+    .appCategory = Category::System,
+    .appFlags = AppManifest::Flags::Hidden,
     .createApp = create<CrashDiagnosticsApp>
 };
 
 void start() {
-    service::loader::startApp(manifest.id);
+    app::start(manifest.appId);
 }
 
 } // namespace

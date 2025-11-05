@@ -3,7 +3,7 @@
 #include "./View.h"
 #include "./State.h"
 
-#include "Tactility/app/App.h"
+#include <Tactility/app/App.h>
 
 #include <Tactility/PubSub.h>
 #include <Tactility/Mutex.h>
@@ -11,16 +11,16 @@
 
 namespace tt::app::wifimanage {
 
-class WifiManage : public App {
+class WifiManage final : public App {
 
-private:
-
-    PubSub::SubscriptionHandle wifiSubscription = nullptr;
+    PubSub<service::wifi::WifiEvent>::SubscriptionHandle wifiSubscription = nullptr;
     Mutex mutex;
     Bindings bindings = { };
     State state;
     View view = View(&bindings, &state);
     bool isViewEnabled = false;
+
+    void onWifiEvent(service::wifi::WifiEvent event);
 
 public:
 

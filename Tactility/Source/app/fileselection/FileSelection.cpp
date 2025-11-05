@@ -10,7 +10,7 @@
 
 namespace tt::app::fileselection {
 
-#define TAG "fileselection_app"
+constexpr auto* TAG = "FileSelection";
 
 extern const AppManifest manifest;
 
@@ -45,7 +45,7 @@ public:
             auto bundle = std::make_unique<Bundle>();
             bundle->putString("path", path);
             setResult(Result::Ok, std::move(bundle));
-            service::loader::stopApp();
+            stop(manifest.appId);
         });
     }
 
@@ -56,23 +56,24 @@ public:
 };
 
 extern const AppManifest manifest = {
-    .id = "FileSelection",
-    .name = "File Selection",
-    .icon = TT_ASSETS_APP_ICON_FILES,
-    .type = Type::Hidden,
+    .appId = "FileSelection",
+    .appName = "File Selection",
+    .appIcon = TT_ASSETS_APP_ICON_FILES,
+    .appCategory = Category::System,
+    .appFlags = AppManifest::Flags::Hidden,
     .createApp = create<FileSelection>
 };
 
 LaunchId startForExistingFile() {
     auto bundle = std::make_shared<Bundle>();
     setMode(*bundle, Mode::Existing);
-    return service::loader::startApp(manifest.id, bundle);
+    return start(manifest.appId, bundle);
 }
 
 LaunchId startForExistingOrNewFile() {
     auto bundle = std::make_shared<Bundle>();
     setMode(*bundle, Mode::ExistingOrNew);
-    return service::loader::startApp(manifest.id, bundle);
+    return start(manifest.appId, bundle);
 }
 
 } // namespace

@@ -23,7 +23,7 @@ struct Configuration {
     InitMode initMode;
     /** Whether configuration can be changed. */
     bool isMutable;
-    /** Optional custom lock */
+    /** Optional custom lock - otherwise creates one internally */
     std::shared_ptr<Lock> _Nullable lock;
 };
 
@@ -42,7 +42,10 @@ bool stop(spi_host_device_t device);
 /** @return true if communications were started successfully */
 bool isStarted(spi_host_device_t device);
 
-/** @return the lock that represents the specified device. Can be used with third party SPI implementations or native API calls (e.g. ESP-IDF). */
+/**
+ * Return the lock for the specified SPI device. Never returns nullptr.
+ * @return the lock that represents the specified device. Can be used with third party SPI implementations or native API calls (e.g. ESP-IDF).
+ */
 std::shared_ptr<Lock> getLock(spi_host_device_t device);
 
 } // namespace tt::hal::spi

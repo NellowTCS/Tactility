@@ -29,9 +29,9 @@ if (DEFINED ENV{ESP_IDF_VERSION})
     init_tactility_globals("sdkconfig")
     get_property(TACTILITY_BOARD_PROJECT GLOBAL PROPERTY TACTILITY_BOARD_PROJECT)
 
-    set(COMPONENTS App)
+    set(COMPONENTS Firmware)
     set(EXTRA_COMPONENT_DIRS
-        "App"
+        "Firmware"
         "Boards/${TACTILITY_BOARD_PROJECT}"
         "Drivers"
         "Tactility"
@@ -41,20 +41,23 @@ if (DEFINED ENV{ESP_IDF_VERSION})
         "Libraries/elf_loader"
         "Libraries/lvgl"
         "Libraries/lv_screenshot"
+        "Libraries/minitar"
         "Libraries/minmea"
         "Libraries/QRCode"
     )
 
     set(EXCLUDE_COMPONENTS "Simulator")
 
-    # LVGL
-    get_filename_component(
-        LVGL_CONFIG_FULL_PATH Libraries/lvgl_conf ABSOLUTE
-    )
-
-    add_compile_definitions(LV_CONF_PATH="${LVGL_CONFIG_FULL_PATH}/lv_conf_kconfig.h")
     idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=esp_panic_handler" APPEND)
-    idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=esp_log_write" APPEND)
+    idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_button_create" APPEND)
+    idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_dropdown_create" APPEND)
+    idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_list_create" APPEND)
+    idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_list_add_button" APPEND)
+    idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_obj_create" APPEND)
+    idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_obj_set_flex_flow" APPEND)
+    idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_switch_create" APPEND)
+    idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_textarea_create" APPEND)
+
 else ()
     message("Building for sim target")
     add_compile_definitions(CONFIG_TT_BOARD_ID="simulator")
@@ -67,20 +70,23 @@ project(Tactility)
 if (NOT DEFINED ENV{ESP_IDF_VERSION})
     add_subdirectory(Tactility)
     add_subdirectory(TactilityCore)
-    add_subdirectory(Boards/Simulator)
+    add_subdirectory(Boards/simulator)
 endif ()
 
 if (NOT DEFINED ENV{ESP_IDF_VERSION})
     # FreeRTOS
-    set(FREERTOS_CONFIG_FILE_DIRECTORY ${PROJECT_SOURCE_DIR}/Boards/Simulator/Source CACHE STRING "")
+    set(FREERTOS_CONFIG_FILE_DIRECTORY ${PROJECT_SOURCE_DIR}/Boards/simulator/Source CACHE STRING "")
     set(FREERTOS_PORT GCC_POSIX CACHE STRING "")
+
+    add_subdirectory(Libraries/cJSON)
     add_subdirectory(Libraries/FreeRTOS-Kernel)
     add_subdirectory(Libraries/lv_screenshot)
     add_subdirectory(Libraries/QRCode)
+    add_subdirectory(Libraries/minitar)
     add_subdirectory(Libraries/minmea)
     target_compile_definitions(freertos_kernel PUBLIC "projCOVERAGE_TEST=0")
     target_include_directories(freertos_kernel
-        PUBLIC Boards/Simulator/Source # for FreeRTOSConfig.h
+        PUBLIC Boards/simulator/Source # for FreeRTOSConfig.h
     )
 
     # EmbedTLS
@@ -88,20 +94,20 @@ if (NOT DEFINED ENV{ESP_IDF_VERSION})
     set(ENABLE_PROGRAMS OFF)
     add_subdirectory(Libraries/mbedtls)
 
-    # Sim app
-    add_subdirectory(App)
-
-    # Tests
-    add_subdirectory(Tests)
-
     # SDL
-    add_compile_definitions($<$<BOOL:${LV_USE_DRAW_SDL}>:LV_USE_DRAW_SDL=1>)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
     add_subdirectory(Libraries/SDL) # Added as idf component for ESP and as library for other targets
 
     # LVGL
+    add_compile_definitions($<$<BOOL:${LV_USE_DRAW_SDL}>:LV_USE_DRAW_SDL=1>)
     add_subdirectory(Libraries/lvgl) # Added as idf component for ESP and as library for other targets
-    include_directories(lvgl PUBLIC ${PROJECT_SOURCE_DIR}/Libraries/lvgl_conf)
-    target_compile_definitions(lvgl PUBLIC "-DLV_CONF_PATH=\"${PROJECT_SOURCE_DIR}/Libraries/lvgl_conf/lv_conf_simulator.h\"")
     target_link_libraries(lvgl PRIVATE SDL2-static)
+
+    # Sim app
+    add_subdirectory(Firmware)
+
+    # Tests
+    add_subdirectory(Tests)
 
 endif ()

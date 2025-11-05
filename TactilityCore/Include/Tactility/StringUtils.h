@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <string>
 #include <vector>
+#include <functional>
 
 namespace tt::string {
 
@@ -31,6 +32,16 @@ std::string getLastPathSegment(const std::string& path);
 std::vector<std::string> split(const std::string& input, const std::string& delimiter);
 
 /**
+ * Splits the provided input into separate pieces with delimiter as separator text.
+ * When the input string is empty, the output list will be empty too.
+ *
+ * @param input the input to split up
+ * @param delimiter a non-empty string to recognize as separator
+ * @param callback the callback function that receives the split parts
+ */
+void split(const std::string& input, const std::string& delimiter, std::function<void(const std::string&)> callback);
+
+/**
  * Join a set of tokens into a single string, given a delimiter (separator).
  * If the input is an empty list, the result will be an empty string.
  * The delimeter is only placed inbetween tokens and not appended at the end of the resulting string.
@@ -39,6 +50,16 @@ std::vector<std::string> split(const std::string& input, const std::string& deli
  * @param delimiter the separator to join with
  */
 std::string join(const std::vector<std::string>& input, const std::string& delimiter);
+
+/**
+ * Join a set of tokens into a single string, given a delimiter (separator).
+ * If the input is an empty list, the result will be an empty string.
+ * The delimeter is only placed inbetween tokens and not appended at the end of the resulting string.
+ *
+ * @param input the tokens to join together
+ * @param delimiter the separator to join with
+ */
+std::string join(const std::vector<const char*>& input, const std::string& delimiter);
 
 /**
  * Returns the lowercase value of a string.
