@@ -177,24 +177,13 @@ bool GxEPD2Display::startLvgl() {
     }
 
     // --- LVGL Configuration based on Rotation ---
-    // Physical display dimensions (portrait: 168x384)
-    lv_display_rotation_t lv_rotation = LV_DISPLAY_ROTATION_0;
-
     // Map config rotation to LVGL rotation
-    // 0 = 0° (portrait), 1 = 90° CW (landscape), 2 = 180° (portrait flipped), 3 = 270° CW (landscape flipped)
+    lv_display_rotation_t lv_rotation = LV_DISPLAY_ROTATION_0;
     switch (_config.rotation) {
-        case 1:
-            lv_rotation = LV_DISPLAY_ROTATION_90;  // Landscape
-            break;
-        case 2:
-            lv_rotation = LV_DISPLAY_ROTATION_180; // Portrait upside down
-            break;
-        case 3:
-            lv_rotation = LV_DISPLAY_ROTATION_270; // Landscape flipped
-            break;
-        default:
-            lv_rotation = LV_DISPLAY_ROTATION_0;   // Portrait (default)
-            break;
+        case 1: lv_rotation = LV_DISPLAY_ROTATION_90; break;
+        case 2: lv_rotation = LV_DISPLAY_ROTATION_180; break;
+        case 3: lv_rotation = LV_DISPLAY_ROTATION_270; break;
+        default: lv_rotation = LV_DISPLAY_ROTATION_0; break;
     }
 
     // Compute logical dimensions LVGL will use (LVGL swaps width/height when sw_rotate is used)
@@ -401,20 +390,35 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     
     lv_display_rotation_t rotation = lv_display_get_rotation(disp);
     lv_area_t physical_area = *area;
-    
-    // Transform logical area to physical area based on rotation
-    int32_t hor_res = lv_display_get_horizontal_resolution(disp);  // full logical horizontal resolution
-    int32_t ver_res = lv_display_get_vertical_resolution(disp);    // full logical vertical resolution
+
+    // Retrieve LVGL logical full resolution
+    int32_t hor_res = lv_display_get_horizontal_resolution(disp);  // logical width LVGL is using
+    int32_t ver_res = lv_display_get_vertical_resolution(disp);    // logical height LVGL is using
+
+    // Map logical rectangle -> physical rectangle for known rotations
+    // We'll compute per-pixel mapping below, but compute physical_area bounds as transformed area.
     if (rotation == LV_DISPLAY_ROTATION_90) {
-        // Logical: hor_res x ver_res (e.g. 384x168 logical for 90°) → Physical: 168×384 (portrait)
-        // Transformation of the area rectangle:
+        // logical (hor_res x ver_res) => physical (width x height)
         physical_area.x1 = area->y1;
         physical_area.y1 = hor_res - 1 - area->x2;
         physical_area.x2 = area->y2;
         physical_area.y2 = hor_res - 1 - area->x1;
+    } else if (rotation == LV_DISPLAY_ROTATION_270) {
+        // 270 CW (90 CCW)
+        physical_area.x1 = ver_res - 1 - area->y2;
+        physical_area.y1 = area->x1;
+        physical_area.x2 = ver_res - 1 - area->y1;
+        physical_area.y2 = area->x2;
+    } else if (rotation == LV_DISPLAY_ROTATION_180) {
+        physical_area.x1 = hor_res - 1 - area->x2;
+        physical_area.y1 = ver_res - 1 - area->y2;
+        physical_area.x2 = hor_res - 1 - area->x1;
+        physical_area.y2 = ver_res - 1 - area->y1;
+    } else {
+        // LV_DISPLAY_ROTATION_0: no change
+        physical_area = *area;
     }
-    // TODO: Add support for other rotations (180, 270)
-    
+
     const int epd_x = physical_area.x1;
     const int epd_y = physical_area.y1;
     const int epd_w = physical_area.x2 - physical_area.x1 + 1;
@@ -434,7 +438,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     // Allocate 1-bit packed buffer for monochrome e-paper (physical dimensions)
     // Format: MSB first, horizontal byte packing (left-to-right)
     const int epd_row_bytes = (epd_w + 7) / 8;
-    const size_t packed_size = epd_row_bytes * epd_h;
+    const size_t packed_size = (size_t)epd_row_bytes * (size_t)epd_h;
     uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
     if (!packed) {
         ESP_LOGE(TAG, "Failed to allocate %zu bytes for 1-bit buffer", packed_size);
@@ -446,79 +450,75 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     memset(packed, 0xFF, packed_size); 
 
     // Convert LVGL pixel buffer -> 1-bit monochrome for e-paper
-    // The source buffer is in logical dimensions (after LVGL rendering)
     lv_color_format_t cf = lv_display_get_color_format(disp);
     uint32_t src_row_bytes = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
     uint8_t* src_bytes = (uint8_t*)px_map;
 
     // Debugging: print a few diagnostics for the first several flushes to detect stride/packing issues
     static int s_flush_debug_count = 0;
-    if (s_flush_debug_count < 6) {
+    if (s_flush_debug_count < 8) {
         ESP_LOGI(TAG, "lvglFlush: logical=%dx%d physical=%dx%d at (%d,%d) rot=%d cf=%d src_row_bytes=%u hor_res=%d ver_res=%d", 
                  logical_w, logical_h, epd_w, epd_h, epd_x, epd_y, (int)rotation, (int)cf, (unsigned)src_row_bytes, hor_res, ver_res);
     }
 
-    // Convert and rotate pixels from logical to physical orientation
-    if (rotation == LV_DISPLAY_ROTATION_90) {
-        for (int ly = 0; ly < logical_h; ++ly) {
-            lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_bytes);
-            for (int lx = 0; lx < logical_w; ++lx) {
-                lv_color_t pixel = src_row[lx];
-                bool is_white = self->rgb565ToMono(pixel);
+    // For each pixel in the logical area, compute its absolute logical coords (lx_abs, ly_abs),
+    // map to absolute physical coords (px_abs,py_abs) depending on rotation, then pack into 'packed' buffer
+    for (int ly = 0; ly < logical_h; ++ly) {
+        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_bytes);
+        for (int lx = 0; lx < logical_w; ++lx) {
+            lv_color_t pixel = src_row[lx];
+            bool is_white = rgb565ToMono(pixel);
 
-                int lx_abs = area->x1 + lx;
-                int ly_abs = area->y1 + ly;
+            // absolute logical coordinates (within LVGL logical screen)
+            int lx_abs = area->x1 + lx;
+            int ly_abs = area->y1 + ly;
 
-                int px_abs = ly_abs;
-                int py_abs = hor_res - 1 - lx_abs;
+            int px_abs = 0;
+            int py_abs = 0;
 
-                int px_rel = px_abs - physical_area.x1;
-                int py_rel = py_abs - physical_area.y1;
-
-                if (px_rel < 0 || px_rel >= epd_w || py_rel < 0 || py_rel >= epd_h) {
-                    continue;
-                }
-
-                const int byte_idx = py_rel * epd_row_bytes + (px_rel / 8);
-                const int bit_pos = 7 - (px_rel & 7);  // MSB = leftmost pixel
-
-                if (is_white) {
-                    packed[byte_idx] |= (1 << bit_pos);   // Set bit (white)
-                } else {
-                    packed[byte_idx] &= ~(1 << bit_pos);  // Clear bit (black)
-                }
+            // Map logical -> physical depending on rotation.
+            // Physical panel dims: width = _config.width, height = _config.height
+            if (rotation == LV_DISPLAY_ROTATION_0) {
+                px_abs = lx_abs;
+                py_abs = ly_abs;
+            } else if (rotation == LV_DISPLAY_ROTATION_90) {
+                // LVGL logical: width = panel height, height = panel width
+                // 90° CW: (lx_abs,ly_abs) -> (px,py) = (ly_abs, panel_width-1 - lx_abs)
+                px_abs = ly_abs;
+                py_abs = (_config.width - 1) - lx_abs;
+            } else if (rotation == LV_DISPLAY_ROTATION_180) {
+                px_abs = (_config.width - 1) - lx_abs;
+                py_abs = (_config.height - 1) - ly_abs;
+            } else if (rotation == LV_DISPLAY_ROTATION_270) {
+                // 270° CW (or 90° CCW): (lx_abs,ly_abs) -> (px,py) = (panel_height-1 - ly_abs, lx_abs)
+                px_abs = (_config.height - 1) - ly_abs;
+                py_abs = lx_abs;
+            } else {
+                // default fallback
+                px_abs = lx_abs;
+                py_abs = ly_abs;
             }
-        }
-    } else {
-        // No rotation (or unhandled rotation) - direct copy.
-        for (int ly = 0; ly < logical_h; ++ly) {
-            lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_bytes);
-            for (int lx = 0; lx < logical_w; ++lx) {
-                lv_color_t pixel = src_row[lx];
-                bool is_white = self->rgb565ToMono(pixel);
 
-                int x_rel = lx;
-                int y_rel = ly;
+            // Convert to buffer-relative coordinates using computed physical_area origin
+            int px_rel = px_abs - epd_x;
+            int py_rel = py_abs - epd_y;
 
-                // Bounds check (safety)
-                if (x_rel < 0 || x_rel >= epd_w || y_rel < 0 || y_rel >= epd_h) {
-                    continue;
-                }
+            if (px_rel < 0 || px_rel >= epd_w || py_rel < 0 || py_rel >= epd_h) {
+                continue; // outside this packed rectangle; skip
+            }
 
-                const int byte_idx = y_rel * epd_row_bytes + (x_rel / 8);
-                const int bit_pos = 7 - (x_rel & 7);  // MSB = leftmost pixel
+            const int byte_idx = py_rel * epd_row_bytes + (px_rel / 8);
+            const int bit_pos = 7 - (px_rel & 7);
 
-                if (is_white) {
-                    packed[byte_idx] |= (1 << bit_pos);   // Set bit (white)
-                } else {
-                    packed[byte_idx] &= ~(1 << bit_pos);  // Clear bit (black)
-                }
+            if (is_white) {
+                packed[byte_idx] |= (1 << bit_pos);
+            } else {
+                packed[byte_idx] &= ~(1 << bit_pos);
             }
         }
     }
 
-    if (s_flush_debug_count < 6) {
-        // Dump first few bytes of packed buffer
+    if (s_flush_debug_count < 8) {
         const int dump_bytes = std::min<int>((int)packed_size, 16);
         char buf_hex[16 * 3 + 1];
         char *p = buf_hex;
