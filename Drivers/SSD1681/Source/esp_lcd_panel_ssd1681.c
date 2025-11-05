@@ -502,10 +502,15 @@ epaper_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int y_start, int x
                             (len_x * len_y / 8)),
                             TAG, "panel_epaper_set_vram error");
     }
-    // --- Auto-refresh the display after drawing (modified from original driver)
-    // Original driver required manual refresh, but for LVGL integration we auto-refresh
-    ESP_LOGI(TAG, "Auto-refreshing e-paper display");
-    ESP_RETURN_ON_ERROR(epaper_panel_refresh_screen(panel), TAG, "epaper_panel_refresh_screen error");
+    
+    // --- Auto-refresh only if display is not busy
+    // This prevents blocking the LVGL task and causing watchdog timeouts
+    if (!gpio_get_level(static_cast<gpio_num_t>(epaper_panel->busy_gpio_num))) {
+        ESP_LOGI(TAG, "Triggering e-paper refresh");
+        ESP_RETURN_ON_ERROR(epaper_panel_refresh_screen(panel), TAG, "epaper_panel_refresh_screen error");
+    } else {
+        ESP_LOGD(TAG, "Display busy, skipping refresh");
+    }
     
     return ESP_OK;
 }
