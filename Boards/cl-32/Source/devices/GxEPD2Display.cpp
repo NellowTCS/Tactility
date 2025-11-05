@@ -46,8 +46,8 @@ GxEPD2Display::GxEPD2Display(const Configuration& config)
     , _workerTaskHandle(nullptr)
     , _spiMutex(nullptr)
     , _workerRunning(false)
-    , _gapX(-200)
-    , _gapY(-4)
+    , _gapX(200)
+    , _gapY(4)
 {
 }
 
