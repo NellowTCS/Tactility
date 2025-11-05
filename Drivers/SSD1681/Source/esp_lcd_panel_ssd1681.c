@@ -381,34 +381,66 @@ static esp_err_t epaper_panel_init(esp_lcd_panel_t *panel)
 {
     epaper_panel_t *epaper_panel = __containerof(panel, epaper_panel_t, base);
     esp_lcd_panel_io_handle_t io = epaper_panel->io;
+    
     // --- SWRST
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SWRST, NULL, 0), TAG,
                         "param SSD1681_CMD_SWRST err");
     panel_epaper_wait_busy(panel);
-    // --- Driver Output Control
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1681_CMD_OUTPUT_CTRL,
-                        SSD1681_PARAM_OUTPUT_CTRL, 3), TAG, "SSD1681_CMD_OUTPUT_CTRL err");
+    
+    // --- Border Waveform Control (first setting)
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_BORDER_WAVEFORM, (uint8_t[]) {
+        0x01
+    }, 1), TAG, "SSD1681_CMD_SET_BORDER_WAVEFORM err");
+    
+    // --- Driver Output Control (use actual panel dimensions)
+    uint8_t output_ctrl[3] = {
+        (uint8_t)((epaper_panel->height - 1) & 0xFF),       // HEIGHT-1 low byte
+        (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF), // HEIGHT-1 high byte  
+        0x00
+    };
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_OUTPUT_CTRL, output_ctrl, 3), 
+                        TAG, "SSD1681_CMD_OUTPUT_CTRL err");
 
-    // --- Border Waveform Control
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1681_CMD_SET_BORDER_WAVEFORM, (uint8_t[]) {
-        SSD1681_PARAM_BORDER_WAVEFORM
+    // --- Data Entry Mode (Y increment, X increment)
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_DATA_ENTRY_MODE, (uint8_t[]) {
+        SSD1681_PARAM_DATA_ENTRY_MODE_1  // 0x01
+    }, 1), TAG, "SSD1681_CMD_DATA_ENTRY_MODE err");
+    
+    // --- Set RAM X address start/end position
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_RAMX_START_END_POS, (uint8_t[]) {
+        0x00,                                    // X start
+        (uint8_t)(epaper_panel->width / 8 - 1)  // X end
+    }, 2), TAG, "SSD1681_CMD_SET_RAMX_START_END_POS err");
+    
+    // --- Set RAM Y address start/end position  
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_RAMY_START_END_POS, (uint8_t[]) {
+        (uint8_t)((epaper_panel->height - 1) & 0xFF),       // Y start low
+        (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF), // Y start high
+        0x00,                                                 // Y end low
+        0x00                                                  // Y end high
+    }, 4), TAG, "SSD1681_CMD_SET_RAMY_START_END_POS err");
+    
+    // --- Border Waveform Control (second setting)
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_BORDER_WAVEFORM, (uint8_t[]) {
+        0x05
     }, 1), TAG, "SSD1681_CMD_SET_BORDER_WAVEFORM err");
 
     // --- Temperature Sensor Control
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1681_CMD_SET_TEMP_SENSOR, (uint8_t[]) {
-        SSD1681_PARAM_TEMP_SENSOR
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_TEMP_SENSOR, (uint8_t[]) {
+        SSD1681_PARAM_TEMP_SENSOR  // 0x80
     }, 1), TAG, "SSD1681_CMD_SET_TEMP_SENSOR err");
-    // --- Load built-in waveform LUT
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1681_CMD_SET_DISP_UPDATE_CTRL, (uint8_t[]) {
-        SSD1681_PARAM_DISP_UPDATE_MODE_1
-    }, 1), TAG, "SSD1681_CMD_SET_DISP_UPDATE_CTRL err");
-    // --- Display end option
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1681_CMD_SET_END_OPTION, (uint8_t[]) {
-        SSD1681_PARAM_END_OPTION_KEEP
-    }, 1), TAG, "SSD1681_CMD_SET_END_OPTION err");
-    // --- Active Display Update Sequence
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_ACTIVE_DISP_UPDATE_SEQ, NULL, 0), TAG,
-                        "param SSD1681_CMD_SET_DISP_UPDATE_CTRL err");
+    
+    // --- Set RAM X address counter
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_INIT_X_ADDR_COUNTER, (uint8_t[]) {
+        0x00
+    }, 1), TAG, "SSD1681_CMD_SET_INIT_X_ADDR_COUNTER err");
+    
+    // --- Set RAM Y address counter
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_INIT_Y_ADDR_COUNTER, (uint8_t[]) {
+        (uint8_t)((epaper_panel->height - 1) & 0xFF),
+        (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF)
+    }, 2), TAG, "SSD1681_CMD_SET_INIT_Y_ADDR_COUNTER err");
+    
     panel_epaper_wait_busy(panel);
 
     return ESP_OK;
@@ -496,8 +528,12 @@ epaper_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int y_start, int x
         }, 1), TAG, "SSD1681_CMD_DATA_ENTRY_MODE err");
     }
     // --- Send bitmap to e-Paper VRAM
+    // Write to BOTH black/white AND red/old VRAMs with same data (required for proper display)
+    // This matches the official Gooddisplay example code behavior
     if (epaper_panel->bitmap_color == SSD1681_EPAPER_BITMAP_BLACK) {
-        ESP_RETURN_ON_ERROR(panel_epaper_set_vram(epaper_panel->io, (uint8_t *) (epaper_panel->_framebuffer), NULL,
+        ESP_RETURN_ON_ERROR(panel_epaper_set_vram(epaper_panel->io, 
+                            (uint8_t *) (epaper_panel->_framebuffer), 
+                            (uint8_t *) (epaper_panel->_framebuffer),  // Write same data to both VRAMs!
                             (len_x * len_y / 8)),
                             TAG, "panel_epaper_set_vram error");
     } else if (epaper_panel->bitmap_color == SSD1681_EPAPER_BITMAP_RED) {
