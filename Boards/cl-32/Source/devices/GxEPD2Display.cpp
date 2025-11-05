@@ -400,24 +400,25 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     int32_t ver_res = lv_display_get_vertical_resolution(disp);    // logical height LVGL is using
 
     // Map logical rectangle -> physical rectangle for known rotations
-    // We'll compute per-pixel mapping below, but compute physical_area bounds as transformed area.
+    // Use the panel's physical dimensions (self->_config.width/height) to compute the transformed rectangle.
     if (rotation == LV_DISPLAY_ROTATION_90) {
-        // logical (hor_res x ver_res) => physical (width x height)
+        // 90° CW: logical coords (lx,ly) -> physical (px,py) = (ly, panel_width-1 - lx)
         physical_area.x1 = area->y1;
-        physical_area.y1 = hor_res - 1 - area->x2;
+        physical_area.y1 = (self->_config.width - 1) - area->x2;
         physical_area.x2 = area->y2;
-        physical_area.y2 = hor_res - 1 - area->x1;
+        physical_area.y2 = (self->_config.width - 1) - area->x1;
     } else if (rotation == LV_DISPLAY_ROTATION_270) {
-        // 270 CW (90 CCW)
-        physical_area.x1 = ver_res - 1 - area->y2;
+        // 270° CW: logical -> physical (px,py) = (panel_height-1 - ly, lx)
+        physical_area.x1 = (self->_config.height - 1) - area->y2;
         physical_area.y1 = area->x1;
-        physical_area.x2 = ver_res - 1 - area->y1;
+        physical_area.x2 = (self->_config.height - 1) - area->y1;
         physical_area.y2 = area->x2;
     } else if (rotation == LV_DISPLAY_ROTATION_180) {
-        physical_area.x1 = hor_res - 1 - area->x2;
-        physical_area.y1 = ver_res - 1 - area->y2;
-        physical_area.x2 = hor_res - 1 - area->x1;
-        physical_area.y2 = ver_res - 1 - area->y1;
+        // 180°: logical -> physical (px,py) = (panel_width-1 - lx, panel_height-1 - ly)
+        physical_area.x1 = (self->_config.width - 1) - area->x2;
+        physical_area.y1 = (self->_config.height - 1) - area->y2;
+        physical_area.x2 = (self->_config.width - 1) - area->x1;
+        physical_area.y2 = (self->_config.height - 1) - area->y1;
     } else {
         // LV_DISPLAY_ROTATION_0: no change
         physical_area = *area;
@@ -481,7 +482,6 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
             int py_abs = 0;
 
             // Map logical -> physical depending on rotation.
-            // Physical panel dims: width = self->_config.width, height = self->_config.height
             if (rotation == LV_DISPLAY_ROTATION_0) {
                 px_abs = lx_abs;
                 py_abs = ly_abs;
@@ -497,7 +497,6 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 px_abs = (self->_config.height - 1) - ly_abs;
                 py_abs = lx_abs;
             } else {
-                // default fallback
                 px_abs = lx_abs;
                 py_abs = ly_abs;
             }

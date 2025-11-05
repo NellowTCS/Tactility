@@ -119,6 +119,8 @@ static void test_lvgl(GxEPD2Display* disp)
     lv_scr_load(scr);
 
     ESP_LOGI(TAG, "LVGL test screen created and loaded");
+
+    vTaskDelay(pdMS_TO_TICKS(2000));
 }
 
 // Public helper so callers can explicitly run the LVGL test when LVGL is up
