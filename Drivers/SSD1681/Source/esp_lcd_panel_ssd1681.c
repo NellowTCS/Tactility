@@ -442,6 +442,21 @@ static esp_err_t epaper_panel_init(esp_lcd_panel_t *panel)
     }, 2), TAG, "SSD1681_CMD_SET_INIT_Y_ADDR_COUNTER err");
     
     panel_epaper_wait_busy(panel);
+    
+    // --- Load built-in waveform LUT
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_DISP_UPDATE_CTRL, (uint8_t[]) {
+        SSD1681_PARAM_DISP_UPDATE_MODE_1  // 0xb1
+    }, 1), TAG, "SSD1681_CMD_SET_DISP_UPDATE_CTRL err");
+    
+    // --- Display end option
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_SET_END_OPTION, (uint8_t[]) {
+        SSD1681_PARAM_END_OPTION_KEEP  // 0x07
+    }, 1), TAG, "SSD1681_CMD_SET_END_OPTION err");
+    
+    // --- Active Display Update Sequence (initial refresh)
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1681_CMD_ACTIVE_DISP_UPDATE_SEQ, NULL, 0), TAG,
+                        "SSD1681_CMD_ACTIVE_DISP_UPDATE_SEQ err");
+    panel_epaper_wait_busy(panel);
 
     return ESP_OK;
 }
