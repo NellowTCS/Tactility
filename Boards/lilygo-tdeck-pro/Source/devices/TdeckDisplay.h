@@ -1,16 +1,13 @@
 #pragma once
 
 #include "Tactility/hal/display/DisplayDevice.h"
+#include "GxEPD2Display.h"
 
-#include <esp_lcd_panel_io.h>
-#include <esp_lcd_types.h>
-#include <lvgl.h>
+#include <memory>
 
 class TdeckDisplay final : public tt::hal::display::DisplayDevice {
 
-    esp_lcd_panel_io_handle_t ioHandle = nullptr;
-    esp_lcd_panel_handle_t panelHandle = nullptr;
-    lv_display_t* displayHandle = nullptr;
+    std::unique_ptr<GxEPD2Display> gxDisplay;
 
 public:
 
@@ -25,7 +22,7 @@ public:
 
     std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable createTouch() { return nullptr; }
 
-    lv_display_t* _Nullable getLvglDisplay() const { return displayHandle; }
+    lv_display_t* _Nullable getLvglDisplay() const { return gxDisplay ? gxDisplay->getLvglDisplay() : nullptr; }
 };
 
 std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay();

@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+      - t-deck-pro-gxepd2
     tags:
       - v*
   pull_request:

@@ -1,10 +1,10 @@
-#include "Tactility/lvgl/LvglSync.h"
-#include "hal/TdeckDisplay.h"
-#include "hal/TdeckKeyboard.h"
-#include "hal/TdeckPower.h"
-#include "hal/TdeckSdCard.h"
+#include "devices/TdeckDisplay.h"
+#include "devices/TdeckKeyboard.h"
+#include "devices/TdeckPower.h"
+#include "devices/TdeckSdCard.h"
 
 #include <Tactility/hal/Configuration.h>
+#include <Tactility/lvgl/LvglSync.h>
 
 #define TDECK_SPI_TRANSFER_SIZE_LIMIT (240 * 320 * (LV_COLOR_DEPTH / 8))
 
@@ -12,12 +12,18 @@ bool tdeckInit();
 
 using namespace tt::hal;
 
-extern const Configuration lilygo_tdeck = {
+static std::vector<std::shared_ptr<Device>> createDevices() {
+    return {
+        tdeck_get_power(),
+        createDisplay(),
+        createKeyboard(),
+        createTdeckSdCard()
+    };
+}
+
+extern const Configuration hardwareConfiguration = {
     .initBoot = tdeckInit,
-    .createDisplay = createDisplay,
-    .createKeyboard = createKeyboard,
-    .sdcard = createTdeckSdCard(),
-    .power = tdeck_get_power,
+    .createDevices = createDevices,
     .i2c = {
         i2c::Configuration {
             .name = "Internal",
