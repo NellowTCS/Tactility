@@ -85,7 +85,7 @@ bool GxEPD2Display::start() {
     }
 
     // Run hardware tests once (these use direct writes)
-    display_tester::runTests(this);
+    // display_tester::runTests(this);
 
     ESP_LOGI(TAG, "E-paper display started successfully");
     return true;
@@ -304,18 +304,10 @@ void GxEPD2Display::refreshDisplay(bool partial) {
 // Helper: Convert RGB565 to monochrome using brightness threshold
 // Uses ITU-R BT.601 luma coefficients for RGB to grayscale conversion
 inline bool GxEPD2Display::rgb565ToMono(lv_color_t pixel) {
-    // Extract RGB components from lv_color_t
-    // Note: LVGL9 uses 8-bit color channels internally
     uint8_t r = pixel.red;   
     uint8_t g = pixel.green; 
     uint8_t b = pixel.blue;  
-    
-    // Calculate brightness using standard luminance weights
-    // Y = 0.299*R + 0.587*G + 0.114*B
-    // Approximated as (77*R + 151*G + 28*B) / 256 for speed
     uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
-    
-    // Threshold at 50% gray: >127 = white (bit=1), <=127 = black (bit=0)
     return brightness > 127;
 }
 
@@ -358,7 +350,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                 if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
                 processed_since_refresh = false;
             }
-            // continue waiting for more items (or termination)
         }
     }
 
@@ -448,43 +439,38 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                  area->x1, area->y1, logical_w, logical_h, epd_x, epd_y, epd_w, epd_h, (int)rotation);
     }
 
-    // Iterate over the PHYSICAL destination buffer, and for each physical pixel,
-    // calculate the source logical pixel to read from.
-    for (int py_rel = 0; py_rel < epd_h; ++py_rel) {
-        for (int px_rel = 0; px_rel < epd_w; ++px_rel) {
-            int px_abs = epd_x + px_rel;
-            int py_abs = epd_y + py_rel;
+    // Iterate over the LOGICAL source buffer and calculate the destination pixel for each
+    for (int ly_rel = 0; ly_rel < logical_h; ++ly_rel) {
+        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly_rel * src_row_stride);
+        for (int lx_rel = 0; lx_rel < logical_w; ++lx_rel) {
+            
+            int lx_abs = area->x1 + lx_rel;
+            int ly_abs = area->y1 + ly_rel;
 
-            int lx_abs = 0;
-            int ly_abs = 0;
+            int px_abs = 0;
+            int py_abs = 0;
 
-            // Reverse map from physical (px_abs, py_abs) to logical (lx_abs, ly_abs)
             if (rotation == LV_DISPLAY_ROTATION_0) {
-                lx_abs = px_abs;
-                ly_abs = py_abs;
+                px_abs = lx_abs;
+                py_abs = ly_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_90) {
-                // px = ly, py = hor_res-1-lx => lx = hor_res-1-py, ly=px
-                lx_abs = (hor_res - 1) - py_abs;
-                ly_abs = px_abs;
+                px_abs = ly_abs;
+                py_abs = (hor_res - 1) - lx_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_180) {
-                lx_abs = (hor_res - 1) - px_abs;
-                ly_abs = (ver_res - 1) - py_abs;
+                px_abs = (hor_res - 1) - lx_abs;
+                py_abs = (ver_res - 1) - ly_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_270) {
-                // px = ver_res-1-ly, py=lx => ly=ver_res-1-px, lx=py
-                lx_abs = py_abs;
-                ly_abs = (ver_res - 1) - px_abs;
+                px_abs = (ver_res - 1) - ly_abs;
+                py_abs = lx_abs;
             }
 
-            // Check if the calculated logical coordinate is within the source `area` from LVGL
-            if (lx_abs < area->x1 || lx_abs > area->x2 || ly_abs < area->y1 || ly_abs > area->y2) {
-                continue; // This physical pixel is outside the source area, skip it.
+            int px_rel = px_abs - epd_x;
+            int py_rel = py_abs - epd_y;
+
+            if (px_rel < 0 || px_rel >= epd_w || py_rel < 0 || py_rel >= epd_h) {
+                continue; 
             }
 
-            // Convert absolute logical coords to area-relative logical coords to index the src_bytes buffer
-            int lx_rel = lx_abs - area->x1;
-            int ly_rel = ly_abs - area->y1;
-
-            lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly_rel * src_row_stride);
             lv_color_t pixel = src_row[lx_rel];
             bool is_white = self->rgb565ToMono(pixel);
             
@@ -512,7 +498,6 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         ++s_flush_debug_count;
     }
 
-    // Enqueue the packed buffer for the worker to consume (batch + refresh)
     if (self->_queue) {
         QueueItem qi;
         qi.buf = packed;
