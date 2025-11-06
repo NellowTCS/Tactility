@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
+#include <vector>
 
 static const char* TAG = "GxEPD2Display";
 
@@ -369,18 +370,104 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     bool processed_since_refresh = false;
 
     while (true) {
+        // Wait for at least one item
         if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(150))) {
             if (item.buf == nullptr) {
                 ESP_LOGI(TAG, "Worker: termination received");
                 break;
             }
+
+            // Collect this and any immediately available items to merge/union them
+            std::vector<QueueItem> items;
+            items.push_back(item);
+
+            // Pull any other immediate items to merge into one union write (short non-blocking loop)
+            while (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(5)) == pdTRUE) {
+                if (item.buf == nullptr) {
+                    // re-enqueue termination marker for outer logic and stop collection
+                    QueueItem term = { nullptr, 0, 0, 0, 0 };
+                    xQueueSend(self->_queue, &term, portMAX_DELAY);
+                    break;
+                }
+                items.push_back(item);
+            }
+
+            // Compute union rectangle (already aligned bytes from producer, but recompute union and align)
+            int union_x0 = INT32_MAX, union_y0 = INT32_MAX;
+            int union_x1 = INT32_MIN, union_y1 = INT32_MIN;
+            for (const auto &qi : items) {
+                union_x0 = std::min<int>(union_x0, qi.x);
+                union_y0 = std::min<int>(union_y0, qi.y);
+                union_x1 = std::max<int>(union_x1, qi.x + qi.w - 1);
+                union_y1 = std::max<int>(union_y1, qi.y + qi.h - 1);
+            }
+
+            if (union_x0 == INT32_MAX) {
+                // nothing to do
+                for (auto &q : items) if (q.buf) heap_caps_free(q.buf);
+                continue;
+            }
+
+            // Align horizontally to byte boundaries required by EPDs
+            int aligned_union_x0 = (union_x0 / 8) * 8;
+            int aligned_union_x1 = ((union_x1 + 8) / 8) * 8 - 1;
+            if (aligned_union_x0 < 0) aligned_union_x0 = 0;
+            if (aligned_union_x1 >= (int)self->_config.width) aligned_union_x1 = (int)self->_config.width - 1;
+            int union_w = aligned_union_x1 - aligned_union_x0 + 1;
+
+            // Vertical bounds (no special alignment)
+            int aligned_union_y0 = std::max(0, union_y0);
+            int aligned_union_y1 = std::min<int>(union_y1, self->_config.height - 1);
+            int union_h = aligned_union_y1 - aligned_union_y0 + 1;
+            if (union_h <= 0 || union_w <= 0) {
+                // free items and continue
+                for (auto &q : items) if (q.buf) heap_caps_free(q.buf);
+                continue;
+            }
+
+            int union_row_bytes = (union_w + 7) / 8;
+            size_t union_size = (size_t)union_row_bytes * (size_t)union_h;
+            uint8_t* union_buf = (uint8_t*)heap_caps_malloc(union_size, MALLOC_CAP_DMA);
+            if (!union_buf) {
+                ESP_LOGE(TAG, "Worker: failed to alloc union buffer %zu bytes", union_size);
+                // free item buffers
+                for (auto &q : items) if (q.buf) heap_caps_free(q.buf);
+                continue;
+            }
+            // Initialize union buffer to the "white" state (0xFF) to match framebuffer convention
+            memset(union_buf, 0xFF, union_size);
+
+            // Copy each item's packed data into the union buffer in dequeued order (so later items override earlier)
+            for (const auto &qi : items) {
+                int item_row_bytes = (qi.w + 7) / 8;
+                for (int ry = 0; ry < qi.h; ++ry) {
+                    int dst_row = (qi.y + ry) - aligned_union_y0;
+                    uint8_t* dst = union_buf + (size_t)dst_row * union_row_bytes;
+                    int dst_byte_offset = (qi.x - aligned_union_x0) / 8;
+                    uint8_t* dst_ptr = dst + dst_byte_offset;
+                    uint8_t* src_ptr = qi.buf + (size_t)ry * item_row_bytes;
+                    // copy whole bytes for this row (items are byte-aligned horizontally)
+                    memcpy(dst_ptr, src_ptr, item_row_bytes);
+                }
+            }
+
+            // Free original per-item buffers
+            for (auto &q : items) {
+                if (q.buf) {
+                    heap_caps_free(q.buf);
+                    q.buf = nullptr;
+                }
+            }
+
+            // Perform SPI write once for the union rect
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            ESP_LOGI(TAG, "Worker: writeImage x=%u y=%u w=%u h=%u", item.x, item.y, item.w, item.h);
-            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
+            ESP_LOGI(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items)", aligned_union_x0, aligned_union_y0, union_w, union_h, (int)items.size());
+            self->_display->writeImage(union_buf, (int16_t)aligned_union_x0, (int16_t)aligned_union_y0, (int16_t)union_w, (int16_t)union_h, false, false, false);
+
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-            heap_caps_free(item.buf);
-            item.buf = nullptr;
+
+            heap_caps_free(union_buf);
             processed_since_refresh = true;
             continue;
         } else {
@@ -394,6 +481,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
         }
     }
 
+    // Termination: drain remaining items and free memory, then final refresh if necessary
     while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
         if (item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
@@ -460,12 +548,8 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
 
     // Helper lambda to map logical->physical using LVGL logical resolution (hor_res/ver_res)
     auto map_logical_to_physical = [&](int logical_x_abs, int logical_y_abs, int& physical_x_abs, int& physical_y_abs) {
-        // Use LVGL logical resolution (hor_res, ver_res) for mapping math — this matches LVGL's coordinate space.
-        // The formulas below are consistent with how GxEPD2_BW and original mapping expect rotation to be handled.
         switch (rotation) {
             case 1: // 90° CW
-                // logical coords: x in [0..hor_res-1], y in [0..ver_res-1]
-                // Map so that logical origin maps correctly to panel physical coords.
                 physical_x_abs = logical_y_abs;
                 physical_y_abs = (hor_res - 1) - logical_x_abs;
                 break;
@@ -483,10 +567,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 physical_y_abs = logical_y_abs;
                 break;
         }
-        // Now translate into panel coordinates: LVGL logical resolution may be (384x168) while panel is (168x384).
-        // For rotations we must map logical-space values into panel-space:
-        // If rotation is 90/270 we've already transposed using hor_res/ver_res; ensure final values fit panel dims.
-        // Apply configured gaps/offsets (user-provided panel shifts)
+        // Apply configured gaps/offsets
         physical_x_abs += self->_gapX;
         physical_y_abs += self->_gapY;
     };
