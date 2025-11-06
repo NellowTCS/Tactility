@@ -489,9 +489,8 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 px_abs = lx_abs;
                 py_abs = ly_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_90) {
-                // 90° CW: (lx_abs,ly_abs) -> (px,py) = (ly_abs, hor_res-1 - lx_abs)
-                px_abs = ly_abs;
-                py_abs = (hor_res - 1) - lx_abs;
+                px_abs = (ver_res - 1) - ly_abs;
+                py_abs = lx_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_180) {
                 px_abs = (hor_res - 1) - lx_abs;
                 py_abs = (ver_res - 1) - ly_abs;
