@@ -400,7 +400,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
         // Wait for at least one item
         if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(150))) {
             if (item.buf == nullptr) {
-                ESP_LOGD(TAG, "Worker: termination received");
+                ESP_LOGI(TAG, "Worker: termination received");
                 break;
             }
 
@@ -489,7 +489,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             // Perform SPI write once for the union rect
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            ESP_LOGD(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items)",
+            ESP_LOGI(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items)",
                      aligned_union_x0, aligned_union_y0, union_w, union_h, (int)items.size());
 
             self->_display->writeImage(union_buf, (int16_t)aligned_union_x0, (int16_t)aligned_union_y0,
@@ -512,14 +512,14 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             // No item received within timeout: if we did writes since last refresh, perform refresh and post-step.
             if (processed_since_refresh) {
                 if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-                ESP_LOGD(TAG, "Worker: refresh(true)");
+                ESP_LOGI(TAG, "Worker: refresh(true)");
                 self->_display->refresh(true);
 
                 // If the driver supports fast partial update, replay all written regions with writeImageAgain
                 // to synchronize the controller's "previous" buffer with "current" buffer.
                 if (self->_display && self->_display->hasFastPartialUpdate) {
                     for (const auto &wr : written_regions) {
-                        ESP_LOGD(TAG, "Worker: writeImageAgain for region x=%d y=%d w=%d h=%d",
+                        ESP_LOGI(TAG, "Worker: writeImageAgain for region x=%d y=%d w=%d h=%d",
                                  wr.x, wr.y, wr.w, wr.h);
                         self->_display->writeImageAgain(wr.buf, wr.x, wr.y, wr.w, wr.h, false, false, false);
                     }
@@ -545,7 +545,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
         if (item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-            ESP_LOGD(TAG, "Worker: draining and writeImage x=%u y=%u w=%u h=%u", item.x, item.y, item.w, item.h);
+            ESP_LOGI(TAG, "Worker: draining and writeImage x=%u y=%u w=%u h=%u", item.x, item.y, item.w, item.h);
             self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
@@ -553,11 +553,11 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     }
     if (processed_since_refresh) {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-        ESP_LOGD(TAG, "Worker: final refresh(true)");
+        ESP_LOGI(TAG, "Worker: final refresh(true)");
         self->_display->refresh(true);
         if (self->_display && self->_display->hasFastPartialUpdate) {
             for (const auto &wr : written_regions) {
-                ESP_LOGD(TAG, "Worker: final writeImageAgain for region x=%d y=%d w=%d h=%d",
+                ESP_LOGI(TAG, "Worker: final writeImageAgain for region x=%d y=%d w=%d h=%d",
                          wr.x, wr.y, wr.w, wr.h);
                 self->_display->writeImageAgain(wr.buf, wr.x, wr.y, wr.w, wr.h, false, false, false);
             }
@@ -584,33 +584,27 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    // Logical area size
     const int logical_w = area->x2 - area->x1 + 1;
     const int logical_h = area->y2 - area->y1 + 1;
     lv_color_format_t cf = lv_display_get_color_format(disp);
     uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
     uint8_t* src_bytes = (uint8_t*)px_map;
 
-    // Panel geometry
     const int panel_width = self->_config.width;
     const int panel_height = self->_config.height;
     const int panel_bytes_per_row = (panel_width + 7) / 8;
 
-    // LVGL reported logical resolution AFTER rotation
     int32_t hor_res = lv_display_get_horizontal_resolution(disp);
     int32_t ver_res = lv_display_get_vertical_resolution(disp);
 
-    // We'll track the minimal bounding box (in physical coordinates) touched by this flush.
     int min_px = panel_width, min_py = panel_height, max_px = -1, max_py = -1;
 
-    // Try to take framebuffer mutex; if not available within reasonable time, skip and report
     if (xSemaphoreTake(self->_framebufferMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
         ESP_LOGW(TAG, "Framebuffer mutex busy; dropping LVGL flush");
         lv_display_flush_ready(disp);
         return;
     }
 
-    // Determine rotation from LVGL for this display (use LVGL's rotation)
     lv_display_rotation_t lv_rotation = lv_display_get_rotation(disp);
     int rotation = 0;
     switch (lv_rotation) {
@@ -622,33 +616,30 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     ESP_LOGI(TAG, "lvglFlushCallback: LVGL rotation=%d config.rotation=%d hor_res=%d ver_res=%d area=(%d,%d)-(%d,%d)",
              rotation, (int)self->_config.rotation, (int)hor_res, (int)ver_res, area->x1, area->y1, area->x2, area->y2);
 
-    // Helper lambda to map logical->physical using LVGL logical resolution (hor_res/ver_res)
     auto map_logical_to_physical = [&](int logical_x_abs, int logical_y_abs, int& physical_x_abs, int& physical_y_abs) {
         switch (rotation) {
-            case 1: // 90° CW
+            case 1:
                 physical_x_abs = logical_y_abs;
                 physical_y_abs = (hor_res - 1) - logical_x_abs;
                 break;
-            case 2: // 180°
+            case 2:
                 physical_x_abs = (hor_res - 1) - logical_x_abs;
                 physical_y_abs = (ver_res - 1) - logical_y_abs;
                 break;
-            case 3: // 270° CW
+            case 3:
                 physical_x_abs = (ver_res - 1) - logical_y_abs;
                 physical_y_abs = logical_x_abs;
                 break;
             case 0:
-            default: // 0°
+            default:
                 physical_x_abs = logical_x_abs;
                 physical_y_abs = logical_y_abs;
                 break;
         }
-        // Apply configured gaps/offsets
         physical_x_abs += self->_gapX;
         physical_y_abs += self->_gapY;
     };
 
-    // Update the persistent framebuffer with pixels from LVGL area and compute touched bbox
     for (int ly = 0; ly < logical_h; ++ly) {
         lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
 
@@ -676,7 +667,6 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 self->_frameBuffer[byte_idx] &= ~(1 << bit_pos);
             }
 
-            // expand touched bounding box
             min_px = std::min(min_px, physical_x_abs);
             max_px = std::max(max_px, physical_x_abs);
             min_py = std::min(min_py, physical_y_abs);
@@ -684,29 +674,25 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         }
     }
 
-    // If nothing changed (shouldn't happen since LVGL wouldn't flush empty), just release and return
     if (max_px < 0 || max_py < 0) {
         xSemaphoreGive(self->_framebufferMutex);
         lv_display_flush_ready(disp);
         return;
     }
 
-    // Align x0/w to byte (8-pixel) boundaries required by controllers
     int aligned_x0 = (min_px / 8) * 8;
-    int aligned_x1 = ((max_px + 8) / 8) * 8 - 1; // inclusive
+    int aligned_x1 = ((max_px + 8) / 8) * 8 - 1;
     if (aligned_x0 < 0) aligned_x0 = 0;
     if (aligned_x1 >= panel_width) aligned_x1 = panel_width - 1;
     int aligned_w = aligned_x1 - aligned_x0 + 1;
     int packed_row_bytes = (aligned_w + 7) / 8;
 
-    // Vertical bounds
     int y0 = min_py;
     int y1 = max_py;
     if (y0 < 0) y0 = 0;
     if (y1 >= panel_height) y1 = panel_height - 1;
     int packed_h = y1 - y0 + 1;
 
-    // Allocate packed buffer for the minimal aligned rectangle (MALLOC_CAP_DMA for SPI DMA)
     size_t packed_size = (size_t)packed_row_bytes * (size_t)packed_h;
     uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
     if (!packed) {
@@ -716,12 +702,9 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    // Pack the minimal rectangle from the persistent framebuffer into packed buffer
-    // Source framebuffer uses panel_bytes_per_row bytes per full panel row.
     for (int ry = 0; ry < packed_h; ++ry) {
         int src_y = y0 + ry;
         uint8_t* dst_row = packed + (size_t)ry * packed_row_bytes;
-        // For each byte in destination row
         for (int bx = 0; bx < packed_row_bytes; ++bx) {
             uint8_t out = 0;
             int base_x = aligned_x0 + bx * 8;
@@ -729,7 +712,6 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 int sx = base_x + bit;
                 out <<= 1;
                 if (sx >= panel_width) {
-                    // leave bit as 0
                 } else {
                     int src_byte_idx = src_y * panel_bytes_per_row + (sx / 8);
                     int src_bit_pos = 7 - (sx & 7);
@@ -741,13 +723,28 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         }
     }
 
-    // Release framebuffer mutex before enqueueing as we no longer touch framebuffer
     xSemaphoreGive(self->_framebufferMutex);
 
+    // Debug: dump first 16 bytes of packed buffer and corresponding framebuffer bytes
     ESP_LOGI(TAG, "Mapped physical bbox (pre-align) = x[%d..%d] y[%d..%d] aligned_x0=%d y0=%d w=%d h=%d packed_bytes=%zu",
              min_px, max_px, min_py, max_py, aligned_x0, y0, aligned_w, packed_h, packed_size);
+    
+    char hex_buf[128];
+    int print_bytes = std::min(16, (int)packed_size);
+    char* p = hex_buf;
+    for (int i = 0; i < print_bytes; ++i) {
+        p += snprintf(p, hex_buf + sizeof(hex_buf) - p, "%02X ", packed[i]);
+    }
+    ESP_LOGI(TAG, "Packed first %d bytes: %s", print_bytes, hex_buf);
 
-    // Enqueue the packed minimal rectangle for the worker to write
+    // Also dump corresponding bytes from framebuffer at first row
+    int fb_row0_start = y0 * panel_bytes_per_row + (aligned_x0 / 8);
+    p = hex_buf;
+    for (int i = 0; i < std::min(print_bytes, packed_row_bytes); ++i) {
+        p += snprintf(p, hex_buf + sizeof(hex_buf) - p, "%02X ", self->_frameBuffer[fb_row0_start + i]);
+    }
+    ESP_LOGI(TAG, "Framebuffer row y=%d bytes [%d..%d]: %s", y0, fb_row0_start, fb_row0_start + print_bytes - 1, hex_buf);
+
     if (self->_queue) {
         QueueItem qi;
         qi.buf = packed;
@@ -763,7 +760,6 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
             ESP_LOGI(TAG, "Enqueued frame x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
         }
     } else {
-        // No queue available - attempt direct write (best-effort)
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
         ESP_LOGI(TAG, "Direct write (no queue) x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
         self->_display->writeImage(packed, aligned_x0, y0, aligned_w, packed_h, false, false, false);
