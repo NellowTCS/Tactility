@@ -386,16 +386,21 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     QueueItem item;
     bool processed_since_refresh = false;
 
-    // Keep last written buffer for "writeAgain" after refresh (two-phase)
-    uint8_t* last_buf = nullptr;
-    int16_t last_x = 0, last_y = 0;
-    uint16_t last_w = 0, last_h = 0;
+    // Keep all written buffers for "writeAgain" after refresh (two-phase for fast partial update panels)
+    struct WrittenRegion {
+        uint8_t* buf;
+        int16_t x;
+        int16_t y;
+        uint16_t w;
+        uint16_t h;
+    };
+    std::vector<WrittenRegion> written_regions;
 
     while (true) {
         // Wait for at least one item
         if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(150))) {
             if (item.buf == nullptr) {
-                ESP_LOGI(TAG, "Worker: termination received");
+                ESP_LOGD(TAG, "Worker: termination received");
                 break;
             }
 
@@ -464,6 +469,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                 int item_row_bytes = (qi.w + 7) / 8;
                 for (int ry = 0; ry < qi.h; ++ry) {
                     int dst_row = (qi.y + ry) - aligned_union_y0;
+                    if (dst_row < 0 || dst_row >= union_h) continue;
                     uint8_t* dst = union_buf + (size_t)dst_row * union_row_bytes;
                     int dst_byte_offset = (qi.x - aligned_union_x0) / 8;
                     uint8_t* dst_ptr = dst + dst_byte_offset;
@@ -480,17 +486,10 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                 }
             }
 
-            // If we had a previous last_buf that hasn't yet been consumed (e.g. refresh didn't occur),
-            // free it now because it's being replaced by this new write (we only keep the most recent).
-            if (last_buf) {
-                heap_caps_free(last_buf);
-                last_buf = nullptr;
-            }
-
             // Perform SPI write once for the union rect
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            ESP_LOGI(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items)",
+            ESP_LOGD(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items)",
                      aligned_union_x0, aligned_union_y0, union_w, union_h, (int)items.size());
 
             self->_display->writeImage(union_buf, (int16_t)aligned_union_x0, (int16_t)aligned_union_y0,
@@ -498,13 +497,14 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
-            // Save the union buffer and its rect for the post-refresh writeAgain step.
-            // We don't free union_buf here. It will be freed after the refresh and (if needed) writeImageAgain.
-            last_buf = union_buf;
-            last_x = (int16_t)aligned_union_x0;
-            last_y = (int16_t)aligned_union_y0;
-            last_w = (uint16_t)union_w;
-            last_h = (uint16_t)union_h;
+            // Save this written region so we can replay it with writeImageAgain after the refresh
+            WrittenRegion wr;
+            wr.buf = union_buf;
+            wr.x = (int16_t)aligned_union_x0;
+            wr.y = (int16_t)aligned_union_y0;
+            wr.w = (uint16_t)union_w;
+            wr.h = (uint16_t)union_h;
+            written_regions.push_back(wr);
 
             processed_since_refresh = true;
             continue;
@@ -512,25 +512,29 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             // No item received within timeout: if we did writes since last refresh, perform refresh and post-step.
             if (processed_since_refresh) {
                 if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-                ESP_LOGI(TAG, "Worker: refresh(true)");
+                ESP_LOGD(TAG, "Worker: refresh(true)");
                 self->_display->refresh(true);
 
-                // If the driver supports fast partial update, make the second-phase write to sync previous buffer
+                // If the driver supports fast partial update, replay all written regions with writeImageAgain
+                // to synchronize the controller's "previous" buffer with "current" buffer.
                 if (self->_display && self->_display->hasFastPartialUpdate) {
-                    if (last_buf) {
-                        ESP_LOGI(TAG, "Worker: writeImageAgain for last region x=%d y=%d w=%d h=%d",
-                                 last_x, last_y, last_w, last_h);
-                        self->_display->writeImageAgain(last_buf, last_x, last_y, last_w, last_h, false, false, false);
+                    for (const auto &wr : written_regions) {
+                        ESP_LOGD(TAG, "Worker: writeImageAgain for region x=%d y=%d w=%d h=%d",
+                                 wr.x, wr.y, wr.w, wr.h);
+                        self->_display->writeImageAgain(wr.buf, wr.x, wr.y, wr.w, wr.h, false, false, false);
                     }
                 }
 
                 if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
-                // Free last_buf now that we've completed the second phase (or if panel doesn't need it)
-                if (last_buf) {
-                    heap_caps_free(last_buf);
-                    last_buf = nullptr;
+                // Free all written region buffers now that we've completed the second phase
+                for (auto &wr : written_regions) {
+                    if (wr.buf) {
+                        heap_caps_free(wr.buf);
+                        wr.buf = nullptr;
+                    }
                 }
+                written_regions.clear();
 
                 processed_since_refresh = false;
             }
@@ -541,7 +545,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
         if (item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-            ESP_LOGI(TAG, "Worker: draining and writeImage x=%u y=%u w=%u h=%u", item.x, item.y, item.w, item.h);
+            ESP_LOGD(TAG, "Worker: draining and writeImage x=%u y=%u w=%u h=%u", item.x, item.y, item.w, item.h);
             self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
@@ -549,19 +553,24 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     }
     if (processed_since_refresh) {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-        ESP_LOGI(TAG, "Worker: final refresh(true)");
+        ESP_LOGD(TAG, "Worker: final refresh(true)");
         self->_display->refresh(true);
-        if (self->_display && self->_display->hasFastPartialUpdate && last_buf) {
-            ESP_LOGI(TAG, "Worker: final writeImageAgain for last region x=%d y=%d w=%d h=%d",
-                     last_x, last_y, last_w, last_h);
-            self->_display->writeImageAgain(last_buf, last_x, last_y, last_w, last_h, false, false, false);
+        if (self->_display && self->_display->hasFastPartialUpdate) {
+            for (const auto &wr : written_regions) {
+                ESP_LOGD(TAG, "Worker: final writeImageAgain for region x=%d y=%d w=%d h=%d",
+                         wr.x, wr.y, wr.w, wr.h);
+                self->_display->writeImageAgain(wr.buf, wr.x, wr.y, wr.w, wr.h, false, false, false);
+            }
         }
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
     }
 
-    if (last_buf) {
-        heap_caps_free(last_buf);
-        last_buf = nullptr;
+    // Free any remaining written region buffers
+    for (auto &wr : written_regions) {
+        if (wr.buf) {
+            heap_caps_free(wr.buf);
+            wr.buf = nullptr;
+        }
     }
 
     self->_workerRunning = false;
