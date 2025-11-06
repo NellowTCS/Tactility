@@ -498,9 +498,9 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                 self->_display->refresh(true);
 
                 if (last_buf) {
-                    ESP_LOGI(TAG, "Worker: writeImageAgain (sync 0x26) x=%d y=%d w=%d h=%d",
+                    ESP_LOGI(TAG, "Worker: writeImagePrevious (sync 0x26) x=%d y=%d w=%d h=%d",
                              last_x, last_y, last_w, last_h);
-                    self->_display->writeImageAgain(last_buf, last_x, last_y, last_w, last_h, false, false, false);
+                    self->_display->writeImagePrevious(last_buf, last_x, last_y, last_w, last_h, false, false, false);
                 }
 
                 if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
@@ -529,9 +529,9 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
         ESP_LOGI(TAG, "Worker: final refresh(true)");
         self->_display->refresh(true);
         if (last_buf) {
-            ESP_LOGI(TAG, "Worker: final writeImageAgain (sync 0x26) x=%d y=%d w=%d h=%d",
+            ESP_LOGI(TAG, "Worker: final writeImagePrevious (sync 0x26) x=%d y=%d w=%d h=%d",
                      last_x, last_y, last_w, last_h);
-            self->_display->writeImageAgain(last_buf, last_x, last_y, last_w, last_h, false, false, false);
+            self->_display->writeImagePrevious(last_buf, last_x, last_y, last_w, last_h, false, false, false);
         }
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
     }

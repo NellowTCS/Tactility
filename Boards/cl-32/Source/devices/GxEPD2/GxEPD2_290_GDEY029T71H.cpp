@@ -70,6 +70,11 @@ void GxEPD2_290_GDEY029T71H::writeImageAgain(const uint8_t bitmap[], int16_t x, 
   _writeImage(0x24, bitmap, x, y, w, h, invert, mirror_y, pgm); // set current
 }
 
+void GxEPD2_290_GDEY029T71H::writeImagePrevious(const uint8_t bitmap[], int16_t x, int16_t y, int16_t w, int16_t h, bool invert, bool mirror_y, bool pgm)
+{
+  _writeImage(0x26, bitmap, x, y, w, h, invert, mirror_y, pgm); // Write only to 0x26 (previous buffer)
+}
+
 void GxEPD2_290_GDEY029T71H::_writeImage(uint8_t command, const uint8_t bitmap[], int16_t x, int16_t y, int16_t w, int16_t h, bool invert, bool mirror_y, bool pgm)
 {
   vTaskDelay(pdMS_TO_TICKS(1)); // yield() to avoid WDT on ESP32
