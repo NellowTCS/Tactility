@@ -34,12 +34,12 @@ GxEPD2Display::~GxEPD2Display() {
     }
 }
 
-std::string GxEPD2Display::getName() const { 
-    return "GxEPD2"; 
+std::string GxEPD2Display::getName() const {
+    return "GxEPD2";
 }
 
-std::string GxEPD2Display::getDescription() const { 
-    return "E-paper display GDEY029T71H"; 
+std::string GxEPD2Display::getDescription() const {
+    return "E-paper display GDEY029T71H";
 }
 
 bool GxEPD2Display::start() {
@@ -106,12 +106,12 @@ bool GxEPD2Display::stop() {
     return true;
 }
 
-std::shared_ptr<tt::hal::touch::TouchDevice> GxEPD2Display::getTouchDevice() { 
-    return nullptr; 
+std::shared_ptr<tt::hal::touch::TouchDevice> GxEPD2Display::getTouchDevice() {
+    return nullptr;
 }
 
-bool GxEPD2Display::supportsLvgl() const { 
-    return true; 
+bool GxEPD2Display::supportsLvgl() const {
+    return true;
 }
 
 bool GxEPD2Display::createWorker() {
@@ -249,13 +249,13 @@ bool GxEPD2Display::stopLvgl() {
         lv_display_delete(_lvglDisplay);
         _lvglDisplay = nullptr;
     }
-    if (_drawBuf1) { 
-        heap_caps_free(_drawBuf1); 
-        _drawBuf1 = nullptr; 
+    if (_drawBuf1) {
+        heap_caps_free(_drawBuf1);
+        _drawBuf1 = nullptr;
     }
-    if (_drawBuf2) { 
-        heap_caps_free(_drawBuf2); 
-        _drawBuf2 = nullptr; 
+    if (_drawBuf2) {
+        heap_caps_free(_drawBuf2);
+        _drawBuf2 = nullptr;
     }
 
     // Destroy worker (will flush remaining items and stop)
@@ -264,27 +264,27 @@ bool GxEPD2Display::stopLvgl() {
     return true;
 }
 
-lv_display_t* GxEPD2Display::getLvglDisplay() const { 
-    return _lvglDisplay; 
+lv_display_t* GxEPD2Display::getLvglDisplay() const {
+    return _lvglDisplay;
 }
 
-bool GxEPD2Display::supportsDisplayDriver() const { 
-    return false; 
+bool GxEPD2Display::supportsDisplayDriver() const {
+    return false;
 }
 
-std::shared_ptr<tt::hal::display::DisplayDriver> GxEPD2Display::getDisplayDriver() { 
-    return nullptr; 
+std::shared_ptr<tt::hal::display::DisplayDriver> GxEPD2Display::getDisplayDriver() {
+    return nullptr;
 }
 
-uint16_t GxEPD2Display::getWidth() const { 
-    return _config.width; 
+uint16_t GxEPD2Display::getWidth() const {
+    return _config.width;
 }
 
-uint16_t GxEPD2Display::getHeight() const { 
-    return _config.height; 
+uint16_t GxEPD2Display::getHeight() const {
+    return _config.height;
 }
 
-void GxEPD2Display::writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, int16_t w, int16_t h, 
+void GxEPD2Display::writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, int16_t w, int16_t h,
                                    bool invert, bool mirror_y) {
     if (!_display) return;
     // serialize direct writes with mutex so they don't race the worker
@@ -304,9 +304,9 @@ void GxEPD2Display::refreshDisplay(bool partial) {
 // Helper: Convert RGB565 to monochrome using brightness threshold
 // Uses ITU-R BT.601 luma coefficients for RGB to grayscale conversion
 inline bool GxEPD2Display::rgb565ToMono(lv_color_t pixel) {
-    uint8_t r = pixel.red;   
-    uint8_t g = pixel.green; 
-    uint8_t b = pixel.blue;  
+    uint8_t r = pixel.red;
+    uint8_t g = pixel.green;
+    uint8_t b = pixel.blue;
     uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
     return brightness > 127;
 }
@@ -376,9 +376,9 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* self = static_cast<GxEPD2Display*>(lv_display_get_user_data(disp));
-    if (!self || !self->_display) { 
-        lv_display_flush_ready(disp); 
-        return; 
+    if (!self || !self->_display) {
+        lv_display_flush_ready(disp);
+        return;
     }
 
     lv_display_rotation_t rotation = lv_display_get_rotation(disp);
@@ -410,9 +410,9 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     const int epd_w = physical_area.x2 - physical_area.x1 + 1;
     const int epd_h = physical_area.y2 - physical_area.y1 + 1;
 
-    if (epd_w <= 0 || epd_h <= 0) { 
-        lv_display_flush_ready(disp); 
-        return; 
+    if (epd_w <= 0 || epd_h <= 0) {
+        lv_display_flush_ready(disp);
+        return;
     }
 
     const int logical_w = area->x2 - area->x1 + 1;
@@ -427,7 +427,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
     
-    memset(packed, 0xFF, packed_size); 
+    memset(packed, 0xFF, packed_size);
 
     lv_color_format_t cf = lv_display_get_color_format(disp);
     uint32_t src_row_stride = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
@@ -435,17 +435,17 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
 
     static int s_flush_debug_count = 0;
     if (s_flush_debug_count < 8) {
-        ESP_LOGI(TAG, "lvglFlush: logical_area=[%d,%d %dx%d] physical_area=[%d,%d %dx%d] rot=%d", 
+        ESP_LOGI(TAG, "lvglFlush: logical_area=[%d,%d %dx%d] physical_area=[%d,%d %dx%d] rot=%d",
                  area->x1, area->y1, logical_w, logical_h, epd_x, epd_y, epd_w, epd_h, (int)rotation);
     }
 
     // Iterate over the LOGICAL source buffer and calculate the destination pixel for each
-    for (int ly_rel = 0; ly_rel < logical_h; ++ly_rel) {
-        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly_rel * src_row_stride);
-        for (int lx_rel = 0; lx_rel < logical_w; ++lx_rel) {
+    for (int ly = 0; ly < logical_h; ++ly) {
+        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride);
+        for (int lx = 0; lx < logical_w; ++lx) {
             
-            int lx_abs = area->x1 + lx_rel;
-            int ly_abs = area->y1 + ly_rel;
+            int lx_abs = area->x1 + lx;
+            int ly_abs = area->y1 + ly;
 
             int px_abs = 0;
             int py_abs = 0;
@@ -468,19 +468,17 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
             int py_rel = py_abs - epd_y;
 
             if (px_rel < 0 || px_rel >= epd_w || py_rel < 0 || py_rel >= epd_h) {
-                continue; 
+                continue;
             }
 
-            lv_color_t pixel = src_row[lx_rel];
+            lv_color_t pixel = src_row[lx];
             bool is_white = self->rgb565ToMono(pixel);
             
             const int byte_idx = py_rel * epd_row_bytes + (px_rel / 8);
             const int bit_pos = 7 - (px_rel & 7);
 
-            if (is_white) {
-                packed[byte_idx] |= (1 << bit_pos);
-            } else {
-                packed[byte_idx] &= ~(1 << bit_pos);
+            if (!is_white) {
+                 packed[byte_idx] &= ~(1 << bit_pos);
             }
         }
     }
