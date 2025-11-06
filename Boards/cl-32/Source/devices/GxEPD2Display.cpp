@@ -22,8 +22,6 @@ GxEPD2Display::GxEPD2Display(const Configuration& config)
     , _workerRunning(false)
     , _gapX(0)
     , _gapY(0)
-    , _fullFb(nullptr)
-    , _fullFbSize(0)
 {
 }
 
@@ -35,11 +33,6 @@ GxEPD2Display::~GxEPD2Display() {
     if (_spiMutex) {
         vSemaphoreDelete(_spiMutex);
         _spiMutex = nullptr;
-    }
-    if (_fullFb) {
-        heap_caps_free(_fullFb);
-        _fullFb = nullptr;
-        _fullFbSize = 0;
     }
 }
 
@@ -247,21 +240,6 @@ bool GxEPD2Display::startLvgl() {
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
-    // Allocate a full logical shadow framebuffer in PSRAM so we can build full-screen packed frames.
-    // Logical resolution is hor_res x ver_res (LVGL reports after rotation).
-    size_t full_fb_bytes = (size_t)hor_res * (size_t)ver_res * sizeof(lv_color_t);
-    _fullFb = (lv_color_t*)heap_caps_malloc(full_fb_bytes, MALLOC_CAP_SPIRAM);
-    if (!_fullFb) {
-        ESP_LOGW(TAG, "Failed to allocate full shadow framebuffer (%zu bytes) in PSRAM; full-refresh fallback will be disabled", full_fb_bytes);
-        _fullFbSize = 0;
-    } else {
-        _fullFbSize = full_fb_bytes;
-        // initialize to white
-        lv_color_t white = lv_color_white();
-        for (size_t i = 0; i < (size_t)hor_res * (size_t)ver_res; ++i) _fullFb[i] = white;
-        ESP_LOGI(TAG, "Allocated full shadow framebuffer: %zu bytes (%dx%d)", full_fb_bytes, hor_res, ver_res);
-    }
-
     // Create the display worker (queue + task) used to serialize writes and batch refreshes
     if (!createWorker()) {
         ESP_LOGW(TAG, "Failed to create display worker - LVGL flushes will still attempt direct writes (risky)");
@@ -290,12 +268,6 @@ bool GxEPD2Display::stopLvgl() {
 
     // Destroy worker (will flush remaining items and stop)
     destroyWorker();
-
-    if (_fullFb) {
-        heap_caps_free(_fullFb);
-        _fullFb = nullptr;
-        _fullFbSize = 0;
-    }
 
     return true;
 }
@@ -362,25 +334,26 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             }
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
+            // DIAGNOSTIC LOG: show what we're about to hand to driver
             int wb_driver = (item.w + 7) / 8;
             size_t item_size = (size_t)wb_driver * (size_t)item.h;
-            ESP_LOGI(TAG, "Worker: full writeImage called with x=%d y=%d w=%d h=%d wb=%d buf=%p size=%d",
+            ESP_LOGI(TAG, "Worker: writeImage called with x=%d y=%d w=%d h=%d wb=%d buf=%p size=%d",
                      item.x, item.y, item.w, item.h, wb_driver, (void*)item.buf, (int)item_size);
 
-            // We do a full-screen write here: worker receives full-screen packed frames (x==0,y==0)
-            // After writing the image, perform a full refresh to ensure the panel displays the content.
             self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
-            // Force a full refresh so partial-update complexities are avoided for now.
-            ESP_LOGI(TAG, "Worker: forcing full refresh()");
-            self->_display->refresh(false);
-
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
             item.buf = nullptr;
-            processed_since_refresh = false; // already refreshed
+            processed_since_refresh = true;
             continue;
         } else {
-            // nothing received; nothing to do
+            if (processed_since_refresh) {
+                if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+                ESP_LOGI(TAG, "Worker: performing partial refresh()");
+                self->_display->refresh(true);
+                if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+                processed_since_refresh = false;
+            }
         }
     }
 
@@ -389,24 +362,24 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
             int wb_driver = (item.w + 7) / 8;
             size_t item_size = (size_t)wb_driver * (size_t)item.h;
-            ESP_LOGI(TAG, "Worker (drain): full writeImage x=%d y=%d w=%d h=%d wb=%d buf=%p size=%d",
+            ESP_LOGI(TAG, "Worker (drain): writeImage x=%d y=%d w=%d h=%d wb=%d buf=%p size=%d",
                      item.x, item.y, item.w, item.h, wb_driver, (void*)item.buf, (int)item_size);
 
             self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
-            ESP_LOGI(TAG, "Worker (drain): forcing full refresh()");
-            self->_display->refresh(false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
         }
+    }
+    if (processed_since_refresh) {
+        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+        ESP_LOGI(TAG, "Worker: final partial refresh()");
+        self->_display->refresh(true);
+        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
     }
     self->_workerRunning = false;
     vTaskDelete(NULL);
 }
 
-// Immediate full-screen pack & enqueue strategy:
-// - Copy LVGL partial px_map into the logical shadow framebuffer (if allocated).
-// - Build a full-screen 1bpp packed buffer from the shadow and enqueue it as a single full-screen write.
-// This avoids per-flush partial packing complexity. It's heavy but reliable as a first step.
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* self = static_cast<GxEPD2Display*>(lv_display_get_user_data(disp));
     if (!self || !self->_display) {
@@ -418,80 +391,107 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     int32_t hor_res = lv_display_get_horizontal_resolution(disp);
     int32_t ver_res = lv_display_get_vertical_resolution(disp);
 
+    // Calculate the physical area on the display that this flush corresponds to.
+    lv_area_t physical_area;
+    if (rotation == LV_DISPLAY_ROTATION_90) {
+        physical_area.x1 = area->y1;
+        physical_area.y1 = hor_res - 1 - area->x2;
+        physical_area.x2 = area->y2;
+        physical_area.y2 = hor_res - 1 - area->x1;
+    } else if (rotation == LV_DISPLAY_ROTATION_270) {
+        physical_area.x1 = ver_res - 1 - area->y2;
+        physical_area.y1 = area->x1;
+        physical_area.x2 = ver_res - 1 - area->y1;
+        physical_area.y2 = area->x2;
+    } else if (rotation == LV_DISPLAY_ROTATION_180) {
+        physical_area.x1 = hor_res - 1 - area->x2;
+        physical_area.y1 = ver_res - 1 - area->y2;
+        physical_area.x2 = hor_res - 1 - area->x1;
+        physical_area.y2 = ver_res - 1 - area->y1;
+    } else { // 0 or other
+        physical_area = *area;
+    }
+
+    const int epd_x = physical_area.x1;
+    const int epd_y = physical_area.y1;
+    const int epd_w = physical_area.x2 - epd_x + 1;
+    const int epd_h = physical_area.y2 - epd_y + 1;
+
+    if (epd_w <= 0 || epd_h <= 0) {
+        lv_display_flush_ready(disp);
+        return;
+    }
+
+    // Align X to byte boundary that the driver expects
+    const int start_bit_offset = epd_x & 7; // epd_x % 8
+    const int aligned_x = epd_x - start_bit_offset; // floor to byte boundary
+    const int padded_w = epd_w + start_bit_offset; // include left padding in width
+    const int padded_w_bytes = (padded_w + 7) / 8; // bytes per row for the driver
+    const size_t packed_size = (size_t)padded_w_bytes * (size_t)epd_h;
+
+    uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
+    if (!packed) {
+        ESP_LOGE(TAG, "Failed to allocate %zu bytes for 1-bit buffer", packed_size);
+        lv_display_flush_ready(disp);
+        return;
+    }
+    // default to white
+    memset(packed, 0xFF, packed_size);
+
     const int logical_w = area->x2 - area->x1 + 1;
-    const int logical_h = area->y2 - area->y1 + 1;
     lv_color_format_t cf = lv_display_get_color_format(disp);
     uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
     uint8_t* src_bytes = (uint8_t*)px_map;
 
-    // If we don't have a full shadow FB, fall back to doing nothing and ack the flush.
-    if (!self->_fullFb) {
-        // best effort: still ack the flush so LVGL can continue
-        lv_display_flush_ready(disp);
-        return;
+    static int s_flush_debug_count = 0;
+    if (s_flush_debug_count < 8) {
+        ESP_LOGI(TAG, "lvglFlush: logical=[%d,%d %dx%d] physical=[%d,%d %dx%d] aligned_x=%d start_bit=%d padded_w=%d bytes=%d rot=%d",
+                 area->x1, area->y1, logical_w, area->y2 - area->y1 + 1,
+                 epd_x, epd_y, epd_w, epd_h, aligned_x, start_bit_offset, padded_w, padded_w_bytes, (int)rotation);
+        ESP_LOGI(TAG, " lvgl src_row_stride_bytes=%u", src_row_stride_bytes);
     }
 
-    // Copy the px_map into the shadow full framebuffer at logical coordinates
-    for (int ly = 0; ly < logical_h; ++ly) {
+    // For each logical pixel, compute destination physical coords and pack into the aligned buffer.
+    for (int ly = 0; ly < (area->y2 - area->y1 + 1); ++ly) {
         lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
-        // destination is fullFb at (area->x1, area->y1 + ly)
-        int dst_y = area->y1 + ly;
-        if (dst_y < 0 || dst_y >= ver_res) continue;
-        lv_color_t* dst_row = self->_fullFb + (size_t)dst_y * (size_t)hor_res;
-        // copy logical_w pixels
         for (int lx = 0; lx < logical_w; ++lx) {
-            int dst_x = area->x1 + lx;
-            if (dst_x < 0 || dst_x >= hor_res) continue;
-            dst_row[dst_x] = src_row[lx];
-        }
-    }
+            int logical_x_abs = area->x1 + lx;
+            int logical_y_abs = area->y1 + ly;
 
-    // Now build a full-screen packed 1bpp buffer (physical packing & rotation applied)
-    const int epd_w = (int)GxEPD2_290_GDEY029T71H::WIDTH;  // 168
-    const int epd_h = (int)GxEPD2_290_GDEY029T71H::HEIGHT; // 384
-    const int epd_row_bytes = (epd_w + 7) / 8; // 21
-    const size_t packed_size = (size_t)epd_row_bytes * (size_t)epd_h;
-    uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
-    if (!packed) {
-        ESP_LOGE(TAG, "Failed to allocate full packed buffer (%zu bytes)", packed_size);
-        lv_display_flush_ready(disp);
-        return;
-    }
-    memset(packed, 0xFF, packed_size);
+            int physical_x_abs = 0;
+            int physical_y_abs = 0;
 
-    // Map logical (fullFb) to physical panel coordinates and pack
-    // fullFb logical resolution is hor_res x ver_res (384 x 168)
-    for (int ly = 0; ly < ver_res; ++ly) {
-        for (int lx = 0; lx < hor_res; ++lx) {
-            // read logical pixel
-            lv_color_t pixel = self->_fullFb[ly * hor_res + lx];
-            bool is_white = rgb565ToMono(pixel);
-
-            // map logical -> physical based on rotation (we set rotation earlier in startLvgl)
-            int physical_x = 0;
-            int physical_y = 0;
+            // Map logical -> physical depending on rotation
             if (rotation == LV_DISPLAY_ROTATION_0) {
-                physical_x = lx;
-                physical_y = ly;
+                physical_x_abs = logical_x_abs;
+                physical_y_abs = logical_y_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_90) {
-                physical_x = ly;
-                physical_y = hor_res - 1 - lx;
+                physical_x_abs = logical_y_abs;
+                physical_y_abs = hor_res - 1 - logical_x_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_180) {
-                physical_x = hor_res - 1 - lx;
-                physical_y = ver_res - 1 - ly;
+                physical_x_abs = hor_res - 1 - logical_x_abs;
+                physical_y_abs = ver_res - 1 - logical_y_abs;
             } else { // 270
-                physical_x = ver_res - 1 - ly;
-                physical_y = lx;
+                physical_x_abs = ver_res - 1 - logical_y_abs;
+                physical_y_abs = logical_x_abs;
             }
 
-            // physical_x/physical_y are within panel's logical coordinate space after rotation.
-            // But our panel native orientation is WIDTH x HEIGHT (168 x 384). Map accordingly:
-            // epd_x ranges 0..(epd_w-1), epd_y ranges 0..(epd_h-1)
-            if (physical_x < 0 || physical_x >= epd_w || physical_y < 0 || physical_y >= epd_h) {
+            // Convert to buffer-relative coords using ALIGNED origin
+            int px_rel = physical_x_abs - aligned_x; // note aligned_x used here
+            int py_rel = physical_y_abs - epd_y;
+
+            if (px_rel < 0 || px_rel >= padded_w || py_rel < 0 || py_rel >= epd_h) {
                 continue;
             }
-            int byte_idx = physical_y * epd_row_bytes + (physical_x / 8);
-            int bit_pos = 7 - (physical_x & 7);
+
+            // Read LVGL pixel from source row
+            lv_color_t pixel = src_row[lx];
+            bool is_white = rgb565ToMono(pixel);
+
+            // Pack into buffer that starts at aligned_x. byte index uses padded_w_bytes (driver wb)
+            const int byte_idx = py_rel * padded_w_bytes + (px_rel / 8);
+            const int bit_pos = 7 - (px_rel & 7);
+
             if (is_white) {
                 packed[byte_idx] |= (1 << bit_pos);
             } else {
@@ -500,23 +500,35 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         }
     }
 
-    // Enqueue a full-screen write (x=0,y=0,w=epd_w,h=epd_h)
+    if (s_flush_debug_count < 8) {
+        const int dump_bytes = std::min<int>((int)packed_size, 16);
+        char buf_hex[16 * 3 + 1];
+        char *p = buf_hex;
+        for (int i = 0; i < dump_bytes; ++i) {
+            int n = sprintf(p, "%02X ", packed[i]);
+            p += n;
+        }
+        *p = '\0';
+        ESP_LOGI(TAG, "packed[%d]= %s (aligned_x=%d padded_w=%d bytes=%d) packed_size=%d", dump_bytes, buf_hex, aligned_x, padded_w, padded_w_bytes, (int)packed_size);
+        ++s_flush_debug_count;
+    }
+
+    // Enqueue using aligned coords and padded width (in pixels = padded_w_bytes*8)
     if (self->_queue) {
         QueueItem qi;
         qi.buf = packed;
-        qi.x = 0;
-        qi.y = 0;
-        qi.w = (uint16_t)epd_w;
+        qi.x = (uint16_t)aligned_x;                 // aligned to byte boundary
+        qi.y = (uint16_t)epd_y;
+        qi.w = (uint16_t)(padded_w_bytes * 8);      // width rounded to bytes, in pixels
         qi.h = (uint16_t)epd_h;
-        ESP_LOGI(TAG, "Enqueue full-screen update: w=%d h=%d packed_size=%d", qi.w, qi.h, (int)packed_size);
+        ESP_LOGI(TAG, "Enqueue: qi.x=%d qi.y=%d qi.w=%d qi.h=%d buf=%p packed_size=%d", qi.x, qi.y, qi.w, qi.h, (void*)qi.buf, (int)packed_size);
         if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
-            ESP_LOGW(TAG, "Display queue full; dropping full-screen frame");
+            ESP_LOGW(TAG, "Display queue full; frame dropped.");
             heap_caps_free(packed);
         }
     } else {
         heap_caps_free(packed);
     }
 
-    // Acknowledge LVGL flush immediately — we've captured the pixels into our shadow.
     lv_display_flush_ready(disp);
 }
