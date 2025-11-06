@@ -191,6 +191,12 @@ bool GxEPD2Display::startLvgl() {
     ESP_LOGI(TAG, "Starting LVGL: requested physical=%ux%u rotation=%d (config.rotation=%d)",
              _config.width, _config.height, lv_rotation, _config.rotation);
 
+    // log driver panel constants for debugging
+    ESP_LOGI(TAG, "Driver native panel: WIDTH=%u HEIGHT=%u SOURCE_SHIFT=%u",
+             (unsigned)GxEPD2_290_GDEY029T71H::WIDTH,
+             (unsigned)GxEPD2_290_GDEY029T71H::HEIGHT,
+             (unsigned)GxEPD2_290_GDEY029T71H::SOURCE_SHIFT);
+
     // Create the LVGL display using the physical dimensions first.
     // We'll set rotation, then query LVGL for the actual logical resolution it uses,
     // and allocate buffers based on that reported resolution so the stride matches.
@@ -327,7 +333,13 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                 break;
             }
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-            // Use the aligned coordinates and width we enqueued
+
+            // DIAGNOSTIC LOG: show what we're about to hand to driver
+            int wb_driver = (item.w + 7) / 8;
+            size_t item_size = (size_t)wb_driver * (size_t)item.h;
+            ESP_LOGI(TAG, "Worker: writeImage called with x=%d y=%d w=%d h=%d wb=%d buf=%p size=%d",
+                     item.x, item.y, item.w, item.h, wb_driver, (void*)item.buf, (int)item_size);
+
             self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
@@ -337,6 +349,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
         } else {
             if (processed_since_refresh) {
                 if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+                ESP_LOGI(TAG, "Worker: performing partial refresh()");
                 self->_display->refresh(true);
                 if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
                 processed_since_refresh = false;
@@ -347,6 +360,11 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
         if (item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+            int wb_driver = (item.w + 7) / 8;
+            size_t item_size = (size_t)wb_driver * (size_t)item.h;
+            ESP_LOGI(TAG, "Worker (drain): writeImage x=%d y=%d w=%d h=%d wb=%d buf=%p size=%d",
+                     item.x, item.y, item.w, item.h, wb_driver, (void*)item.buf, (int)item_size);
+
             self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
@@ -354,6 +372,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     }
     if (processed_since_refresh) {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+        ESP_LOGI(TAG, "Worker: final partial refresh()");
         self->_display->refresh(true);
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
     }
@@ -429,6 +448,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         ESP_LOGI(TAG, "lvglFlush: logical=[%d,%d %dx%d] physical=[%d,%d %dx%d] aligned_x=%d start_bit=%d padded_w=%d bytes=%d rot=%d",
                  area->x1, area->y1, logical_w, area->y2 - area->y1 + 1,
                  epd_x, epd_y, epd_w, epd_h, aligned_x, start_bit_offset, padded_w, padded_w_bytes, (int)rotation);
+        ESP_LOGI(TAG, " lvgl src_row_stride_bytes=%u", src_row_stride_bytes);
     }
 
     // For each logical pixel, compute destination physical coords and pack into the aligned buffer.
@@ -489,7 +509,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
             p += n;
         }
         *p = '\0';
-        ESP_LOGI(TAG, "packed[%d]= %s (aligned_x=%d padded_w=%d bytes=%d)", dump_bytes, buf_hex, aligned_x, padded_w, padded_w_bytes);
+        ESP_LOGI(TAG, "packed[%d]= %s (aligned_x=%d padded_w=%d bytes=%d) packed_size=%d", dump_bytes, buf_hex, aligned_x, padded_w, padded_w_bytes, (int)packed_size);
         ++s_flush_debug_count;
     }
 
@@ -501,6 +521,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         qi.y = (uint16_t)epd_y;
         qi.w = (uint16_t)(padded_w_bytes * 8);      // width rounded to bytes, in pixels
         qi.h = (uint16_t)epd_h;
+        ESP_LOGI(TAG, "Enqueue: qi.x=%d qi.y=%d qi.w=%d qi.h=%d buf=%p packed_size=%d", qi.x, qi.y, qi.w, qi.h, (void*)qi.buf, (int)packed_size);
         if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
             ESP_LOGW(TAG, "Display queue full; frame dropped.");
             heap_caps_free(packed);
