@@ -1,6 +1,6 @@
 #include "GxEPD2Display.h"
 #include "GxEPD2/GxEPD2_290_GDEY029T71H.h"
-#include "DisplayTester.h"
+
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
@@ -254,8 +254,8 @@ bool GxEPD2Display::startLvgl() {
         return false;
     }
 
-    ESP_LOGI(TAG, "Allocated %zu bytes for full-screen buffer (hor_res=%d, ver_res=%d)", 
-             bufSize * sizeof(lv_color_t), (int)hor_res, (int)ver_res);
+    ESP_LOGI(TAG, "Allocated %zu bytes for full-screen buffer (%d×%d = %zu pixels)", 
+             bufSize * sizeof(lv_color_t), (int)hor_res, (int)ver_res, bufSize);
 
     lv_display_set_color_format(_lvglDisplay, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(_lvglDisplay, _drawBuf1, nullptr,
@@ -378,7 +378,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                 break;
             }
 
-            // With full mode, we only get one flush per frame, so no merging needed
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
             ESP_LOGI(TAG, "Worker: writeImage x=%d y=%d w=%d h=%d", item.x, item.y, item.w, item.h);
@@ -386,11 +385,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
             ESP_LOGI(TAG, "Worker: refresh(true)");
             self->_display->refresh(true);
-
-            ESP_LOGI(TAG, "Worker: writeImagePrevious (sync 0x26) x=%d y=%d w=%d h=%d",
-                     item.x, item.y, item.w, item.h);
-            self->_display->writeImagePrevious(item.buf, item.x, item.y, item.w, item.h, false, false, false);
-
+            
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
             heap_caps_free(item.buf);
