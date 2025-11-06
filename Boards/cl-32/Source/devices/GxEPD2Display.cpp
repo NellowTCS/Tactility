@@ -429,10 +429,22 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    // Helper lambda to map logical->physical using wrapper's config.rotation convention and apply gaps
+    // Determine rotation from LVGL for this display (use LVGL's rotation, not config.rotation)
+    lv_display_rotation_t lv_rotation = lv_display_get_rotation(disp);
+    int rotation = 0;
+    switch (lv_rotation) {
+        case LV_DISPLAY_ROTATION_90: rotation = 1; break;
+        case LV_DISPLAY_ROTATION_180: rotation = 2; break;
+        case LV_DISPLAY_ROTATION_270: rotation = 3; break;
+        default: rotation = 0; break;
+    }
+    ESP_LOGD(TAG, "lvglFlushCallback: LVGL rotation=%d (config.rotation=%d) area=(%d,%d)-(%d,%d)",
+             rotation, (int)self->_config.rotation, area->x1, area->y1, area->x2, area->y2);
+
+    // Helper lambda to map logical->physical using LVGL rotation and apply gaps
     auto map_logical_to_physical = [&](int logical_x_abs, int logical_y_abs, int& physical_x_abs, int& physical_y_abs) {
-        // Use config.rotation (0,1,2,3) to perform swap/flip operations (same convention as GxEPD2_BW)
-        switch (self->_config.rotation) {
+        // Use LVGL rotation (0,1,2,3) to perform swap/flip operations (same convention as GxEPD2_BW)
+        switch (rotation) {
             case 1: // 90° CW
                 physical_x_abs = (panel_width - 1) - logical_y_abs;
                 physical_y_abs = logical_x_abs;
@@ -552,6 +564,9 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
 
     // Release framebuffer mutex before enqueueing as we no longer touch framebuffer
     xSemaphoreGive(self->_framebufferMutex);
+
+    ESP_LOGD(TAG, "Mapped physical bbox (pre-align) = x[%d..%d] y[%d..%d] aligned_x0=%d y0=%d w=%d h=%d packed_bytes=%zu",
+             min_px, max_px, min_py, max_py, aligned_x0, y0, aligned_w, packed_h, packed_size);
 
     // Enqueue the packed minimal rectangle for the worker to write
     if (self->_queue) {
