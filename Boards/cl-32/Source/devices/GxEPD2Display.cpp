@@ -393,7 +393,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
     while (true) {
         // Wait for at least one item
-        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(150))) {
+        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(1000))) {
             if (item.buf == nullptr) {
                 ESP_LOGI(TAG, "Worker: termination received");
                 break;
