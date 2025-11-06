@@ -330,16 +330,24 @@ uint16_t GxEPD2Display::getHeight() const {
 void GxEPD2Display::writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, int16_t w, int16_t h,
                                    bool invert, bool mirror_y) {
     if (!_display) return;
-    if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
+    bool took = false;
+    if (_spiMutex) {
+        if (xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) took = true;
+        else ESP_LOGW(TAG, "writeRawImage: failed to take spi mutex");
+    }
     _display->writeImage(bitmap, x, y, w, h, invert, mirror_y, false);
-    if (_spiMutex) xSemaphoreGive(_spiMutex);
+    if (took && _spiMutex) xSemaphoreGive(_spiMutex);
 }
 
 void GxEPD2Display::refreshDisplay(bool partial) {
     if (!_display) return;
-    if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
+    bool took = false;
+    if (_spiMutex) {
+        if (xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) took = true;
+        else ESP_LOGW(TAG, "refreshDisplay: failed to take spi mutex");
+    }
     _display->refresh(partial);
-    if (_spiMutex) xSemaphoreGive(_spiMutex);
+    if (took && _spiMutex) xSemaphoreGive(_spiMutex);
 }
 
 inline bool GxEPD2Display::rgb565ToMono(lv_color_t pixel) {
@@ -363,10 +371,12 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     while (true) {
         if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(150))) {
             if (item.buf == nullptr) {
+                ESP_LOGI(TAG, "Worker: termination received");
                 break;
             }
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
+            ESP_LOGI(TAG, "Worker: writeImage x=%u y=%u w=%u h=%u", item.x, item.y, item.w, item.h);
             self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
@@ -376,6 +386,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
         } else {
             if (processed_since_refresh) {
                 if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+                ESP_LOGI(TAG, "Worker: refresh(true)");
                 self->_display->refresh(true);
                 if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
                 processed_since_refresh = false;
@@ -386,6 +397,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
         if (item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+            ESP_LOGI(TAG, "Worker: draining and writeImage x=%u y=%u w=%u h=%u", item.x, item.y, item.w, item.h);
             self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
@@ -393,6 +405,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     }
     if (processed_since_refresh) {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+        ESP_LOGI(TAG, "Worker: final refresh(true)");
         self->_display->refresh(true);
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
     }
@@ -419,6 +432,10 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     const int panel_height = self->_config.height;
     const int panel_bytes_per_row = (panel_width + 7) / 8;
 
+    // LVGL reported logical resolution AFTER rotation
+    int32_t hor_res = lv_display_get_horizontal_resolution(disp);
+    int32_t ver_res = lv_display_get_vertical_resolution(disp);
+
     // We'll track the minimal bounding box (in physical coordinates) touched by this flush.
     int min_px = panel_width, min_py = panel_height, max_px = -1, max_py = -1;
 
@@ -429,7 +446,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    // Determine rotation from LVGL for this display (use LVGL's rotation, not config.rotation)
+    // Determine rotation from LVGL for this display (use LVGL's rotation)
     lv_display_rotation_t lv_rotation = lv_display_get_rotation(disp);
     int rotation = 0;
     switch (lv_rotation) {
@@ -438,24 +455,27 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         case LV_DISPLAY_ROTATION_270: rotation = 3; break;
         default: rotation = 0; break;
     }
-    ESP_LOGD(TAG, "lvglFlushCallback: LVGL rotation=%d (config.rotation=%d) area=(%d,%d)-(%d,%d)",
-             rotation, (int)self->_config.rotation, area->x1, area->y1, area->x2, area->y2);
+    ESP_LOGI(TAG, "lvglFlushCallback: LVGL rotation=%d config.rotation=%d hor_res=%d ver_res=%d area=(%d,%d)-(%d,%d)",
+             rotation, (int)self->_config.rotation, (int)hor_res, (int)ver_res, area->x1, area->y1, area->x2, area->y2);
 
-    // Helper lambda to map logical->physical using LVGL rotation and apply gaps
+    // Helper lambda to map logical->physical using LVGL logical resolution (hor_res/ver_res)
     auto map_logical_to_physical = [&](int logical_x_abs, int logical_y_abs, int& physical_x_abs, int& physical_y_abs) {
-        // Use LVGL rotation (0,1,2,3) to perform swap/flip operations (same convention as GxEPD2_BW)
+        // Use LVGL logical resolution (hor_res, ver_res) for mapping math — this matches LVGL's coordinate space.
+        // The formulas below are consistent with how GxEPD2_BW and original mapping expect rotation to be handled.
         switch (rotation) {
             case 1: // 90° CW
-                physical_x_abs = (panel_width - 1) - logical_y_abs;
-                physical_y_abs = logical_x_abs;
+                // logical coords: x in [0..hor_res-1], y in [0..ver_res-1]
+                // Map so that logical origin maps correctly to panel physical coords.
+                physical_x_abs = logical_y_abs;
+                physical_y_abs = (hor_res - 1) - logical_x_abs;
                 break;
             case 2: // 180°
-                physical_x_abs = (panel_width - 1) - logical_x_abs;
-                physical_y_abs = (panel_height - 1) - logical_y_abs;
+                physical_x_abs = (hor_res - 1) - logical_x_abs;
+                physical_y_abs = (ver_res - 1) - logical_y_abs;
                 break;
             case 3: // 270° CW
-                physical_x_abs = logical_y_abs;
-                physical_y_abs = (panel_height - 1) - logical_x_abs;
+                physical_x_abs = (ver_res - 1) - logical_y_abs;
+                physical_y_abs = logical_x_abs;
                 break;
             case 0:
             default: // 0°
@@ -463,7 +483,10 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 physical_y_abs = logical_y_abs;
                 break;
         }
-        // Apply configured gaps/offsets
+        // Now translate into panel coordinates: LVGL logical resolution may be (384x168) while panel is (168x384).
+        // For rotations we must map logical-space values into panel-space:
+        // If rotation is 90/270 we've already transposed using hor_res/ver_res; ensure final values fit panel dims.
+        // Apply configured gaps/offsets (user-provided panel shifts)
         physical_x_abs += self->_gapX;
         physical_y_abs += self->_gapY;
     };
@@ -547,14 +570,13 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
             int base_x = aligned_x0 + bx * 8;
             for (int bit = 0; bit < 8; ++bit) {
                 int sx = base_x + bit;
+                out <<= 1;
                 if (sx >= panel_width) {
-                    // out bit remains as 0 (treated as black) or set to white? keeping 0 is fine if outside
-                    out <<= 1;
+                    // leave bit as 0
                 } else {
                     int src_byte_idx = src_y * panel_bytes_per_row + (sx / 8);
                     int src_bit_pos = 7 - (sx & 7);
                     bool white = (self->_frameBuffer[src_byte_idx] & (1 << src_bit_pos)) != 0;
-                    out <<= 1;
                     if (white) out |= 1;
                 }
             }
@@ -565,7 +587,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     // Release framebuffer mutex before enqueueing as we no longer touch framebuffer
     xSemaphoreGive(self->_framebufferMutex);
 
-    ESP_LOGD(TAG, "Mapped physical bbox (pre-align) = x[%d..%d] y[%d..%d] aligned_x0=%d y0=%d w=%d h=%d packed_bytes=%zu",
+    ESP_LOGI(TAG, "Mapped physical bbox (pre-align) = x[%d..%d] y[%d..%d] aligned_x0=%d y0=%d w=%d h=%d packed_bytes=%zu",
              min_px, max_px, min_py, max_py, aligned_x0, y0, aligned_w, packed_h, packed_size);
 
     // Enqueue the packed minimal rectangle for the worker to write
@@ -578,12 +600,15 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         qi.h = (uint16_t)packed_h;
 
         if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
-            ESP_LOGW(TAG, "Display queue full; minimal frame dropped.");
+            ESP_LOGW(TAG, "Display queue full; minimal frame dropped. x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
             heap_caps_free(packed);
+        } else {
+            ESP_LOGI(TAG, "Enqueued frame x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
         }
     } else {
         // No queue available - attempt direct write (best-effort)
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+        ESP_LOGI(TAG, "Direct write (no queue) x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
         self->_display->writeImage(packed, aligned_x0, y0, aligned_w, packed_h, false, false, false);
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
         heap_caps_free(packed);
