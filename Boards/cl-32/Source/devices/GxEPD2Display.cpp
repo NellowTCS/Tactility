@@ -297,7 +297,7 @@ void GxEPD2Display::writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, i
     if (!_display) return;
     // serialize direct writes with mutex so they don't race the worker
     if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
-    _display->writeImage(bitmap, x, y, w, h, invert, mirror_y, false);
+    _display->writeImageAgain(bitmap, x, y, w, h, invert, mirror_y, false);
     if (_spiMutex) xSemaphoreGive(_spiMutex);
 }
 
@@ -340,7 +340,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             ESP_LOGI(TAG, "Worker: writeImage called with x=%d y=%d w=%d h=%d wb=%d buf=%p size=%d",
                      item.x, item.y, item.w, item.h, wb_driver, (void*)item.buf, (int)item_size);
 
-            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
+            self->_display->writeImageAgain(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
             item.buf = nullptr;
@@ -365,7 +365,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             ESP_LOGI(TAG, "Worker (drain): writeImage x=%d y=%d w=%d h=%d wb=%d buf=%p size=%d",
                      item.x, item.y, item.w, item.h, wb_driver, (void*)item.buf, (int)item_size);
 
-            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
+            self->_display->writeImageAgain(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
         }
