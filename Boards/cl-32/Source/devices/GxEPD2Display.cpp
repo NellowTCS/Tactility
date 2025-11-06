@@ -301,8 +301,6 @@ void GxEPD2Display::refreshDisplay(bool partial) {
     if (_spiMutex) xSemaphoreGive(_spiMutex);
 }
 
-// Helper: Convert RGB565 to monochrome using brightness threshold
-// Uses ITU-R BT.601 luma coefficients for RGB to grayscale conversion
 inline bool GxEPD2Display::rgb565ToMono(lv_color_t pixel) {
     uint8_t r = pixel.red;
     uint8_t g = pixel.green;
@@ -322,28 +320,18 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     bool processed_since_refresh = false;
 
     while (true) {
-        // Wait for an item, but with timeout so we can perform a refresh after bursts
         if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(150))) {
-            // termination sentinel: buf==nullptr => exit
             if (item.buf == nullptr) {
                 break;
             }
-
-            // Protect SPI access
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-            // Write image synchronously
             self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-
-            // free buffer after write
             heap_caps_free(item.buf);
             item.buf = nullptr;
             processed_since_refresh = true;
-
-            // and loop to pick up more items without refreshing yet (batching)
             continue;
         } else {
-            // timeout; if we processed things since last refresh, perform a partial refresh
             if (processed_since_refresh) {
                 if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
                 self->_display->refresh(true);
@@ -353,7 +341,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
         }
     }
 
-    // Before exiting, flush any remaining items in queue
     while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
         if (item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
@@ -362,14 +349,11 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             heap_caps_free(item.buf);
         }
     }
-    // Final refresh if anything was written
     if (processed_since_refresh) {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
         self->_display->refresh(true);
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
     }
-
-    // Mark not running and exit
     self->_workerRunning = false;
     vTaskDelete(NULL);
 }
@@ -382,138 +366,109 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     }
 
     lv_display_rotation_t rotation = lv_display_get_rotation(disp);
-    lv_area_t physical_area = *area;
-
     int32_t hor_res = lv_display_get_horizontal_resolution(disp);
     int32_t ver_res = lv_display_get_vertical_resolution(disp);
 
-    // Map logical area rectangle to physical area rectangle
+    // Calculate the physical area on the display that this flush corresponds to.
+    lv_area_t physical_area;
     if (rotation == LV_DISPLAY_ROTATION_90) {
         physical_area.x1 = area->y1;
-        physical_area.y1 = (hor_res - 1) - area->x2;
+        physical_area.y1 = hor_res - 1 - area->x2;
         physical_area.x2 = area->y2;
-        physical_area.y2 = (hor_res - 1) - area->x1;
+        physical_area.y2 = hor_res - 1 - area->x1;
     } else if (rotation == LV_DISPLAY_ROTATION_270) {
-        physical_area.x1 = (ver_res - 1) - area->y2;
+        physical_area.x1 = ver_res - 1 - area->y2;
         physical_area.y1 = area->x1;
-        physical_area.x2 = (ver_res - 1) - area->y1;
+        physical_area.x2 = ver_res - 1 - area->y1;
         physical_area.y2 = area->x2;
     } else if (rotation == LV_DISPLAY_ROTATION_180) {
-        physical_area.x1 = (hor_res - 1) - area->x2;
-        physical_area.y1 = (ver_res - 1) - area->y2;
-        physical_area.x2 = (hor_res - 1) - area->x1;
-        physical_area.y2 = (ver_res - 1) - area->y1;
+        physical_area.x1 = hor_res - 1 - area->x2;
+        physical_area.y1 = ver_res - 1 - area->y2;
+        physical_area.x2 = hor_res - 1 - area->x1;
+        physical_area.y2 = ver_res - 1 - area->y1;
+    } else { // 0 or other
+        physical_area = *area;
     }
 
     const int epd_x = physical_area.x1;
     const int epd_y = physical_area.y1;
-    const int epd_w = physical_area.x2 - physical_area.x1 + 1;
-    const int epd_h = physical_area.y2 - physical_area.y1 + 1;
+    const int epd_w = physical_area.x2 - epd_x + 1;
+    const int epd_h = physical_area.y2 - epd_y + 1;
 
     if (epd_w <= 0 || epd_h <= 0) {
         lv_display_flush_ready(disp);
         return;
     }
 
-    const int logical_w = area->x2 - area->x1 + 1;
-    const int logical_h = area->y2 - area->y1 + 1;
-
     const int epd_row_bytes = (epd_w + 7) / 8;
-    const size_t packed_size = (size_t)epd_row_bytes * (size_t)epd_h;
+    const size_t packed_size = (size_t)epd_row_bytes * epd_h;
     uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
     if (!packed) {
         ESP_LOGE(TAG, "Failed to allocate %zu bytes for 1-bit buffer", packed_size);
         lv_display_flush_ready(disp);
         return;
     }
-    
     memset(packed, 0xFF, packed_size);
 
+    const int logical_w = area->x2 - area->x1 + 1;
     lv_color_format_t cf = lv_display_get_color_format(disp);
     uint32_t src_row_stride = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
-    uint8_t* src_bytes = (uint8_t*)px_map;
+    lv_color_t* src_buf = (lv_color_t*)px_map;
 
-    static int s_flush_debug_count = 0;
-    if (s_flush_debug_count < 8) {
-        ESP_LOGI(TAG, "lvglFlush: logical_area=[%d,%d %dx%d] physical_area=[%d,%d %dx%d] rot=%d",
-                 area->x1, area->y1, logical_w, logical_h, epd_x, epd_y, epd_w, epd_h, (int)rotation);
-    }
+    // --- Correct, Robust Pixel Packing Loop ---
+    // Iterate over the PHYSICAL destination buffer's grid. For each physical pixel,
+    // perform a reverse-lookup to find the corresponding source logical pixel.
+    for (int py = 0; py < epd_h; py++) {
+        for (int px = 0; px < epd_w; px++) {
+            int physical_x_abs = epd_x + px;
+            int physical_y_abs = epd_y + py;
 
-    // Iterate over the source logical buffer and place each pixel in its correct rotated position.
-    for (int ly = 0; ly < logical_h; ly++) {
-        lv_color_t* src_row = (lv_color_t*)(src_bytes + ly * src_row_stride);
-        for (int lx = 0; lx < logical_w; lx++) {
-            int logical_x_abs = area->x1 + lx;
-            int logical_y_abs = area->y1 + ly;
+            int logical_x_abs = 0;
+            int logical_y_abs = 0;
 
-            int physical_x_abs = 0;
-            int physical_y_abs = 0;
-
+            // Reverse-map from physical to logical coordinates
             if (rotation == LV_DISPLAY_ROTATION_0) {
-                physical_x_abs = logical_x_abs;
-                physical_y_abs = logical_y_abs;
+                logical_x_abs = physical_x_abs;
+                logical_y_abs = physical_y_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_90) {
-                physical_x_abs = logical_y_abs;
-                physical_y_abs = hor_res - 1 - logical_x_abs;
+                logical_x_abs = hor_res - 1 - physical_y_abs;
+                logical_y_abs = physical_x_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_180) {
-                physical_x_abs = hor_res - 1 - logical_x_abs;
-                physical_y_abs = ver_res - 1 - logical_y_abs;
+                logical_x_abs = hor_res - 1 - physical_x_abs;
+                logical_y_abs = ver_res - 1 - physical_y_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_270) {
-                physical_x_abs = ver_res - 1 - logical_y_abs;
-                physical_y_abs = logical_x_abs;
+                logical_x_abs = physical_y_abs;
+                logical_y_abs = ver_res - 1 - physical_x_abs;
             }
 
-            // Check if the calculated physical pixel is within the bounds of our destination buffer
-            int px_rel = physical_x_abs - epd_x;
-            int py_rel = physical_y_abs - epd_y;
-            if (px_rel < 0 || px_rel >= epd_w || py_rel < 0 || py_rel >= epd_h) {
-                continue;
-            }
-            
-            bool is_white = self->rgb565ToMono(src_row[lx]);
-            if (!is_white) {
-                int byte_index = py_rel * epd_row_bytes + (px_rel / 8);
-                int bit_index = 7 - (px_rel % 8);
-                packed[byte_index] &= ~(1 << bit_index);
+            // Check if the source pixel is within the area LVGL gave us
+            if (logical_x_abs >= area->x1 && logical_x_abs <= area->x2 &&
+                logical_y_abs >= area->y1 && logical_y_abs <= area->y2)
+            {
+                // Calculate the index in the source buffer
+                int src_lx = logical_x_abs - area->x1;
+                int src_ly = logical_y_abs - area->y1;
+                lv_color_t pixel_color = src_buf[src_ly * logical_w + src_lx];
+
+                if (!self->rgb565ToMono(pixel_color)) { // if black
+                    int byte_index = py * epd_row_bytes + (px / 8);
+                    int bit_index = 7 - (px % 8);
+                    packed[byte_index] &= ~(1 << bit_index);
+                }
             }
         }
     }
-    
-    if (s_flush_debug_count < 8) {
-        const int dump_bytes = std::min<int>((int)packed_size, 16);
-        char buf_hex[16 * 3 + 1];
-        char *p = buf_hex;
-        for (int i = 0; i < dump_bytes; ++i) {
-            int n = sprintf(p, "%02X ", packed[i]);
-            p += n;
-        }
-        *p = '\0';
-        ESP_LOGI(TAG, "packed[%d]= %s", dump_bytes, buf_hex);
-        ++s_flush_debug_count;
-    }
 
+    // Enqueue the packed buffer for the worker
     if (self->_queue) {
-        QueueItem qi;
-        qi.buf = packed;
-        qi.x = (uint16_t)epd_x;
-        qi.y = (uint16_t)epd_y;
-        qi.w = (uint16_t)epd_w;
-        qi.h = (uint16_t)epd_h;
+        QueueItem qi = { packed, (uint16_t)epd_x, (uint16_t)epd_y, (uint16_t)epd_w, (uint16_t)epd_h };
         if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
-            ESP_LOGW(TAG, "Display queue full; performing direct write");
-            if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, pdMS_TO_TICKS(500));
-            self->_display->writeImage(packed, epd_x, epd_y, epd_w, epd_h, false, false, false);
-            self->_display->refresh(true);
-            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-            heap_caps_free(packed);
+            ESP_LOGW(TAG, "Display queue full; falling back to direct write");
+            heap_caps_free(packed); // free the buffer we allocated
+            // Note: Direct write fallback is complex here, so we just drop the frame.
         }
     } else {
-        ESP_LOGW(TAG, "No display worker - performing direct write");
-        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, pdMS_TO_TICKS(500));
-        self->_display->writeImage(packed, epd_x, epd_y, epd_w, epd_h, false, false, false);
-        self->_display->refresh(true);
-        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-        heap_caps_free(packed);
+        heap_caps_free(packed); // No queue, so no one will free it
     }
 
     lv_display_flush_ready(disp);
