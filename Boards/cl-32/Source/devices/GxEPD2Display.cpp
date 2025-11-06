@@ -16,6 +16,8 @@ GxEPD2Display::GxEPD2Display(const Configuration& config)
     , _lvglDisplay(nullptr)
     , _drawBuf1(nullptr)
     , _drawBuf2(nullptr)
+    , _frameBuffer(nullptr)
+    , _framebufferMutex(nullptr)
     , _queue(nullptr)
     , _workerTaskHandle(nullptr)
     , _spiMutex(nullptr)
@@ -28,11 +30,14 @@ GxEPD2Display::GxEPD2Display(const Configuration& config)
 GxEPD2Display::~GxEPD2Display() {
     stopLvgl();
     stop();
-    // destroy worker and mutex if still present
     destroyWorker();
     if (_spiMutex) {
         vSemaphoreDelete(_spiMutex);
         _spiMutex = nullptr;
+    }
+    if (_framebufferMutex) {
+        vSemaphoreDelete(_framebufferMutex);
+        _framebufferMutex = nullptr;
     }
 }
 
@@ -54,7 +59,6 @@ bool GxEPD2Display::start() {
         _config.busyPin
     );
 
-    // spi_device_interface_config_t setup for SPI initialization
     spi_device_interface_config_t devcfg = {
         .command_bits = 0,
         .address_bits = 0,
@@ -67,7 +71,6 @@ bool GxEPD2Display::start() {
         .input_delay_ns = 0,
         .spics_io_num = _config.csPin,
         .flags = 0,
-        // increase queue size to handle bursty LVGL traffic
         .queue_size = 20,
         .pre_cb = nullptr,
         .post_cb = nullptr
@@ -78,16 +81,12 @@ bool GxEPD2Display::start() {
     _display->clearScreen(0xFF);
     _display->refresh(false);
 
-    // Create SPI mutex so direct calls and worker are serialized
     if (!_spiMutex) {
         _spiMutex = xSemaphoreCreateMutex();
         if (!_spiMutex) {
             ESP_LOGW(TAG, "Failed to create SPI mutex");
         }
     }
-
-    // Run hardware tests once (these use direct writes)
-    // display_tester::runTests(this);
 
     ESP_LOGI(TAG, "E-paper display started successfully");
     return true;
@@ -96,10 +95,8 @@ bool GxEPD2Display::start() {
 bool GxEPD2Display::stop() {
     if (_display) {
         ESP_LOGI(TAG, "Stopping display...");
-        // Ensure worker stopped first to avoid it accessing _display after reset
         destroyWorker();
 
-        // Protect calls with mutex
         if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
         _display->hibernate();
         _display.reset();
@@ -127,7 +124,7 @@ bool GxEPD2Display::createWorker() {
     BaseType_t r = xTaskCreate(
         displayWorkerTask,
         "epd_worker",
-        8192, // stack size (adjust if needed)
+        8192,
         this,
         tskIDLE_PRIORITY + 2,
         &_workerTaskHandle
@@ -146,17 +143,12 @@ bool GxEPD2Display::createWorker() {
 
 void GxEPD2Display::destroyWorker() {
     if (!_queue) return;
-    // send sentinel to stop task
     QueueItem term;
     term.buf = nullptr;
     term.x = term.y = term.w = term.h = 0;
-    // best-effort send; if queue full, try to empty it
     xQueueSend(_queue, &term, pdMS_TO_TICKS(50));
-    // wait a bit for task to exit
     if (_workerTaskHandle) {
-        // give worker time to exit
         vTaskDelay(pdMS_TO_TICKS(100));
-        // if still alive, force delete
         if (eTaskGetState(_workerTaskHandle) != eDeleted) {
             vTaskDelete(_workerTaskHandle);
         }
@@ -178,8 +170,6 @@ bool GxEPD2Display::startLvgl() {
         return false;
     }
 
-    // --- LVGL Configuration based on Rotation ---
-    // Map config rotation to LVGL rotation
     lv_display_rotation_t lv_rotation = LV_DISPLAY_ROTATION_0;
     switch (_config.rotation) {
         case 1: lv_rotation = LV_DISPLAY_ROTATION_90; break;
@@ -191,29 +181,45 @@ bool GxEPD2Display::startLvgl() {
     ESP_LOGI(TAG, "Starting LVGL: requested physical=%ux%u rotation=%d (config.rotation=%d)",
              _config.width, _config.height, lv_rotation, _config.rotation);
 
-    // log driver panel constants for debugging
     ESP_LOGI(TAG, "Driver native panel: WIDTH=%u HEIGHT=%u SOURCE_SHIFT=%u",
              (unsigned)GxEPD2_290_GDEY029T71H::WIDTH,
              (unsigned)GxEPD2_290_GDEY029T71H::HEIGHT,
              (unsigned)GxEPD2_290_GDEY029T71H::SOURCE_SHIFT);
 
-    // Create the LVGL display using the physical dimensions first.
-    // We'll set rotation, then query LVGL for the actual logical resolution it uses,
-    // and allocate buffers based on that reported resolution so the stride matches.
     _lvglDisplay = lv_display_create(_config.width, _config.height);
     if (!_lvglDisplay) {
         ESP_LOGE(TAG, "Failed to create LVGL display (lv_display_create)");
         return false;
     }
 
-    // Set rotation - LVGL will handle dimension swapping internally
     lv_display_set_rotation(_lvglDisplay, lv_rotation);
 
-    // Query the actual logical resolution LVGL reports AFTER rotation
     int32_t hor_res = lv_display_get_horizontal_resolution(_lvglDisplay);
     int32_t ver_res = lv_display_get_vertical_resolution(_lvglDisplay);
 
     ESP_LOGI(TAG, "LVGL reports logical resolution: %dx%d (after rotation)", hor_res, ver_res);
+
+    // Allocate persistent framebuffer for e-paper (stores complete display state)
+    const size_t fb_size = ((size_t)_config.width * (size_t)_config.height + 7) / 8;
+    _frameBuffer = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_SPIRAM);
+    if (!_frameBuffer) {
+        ESP_LOGE(TAG, "Failed to allocate framebuffer (%zu bytes)", fb_size);
+        lv_display_delete(_lvglDisplay);
+        _lvglDisplay = nullptr;
+        return false;
+    }
+    memset(_frameBuffer, 0xFF, fb_size); // Initialize to white
+    ESP_LOGI(TAG, "Allocated framebuffer: %zu bytes", fb_size);
+
+    _framebufferMutex = xSemaphoreCreateMutex();
+    if (!_framebufferMutex) {
+        ESP_LOGE(TAG, "Failed to create framebuffer mutex");
+        heap_caps_free(_frameBuffer);
+        _frameBuffer = nullptr;
+        lv_display_delete(_lvglDisplay);
+        _lvglDisplay = nullptr;
+        return false;
+    }
 
     // Allocate draw buffers using LVGL's reported horizontal resolution
     const size_t bufSize = (size_t)hor_res * DRAW_BUF_LINES;
@@ -224,6 +230,10 @@ bool GxEPD2Display::startLvgl() {
         if (_drawBuf1) heap_caps_free(_drawBuf1);
         if (_drawBuf2) heap_caps_free(_drawBuf2);
         _drawBuf1 = _drawBuf2 = nullptr;
+        heap_caps_free(_frameBuffer);
+        _frameBuffer = nullptr;
+        vSemaphoreDelete(_framebufferMutex);
+        _framebufferMutex = nullptr;
         lv_display_delete(_lvglDisplay);
         _lvglDisplay = nullptr;
         return false;
@@ -231,16 +241,13 @@ bool GxEPD2Display::startLvgl() {
 
     ESP_LOGI(TAG, "Allocated %zu bytes per buffer (hor_res=%d, draw_lines=%zu)", bufSize * sizeof(lv_color_t), (int)hor_res, DRAW_BUF_LINES);
 
-    // Configure LVGL color format and buffers
     lv_display_set_color_format(_lvglDisplay, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(_lvglDisplay, _drawBuf1, _drawBuf2,
                            bufSize * sizeof(lv_color_t),
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
-    // set flush callback and user data
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
-    // Create the display worker (queue + task) used to serialize writes and batch refreshes
     if (!createWorker()) {
         ESP_LOGW(TAG, "Failed to create display worker - LVGL flushes will still attempt direct writes (risky)");
     }
@@ -265,8 +272,15 @@ bool GxEPD2Display::stopLvgl() {
         heap_caps_free(_drawBuf2);
         _drawBuf2 = nullptr;
     }
+    if (_frameBuffer) {
+        heap_caps_free(_frameBuffer);
+        _frameBuffer = nullptr;
+    }
+    if (_framebufferMutex) {
+        vSemaphoreDelete(_framebufferMutex);
+        _framebufferMutex = nullptr;
+    }
 
-    // Destroy worker (will flush remaining items and stop)
     destroyWorker();
 
     return true;
@@ -295,7 +309,6 @@ uint16_t GxEPD2Display::getHeight() const {
 void GxEPD2Display::writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, int16_t w, int16_t h,
                                    bool invert, bool mirror_y) {
     if (!_display) return;
-    // serialize direct writes with mutex so they don't race the worker
     if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
     _display->writeImage(bitmap, x, y, w, h, invert, mirror_y, false);
     if (_spiMutex) xSemaphoreGive(_spiMutex);
@@ -303,7 +316,6 @@ void GxEPD2Display::writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, i
 
 void GxEPD2Display::refreshDisplay(bool partial) {
     if (!_display) return;
-    // serialize refresh with mutex so it doesn't race writes
     if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
     _display->refresh(partial);
     if (_spiMutex) xSemaphoreGive(_spiMutex);
@@ -334,12 +346,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             }
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            // DIAGNOSTIC LOG: show what we're about to hand to driver
-            int wb_driver = (item.w + 7) / 8;
-            size_t item_size = (size_t)wb_driver * (size_t)item.h;
-            ESP_LOGI(TAG, "Worker: writeImage called with x=%d y=%d w=%d h=%d wb=%d buf=%p size=%d",
-                     item.x, item.y, item.w, item.h, wb_driver, (void*)item.buf, (int)item_size);
-
             self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
@@ -349,7 +355,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
         } else {
             if (processed_since_refresh) {
                 if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-                ESP_LOGI(TAG, "Worker: performing partial refresh()");
                 self->_display->refresh(true);
                 if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
                 processed_since_refresh = false;
@@ -360,11 +365,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
         if (item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-            int wb_driver = (item.w + 7) / 8;
-            size_t item_size = (size_t)wb_driver * (size_t)item.h;
-            ESP_LOGI(TAG, "Worker (drain): writeImage x=%d y=%d w=%d h=%d wb=%d buf=%p size=%d",
-                     item.x, item.y, item.w, item.h, wb_driver, (void*)item.buf, (int)item_size);
-
             self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
@@ -372,7 +372,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     }
     if (processed_since_refresh) {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-        ESP_LOGI(TAG, "Worker: final partial refresh()");
         self->_display->refresh(true);
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
     }
@@ -382,7 +381,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* self = static_cast<GxEPD2Display*>(lv_display_get_user_data(disp));
-    if (!self || !self->_display) {
+    if (!self || !self->_display || !self->_frameBuffer) {
         lv_display_flush_ready(disp);
         return;
     }
@@ -391,49 +390,9 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     int32_t hor_res = lv_display_get_horizontal_resolution(disp);
     int32_t ver_res = lv_display_get_vertical_resolution(disp);
 
-    // Calculate the physical area on the display that this flush corresponds to.
-    lv_area_t physical_area;
-    if (rotation == LV_DISPLAY_ROTATION_90) {
-        physical_area.x1 = area->y1;
-        physical_area.y1 = hor_res - 1 - area->x2;
-        physical_area.x2 = area->y2;
-        physical_area.y2 = hor_res - 1 - area->x1;
-    } else if (rotation == LV_DISPLAY_ROTATION_270) {
-        physical_area.x1 = ver_res - 1 - area->y2;
-        physical_area.y1 = area->x1;
-        physical_area.x2 = ver_res - 1 - area->y1;
-        physical_area.y2 = area->x2;
-    } else if (rotation == LV_DISPLAY_ROTATION_180) {
-        physical_area.x1 = hor_res - 1 - area->x2;
-        physical_area.y1 = ver_res - 1 - area->y2;
-        physical_area.x2 = hor_res - 1 - area->x1;
-        physical_area.y2 = ver_res - 1 - area->y1;
-    } else { // 0 or other
-        physical_area = *area;
-    }
-
-    const int epd_y = physical_area.y1;
-    const int epd_h = physical_area.y2 - epd_y + 1;
-
-    if (epd_h <= 0) {
-        lv_display_flush_ready(disp);
-        return;
-    }
-
-    // Always use full panel width for e-paper driver
-    // The driver seems to expect full-width rows, not partial updates
-    const int panel_width = self->_config.width;  // 168 for your panel
-    const int bytes_per_row = (panel_width + 7) / 8;  // 21 bytes
-    const size_t packed_size = (size_t)bytes_per_row * (size_t)epd_h;
-
-    uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
-    if (!packed) {
-        ESP_LOGE(TAG, "Failed to allocate %zu bytes for 1-bit buffer", packed_size);
-        lv_display_flush_ready(disp);
-        return;
-    }
-    // Initialize to white (all bits set)
-    memset(packed, 0xFF, packed_size);
+    const int panel_width = self->_config.width;   // 168
+    const int panel_height = self->_config.height; // 384
+    const int bytes_per_row = (panel_width + 7) / 8;
 
     const int logical_w = area->x2 - area->x1 + 1;
     const int logical_h = area->y2 - area->y1 + 1;
@@ -441,71 +400,78 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
     uint8_t* src_bytes = (uint8_t*)px_map;
 
-    // For each logical pixel, compute destination physical coords and pack
-    for (int ly = 0; ly < logical_h; ++ly) {
-        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
-        for (int lx = 0; lx < logical_w; ++lx) {
-            int logical_x_abs = area->x1 + lx;
-            int logical_y_abs = area->y1 + ly;
+    // Lock framebuffer and update only the dirty region
+    if (xSemaphoreTake(self->_framebufferMutex, pdMS_TO_TICKS(100))) {
+        for (int ly = 0; ly < logical_h; ++ly) {
+            lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
+            
+            for (int lx = 0; lx < logical_w; ++lx) {
+                int logical_x_abs = area->x1 + lx;
+                int logical_y_abs = area->y1 + ly;
 
-            int physical_x_abs = 0;
-            int physical_y_abs = 0;
+                int physical_x_abs, physical_y_abs;
 
-            // Map logical -> physical depending on rotation
-            if (rotation == LV_DISPLAY_ROTATION_0) {
-                physical_x_abs = logical_x_abs;
-                physical_y_abs = logical_y_abs;
-            } else if (rotation == LV_DISPLAY_ROTATION_90) {
-                physical_x_abs = logical_y_abs;
-                physical_y_abs = hor_res - 1 - logical_x_abs;
-            } else if (rotation == LV_DISPLAY_ROTATION_180) {
-                physical_x_abs = hor_res - 1 - logical_x_abs;
-                physical_y_abs = ver_res - 1 - logical_y_abs;
-            } else { // 270
-                physical_x_abs = ver_res - 1 - logical_y_abs;
-                physical_y_abs = logical_x_abs;
+                // Rotation mapping
+                if (rotation == LV_DISPLAY_ROTATION_90) {
+                    physical_x_abs = logical_y_abs;
+                    physical_y_abs = (hor_res - 1) - logical_x_abs;
+                } else if (rotation == LV_DISPLAY_ROTATION_270) {
+                    physical_x_abs = (ver_res - 1) - logical_y_abs;
+                    physical_y_abs = logical_x_abs;
+                } else if (rotation == LV_DISPLAY_ROTATION_180) {
+                    physical_x_abs = (hor_res - 1) - logical_x_abs;
+                    physical_y_abs = (ver_res - 1) - logical_y_abs;
+                } else {
+                    physical_x_abs = logical_x_abs;
+                    physical_y_abs = logical_y_abs;
+                }
+
+                if (physical_x_abs < 0 || physical_x_abs >= panel_width || 
+                    physical_y_abs < 0 || physical_y_abs >= panel_height) {
+                    continue;
+                }
+
+                lv_color_t pixel = src_row[lx];
+                bool is_white = rgb565ToMono(pixel);
+
+                const int byte_idx = physical_y_abs * bytes_per_row + (physical_x_abs / 8);
+                const int bit_pos = 7 - (physical_x_abs & 7);
+
+                if (is_white) {
+                    self->_frameBuffer[byte_idx] |= (1 << bit_pos);
+                } else {
+                    self->_frameBuffer[byte_idx] &= ~(1 << bit_pos);
+                }
             }
+        }
 
-            // Buffer-relative coords (full width, so x is absolute physical x)
-            int py_rel = physical_y_abs - epd_y;
+        // Copy full framebuffer for sending to display
+        const size_t fb_size = (size_t)bytes_per_row * (size_t)panel_height;
+        uint8_t* packed = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_DMA);
+        if (packed) {
+            memcpy(packed, self->_frameBuffer, fb_size);
+            xSemaphoreGive(self->_framebufferMutex);
 
-            // Bounds check
-            if (physical_x_abs < 0 || physical_x_abs >= panel_width || 
-                py_rel < 0 || py_rel >= epd_h) {
-                continue;
-            }
-
-            // Read LVGL pixel
-            lv_color_t pixel = src_row[lx];
-            bool is_white = rgb565ToMono(pixel);
-
-            // Pack into full-width buffer
-            const int byte_idx = py_rel * bytes_per_row + (physical_x_abs / 8);
-            const int bit_pos = 7 - (physical_x_abs & 7);
-
-            if (is_white) {
-                packed[byte_idx] |= (1 << bit_pos);
+            // Enqueue full frame
+            if (self->_queue) {
+                QueueItem qi;
+                qi.buf = packed;
+                qi.x = 0;
+                qi.y = 0;
+                qi.w = (uint16_t)panel_width;
+                qi.h = (uint16_t)panel_height;
+                
+                if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
+                    ESP_LOGW(TAG, "Display queue full; frame dropped.");
+                    heap_caps_free(packed);
+                }
             } else {
-                packed[byte_idx] &= ~(1 << bit_pos);
+                heap_caps_free(packed);
             }
+        } else {
+            xSemaphoreGive(self->_framebufferMutex);
+            ESP_LOGE(TAG, "Failed to allocate display buffer");
         }
-    }
-
-    // Enqueue using full panel width and x=0
-    if (self->_queue) {
-        QueueItem qi;
-        qi.buf = packed;
-        qi.x = 0;  // Always start at x=0 for full-width rows
-        qi.y = (uint16_t)epd_y;
-        qi.w = (uint16_t)panel_width;  // Full panel width
-        qi.h = (uint16_t)epd_h;
-        
-        if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
-            ESP_LOGW(TAG, "Display queue full; frame dropped.");
-            heap_caps_free(packed);
-        }
-    } else {
-        heap_caps_free(packed);
     }
 
     lv_display_flush_ready(disp);

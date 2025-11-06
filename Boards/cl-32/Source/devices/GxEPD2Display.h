@@ -67,6 +67,10 @@ private:
     lv_color_t* _drawBuf1;
     lv_color_t* _drawBuf2;
 
+    // Persistent framebuffer for e-paper (stores complete display state)
+    uint8_t* _frameBuffer;
+    SemaphoreHandle_t _framebufferMutex;
+
     // Number of logical rows per LVGL draw buffer. Adjust based on available RAM.
     static constexpr size_t DRAW_BUF_LINES = 60;
 
