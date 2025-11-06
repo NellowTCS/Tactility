@@ -180,10 +180,9 @@ bool GxEPD2Display::startLvgl() {
     ESP_LOGI(TAG, "Starting LVGL: requested physical=%ux%u rotation=%d (config.rotation=%d)",
              _config.width, _config.height, lv_rotation, _config.rotation);
 
-    ESP_LOGI(TAG, "Driver native panel: WIDTH=%u HEIGHT=%u SOURCE_SHIFT=%u",
+    ESP_LOGI(TAG, "Driver native panel: WIDTH=%u HEIGHT=%u",
              (unsigned)GxEPD2_310_GDEQ031T10::WIDTH,
-             (unsigned)GxEPD2_310_GDEQ031T10::HEIGHT,
-             (unsigned)GxEPD2_310_GDEQ031T10::SOURCE_SHIFT);
+             (unsigned)GxEPD2_310_GDEQ031T10::HEIGHT);
 
     _lvglDisplay = lv_display_create(_config.width, _config.height);
     if (!_lvglDisplay) {
