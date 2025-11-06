@@ -412,47 +412,40 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
 
     const int logical_w = area->x2 - area->x1 + 1;
     lv_color_format_t cf = lv_display_get_color_format(disp);
-    uint32_t src_row_stride = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
+    uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
     lv_color_t* src_buf = (lv_color_t*)px_map;
 
-    // --- Correct, Robust Pixel Packing Loop ---
-    // Iterate over the PHYSICAL destination buffer's grid. For each physical pixel,
-    // perform a reverse-lookup to find the corresponding source logical pixel.
-    for (int py = 0; py < epd_h; py++) {
-        for (int px = 0; px < epd_w; px++) {
-            int physical_x_abs = epd_x + px;
-            int physical_y_abs = epd_y + py;
+    // Iterate over the source logical buffer and place each pixel in its correct rotated position.
+    for (int ly = 0; ly < (area->y2 - area->y1 + 1); ly++) {
+        lv_color_t* src_row = (lv_color_t*)((uint8_t*)src_buf + ly * src_row_stride_bytes);
+        for (int lx = 0; lx < (area->x2 - area->x1 + 1); lx++) {
+            int logical_x_abs = area->x1 + lx;
+            int logical_y_abs = area->y1 + ly;
 
-            int logical_x_abs = 0;
-            int logical_y_abs = 0;
+            int physical_x_abs = 0;
+            int physical_y_abs = 0;
 
-            // Reverse-map from physical to logical coordinates
             if (rotation == LV_DISPLAY_ROTATION_0) {
-                logical_x_abs = physical_x_abs;
-                logical_y_abs = physical_y_abs;
+                physical_x_abs = logical_x_abs;
+                physical_y_abs = logical_y_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_90) {
-                logical_x_abs = hor_res - 1 - physical_y_abs;
-                logical_y_abs = physical_x_abs;
+                physical_x_abs = logical_y_abs;
+                physical_y_abs = hor_res - 1 - logical_x_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_180) {
-                logical_x_abs = hor_res - 1 - physical_x_abs;
-                logical_y_abs = ver_res - 1 - physical_y_abs;
+                physical_x_abs = hor_res - 1 - logical_x_abs;
+                physical_y_abs = ver_res - 1 - logical_y_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_270) {
-                logical_x_abs = physical_y_abs;
-                logical_y_abs = ver_res - 1 - physical_x_abs;
+                physical_x_abs = ver_res - 1 - logical_y_abs;
+                physical_y_abs = logical_x_abs;
             }
 
-            // Check if the source pixel is within the area LVGL gave us
-            if (logical_x_abs >= area->x1 && logical_x_abs <= area->x2 &&
-                logical_y_abs >= area->y1 && logical_y_abs <= area->y2)
-            {
-                // Calculate the index in the source buffer
-                int src_lx = logical_x_abs - area->x1;
-                int src_ly = logical_y_abs - area->y1;
-                lv_color_t pixel_color = src_buf[src_ly * logical_w + src_lx];
+            int px_rel = physical_x_abs - epd_x;
+            int py_rel = physical_y_abs - epd_y;
 
-                if (!self->rgb565ToMono(pixel_color)) { // if black
-                    int byte_index = py * epd_row_bytes + (px / 8);
-                    int bit_index = 7 - (px % 8);
+            if (px_rel >= 0 && px_rel < epd_w && py_rel >= 0 && py_rel < epd_h) {
+                if (!self->rgb565ToMono(src_row[lx])) { // if black
+                    int byte_index = py_rel * epd_row_bytes + (px_rel / 8);
+                    int bit_index = 7 - (px_rel % 8);
                     packed[byte_index] &= ~(1 << bit_index);
                 }
             }
@@ -463,12 +456,11 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     if (self->_queue) {
         QueueItem qi = { packed, (uint16_t)epd_x, (uint16_t)epd_y, (uint16_t)epd_w, (uint16_t)epd_h };
         if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
-            ESP_LOGW(TAG, "Display queue full; falling back to direct write");
-            heap_caps_free(packed); // free the buffer we allocated
-            // Note: Direct write fallback is complex here, so we just drop the frame.
+            ESP_LOGW(TAG, "Display queue full; frame dropped.");
+            heap_caps_free(packed);
         }
     } else {
-        heap_caps_free(packed); // No queue, so no one will free it
+        heap_caps_free(packed);
     }
 
     lv_display_flush_ready(disp);
