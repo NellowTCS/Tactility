@@ -439,46 +439,42 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                  area->x1, area->y1, logical_w, logical_h, epd_x, epd_y, epd_w, epd_h, (int)rotation);
     }
 
-    // Iterate over the LOGICAL source buffer and calculate the destination pixel for each
-    for (int ly = 0; ly < logical_h; ++ly) {
-        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride);
-        for (int lx = 0; lx < logical_w; ++lx) {
-            
-            int lx_abs = area->x1 + lx;
-            int ly_abs = area->y1 + ly;
+    // Iterate over the source logical buffer and place each pixel in its correct rotated position.
+    for (int ly = 0; ly < logical_h; ly++) {
+        lv_color_t* src_row = (lv_color_t*)(src_bytes + ly * src_row_stride);
+        for (int lx = 0; lx < logical_w; lx++) {
+            int logical_x_abs = area->x1 + lx;
+            int logical_y_abs = area->y1 + ly;
 
-            int px_abs = 0;
-            int py_abs = 0;
+            int physical_x_abs = 0;
+            int physical_y_abs = 0;
 
             if (rotation == LV_DISPLAY_ROTATION_0) {
-                px_abs = lx_abs;
-                py_abs = ly_abs;
+                physical_x_abs = logical_x_abs;
+                physical_y_abs = logical_y_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_90) {
-                px_abs = ly_abs;
-                py_abs = (hor_res - 1) - lx_abs;
+                physical_x_abs = logical_y_abs;
+                physical_y_abs = hor_res - 1 - logical_x_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_180) {
-                px_abs = (hor_res - 1) - lx_abs;
-                py_abs = (ver_res - 1) - ly_abs;
+                physical_x_abs = hor_res - 1 - logical_x_abs;
+                physical_y_abs = ver_res - 1 - logical_y_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_270) {
-                px_abs = (ver_res - 1) - ly_abs;
-                py_abs = lx_abs;
+                physical_x_abs = ver_res - 1 - logical_y_abs;
+                physical_y_abs = logical_x_abs;
             }
 
-            int px_rel = px_abs - epd_x;
-            int py_rel = py_abs - epd_y;
-
+            // Check if the calculated physical pixel is within the bounds of our destination buffer
+            int px_rel = physical_x_abs - epd_x;
+            int py_rel = physical_y_abs - epd_y;
             if (px_rel < 0 || px_rel >= epd_w || py_rel < 0 || py_rel >= epd_h) {
                 continue;
             }
-
-            lv_color_t pixel = src_row[lx];
-            bool is_white = self->rgb565ToMono(pixel);
             
-            const int byte_idx = py_rel * epd_row_bytes + (px_rel / 8);
-            const int bit_pos = 7 - (px_rel & 7);
-
+            bool is_white = self->rgb565ToMono(src_row[lx]);
             if (!is_white) {
-                 packed[byte_idx] &= ~(1 << bit_pos);
+                int byte_index = py_rel * epd_row_bytes + (px_rel / 8);
+                int bit_index = 7 - (px_rel % 8);
+                packed[byte_index] &= ~(1 << bit_index);
             }
         }
     }
