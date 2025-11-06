@@ -12,7 +12,7 @@
 #include "freertos/task.h"
 #include <cstdint>
 
-class GxEPD2_290_GDEY029T71H; // Forward declaration
+class GxEPD2_310_GDEQ031T10; // Forward declaration
 
 class GxEPD2Display : public tt::hal::display::DisplayDevice {
 public:
@@ -62,7 +62,7 @@ public:
 
 private:
     Configuration _config;
-    std::unique_ptr<GxEPD2_290_GDEY029T71H> _display;
+    std::unique_ptr<GxEPD2_310_GDEQ031T10> _display;
     lv_display_t* _lvglDisplay;
     lv_color_t* _drawBuf1;
     lv_color_t* _drawBuf2;

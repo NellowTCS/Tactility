@@ -45,13 +45,13 @@ std::string GxEPD2Display::getName() const {
 }
 
 std::string GxEPD2Display::getDescription() const {
-    return "E-paper display GDEY029T71H";
+    return "E-paper display GDEQ031T10";
 }
 
 bool GxEPD2Display::start() {
     ESP_LOGI(TAG, "Starting e-paper display...");
 
-    _display = std::make_unique<GxEPD2_290_GDEY029T71H>(
+    _display = std::make_unique<GxEPD2_310_GDEQ031T10>(
         _config.csPin,
         _config.dcPin,
         _config.rstPin,
@@ -181,9 +181,9 @@ bool GxEPD2Display::startLvgl() {
              _config.width, _config.height, lv_rotation, _config.rotation);
 
     ESP_LOGI(TAG, "Driver native panel: WIDTH=%u HEIGHT=%u SOURCE_SHIFT=%u",
-             (unsigned)GxEPD2_290_GDEY029T71H::WIDTH,
-             (unsigned)GxEPD2_290_GDEY029T71H::HEIGHT,
-             (unsigned)GxEPD2_290_GDEY029T71H::SOURCE_SHIFT);
+             (unsigned)GxEPD2_310_GDEQ031T10::WIDTH,
+             (unsigned)GxEPD2_310_GDEQ031T10::HEIGHT,
+             (unsigned)GxEPD2_310_GDEQ031T10::SOURCE_SHIFT);
 
     _lvglDisplay = lv_display_create(_config.width, _config.height);
     if (!_lvglDisplay) {
