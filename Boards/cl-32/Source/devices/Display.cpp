@@ -14,7 +14,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     };
 
     auto disp = std::make_shared<GxEPD2Display>(config);
-    // Compensate panel driver SOURCE_SHIFT (quick test). Remove if not needed.
-    disp->setGap(-GxEPD2_290_GDEY029T71H::SOURCE_SHIFT, 0);
+    // Compensate panel driver SOURCE_SHIFT (quick test)
+    disp->setGap(-8, 0);
     return disp;
 }
