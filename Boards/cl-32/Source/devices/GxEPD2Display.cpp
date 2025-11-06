@@ -97,10 +97,21 @@ bool GxEPD2Display::stop() {
         ESP_LOGI(TAG, "Stopping display...");
         destroyWorker();
 
-        if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
+        bool have = false;
+        if (_spiMutex) {
+            if (xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+                have = true;
+            } else {
+                ESP_LOGW(TAG, "Failed to take SPI mutex while stopping; proceeding anyway");
+            }
+        }
+
         _display->hibernate();
         _display.reset();
-        if (_spiMutex) xSemaphoreGive(_spiMutex);
+
+        if (have && _spiMutex) {
+            xSemaphoreGive(_spiMutex);
+        }
     }
     return true;
 }
@@ -146,13 +157,23 @@ void GxEPD2Display::destroyWorker() {
     QueueItem term;
     term.buf = nullptr;
     term.x = term.y = term.w = term.h = 0;
-    xQueueSend(_queue, &term, pdMS_TO_TICKS(50));
+    // Ensure termination message is enqueued so worker can exit normally.
+    if (xQueueSend(_queue, &term, portMAX_DELAY) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to send termination message to display worker");
+    }
     if (_workerTaskHandle) {
         vTaskDelay(pdMS_TO_TICKS(100));
         if (eTaskGetState(_workerTaskHandle) != eDeleted) {
             vTaskDelete(_workerTaskHandle);
         }
         _workerTaskHandle = nullptr;
+    }
+    // Drain and free any remaining buffers that might be left in the queue
+    QueueItem item;
+    while (xQueueReceive(_queue, &item, 0) == pdTRUE) {
+        if (item.buf) {
+            heap_caps_free(item.buf);
+        }
     }
     vQueueDelete(_queue);
     _queue = nullptr;
@@ -386,92 +407,171 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    lv_display_rotation_t rotation = lv_display_get_rotation(disp);
-    int32_t hor_res = lv_display_get_horizontal_resolution(disp);
-    int32_t ver_res = lv_display_get_vertical_resolution(disp);
-
-    const int panel_width = self->_config.width;   // 168
-    const int panel_height = self->_config.height; // 384
-    const int bytes_per_row = (panel_width + 7) / 8;
-
+    // Logical area size
     const int logical_w = area->x2 - area->x1 + 1;
     const int logical_h = area->y2 - area->y1 + 1;
     lv_color_format_t cf = lv_display_get_color_format(disp);
     uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
     uint8_t* src_bytes = (uint8_t*)px_map;
 
-    // Lock framebuffer and update only the dirty region
-    if (xSemaphoreTake(self->_framebufferMutex, pdMS_TO_TICKS(100))) {
-        for (int ly = 0; ly < logical_h; ++ly) {
-            lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
-            
-            for (int lx = 0; lx < logical_w; ++lx) {
-                int logical_x_abs = area->x1 + lx;
-                int logical_y_abs = area->y1 + ly;
+    // Panel geometry
+    const int panel_width = self->_config.width;
+    const int panel_height = self->_config.height;
+    const int panel_bytes_per_row = (panel_width + 7) / 8;
 
-                int physical_x_abs, physical_y_abs;
+    // We'll track the minimal bounding box (in physical coordinates) touched by this flush.
+    int min_px = panel_width, min_py = panel_height, max_px = -1, max_py = -1;
 
-                // Rotation mapping
-                if (rotation == LV_DISPLAY_ROTATION_90) {
-                    physical_x_abs = logical_y_abs;
-                    physical_y_abs = (hor_res - 1) - logical_x_abs;
-                } else if (rotation == LV_DISPLAY_ROTATION_270) {
-                    physical_x_abs = (ver_res - 1) - logical_y_abs;
-                    physical_y_abs = logical_x_abs;
-                } else if (rotation == LV_DISPLAY_ROTATION_180) {
-                    physical_x_abs = (hor_res - 1) - logical_x_abs;
-                    physical_y_abs = (ver_res - 1) - logical_y_abs;
-                } else {
-                    physical_x_abs = logical_x_abs;
-                    physical_y_abs = logical_y_abs;
-                }
+    // Try to take framebuffer mutex; if not available within reasonable time, skip and report
+    if (xSemaphoreTake(self->_framebufferMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGW(TAG, "Framebuffer mutex busy; dropping LVGL flush");
+        lv_display_flush_ready(disp);
+        return;
+    }
 
-                if (physical_x_abs < 0 || physical_x_abs >= panel_width || 
-                    physical_y_abs < 0 || physical_y_abs >= panel_height) {
-                    continue;
-                }
-
-                lv_color_t pixel = src_row[lx];
-                bool is_white = rgb565ToMono(pixel);
-
-                const int byte_idx = physical_y_abs * bytes_per_row + (physical_x_abs / 8);
-                const int bit_pos = 7 - (physical_x_abs & 7);
-
-                if (is_white) {
-                    self->_frameBuffer[byte_idx] |= (1 << bit_pos);
-                } else {
-                    self->_frameBuffer[byte_idx] &= ~(1 << bit_pos);
-                }
-            }
+    // Helper lambda to map logical->physical using wrapper's config.rotation convention and apply gaps
+    auto map_logical_to_physical = [&](int logical_x_abs, int logical_y_abs, int& physical_x_abs, int& physical_y_abs) {
+        // Use config.rotation (0,1,2,3) to perform swap/flip operations (same convention as GxEPD2_BW)
+        switch (self->_config.rotation) {
+            case 1: // 90° CW
+                physical_x_abs = (panel_width - 1) - logical_y_abs;
+                physical_y_abs = logical_x_abs;
+                break;
+            case 2: // 180°
+                physical_x_abs = (panel_width - 1) - logical_x_abs;
+                physical_y_abs = (panel_height - 1) - logical_y_abs;
+                break;
+            case 3: // 270° CW
+                physical_x_abs = logical_y_abs;
+                physical_y_abs = (panel_height - 1) - logical_x_abs;
+                break;
+            case 0:
+            default: // 0°
+                physical_x_abs = logical_x_abs;
+                physical_y_abs = logical_y_abs;
+                break;
         }
+        // Apply configured gaps/offsets
+        physical_x_abs += self->_gapX;
+        physical_y_abs += self->_gapY;
+    };
 
-        // Copy full framebuffer for sending to display
-        const size_t fb_size = (size_t)bytes_per_row * (size_t)panel_height;
-        uint8_t* packed = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_DMA);
-        if (packed) {
-            memcpy(packed, self->_frameBuffer, fb_size);
-            xSemaphoreGive(self->_framebufferMutex);
+    // Update the persistent framebuffer with pixels from LVGL area and compute touched bbox
+    for (int ly = 0; ly < logical_h; ++ly) {
+        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
 
-            // Enqueue full frame
-            if (self->_queue) {
-                QueueItem qi;
-                qi.buf = packed;
-                qi.x = 0;
-                qi.y = 0;
-                qi.w = (uint16_t)panel_width;
-                qi.h = (uint16_t)panel_height;
-                
-                if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
-                    ESP_LOGW(TAG, "Display queue full; frame dropped.");
-                    heap_caps_free(packed);
-                }
+        for (int lx = 0; lx < logical_w; ++lx) {
+            int logical_x_abs = area->x1 + lx;
+            int logical_y_abs = area->y1 + ly;
+
+            int physical_x_abs = 0, physical_y_abs = 0;
+            map_logical_to_physical(logical_x_abs, logical_y_abs, physical_x_abs, physical_y_abs);
+
+            if (physical_x_abs < 0 || physical_x_abs >= panel_width ||
+                physical_y_abs < 0 || physical_y_abs >= panel_height) {
+                continue;
+            }
+
+            lv_color_t pixel = src_row[lx];
+            bool is_white = rgb565ToMono(pixel);
+
+            const int byte_idx = physical_y_abs * panel_bytes_per_row + (physical_x_abs / 8);
+            const int bit_pos = 7 - (physical_x_abs & 7);
+
+            if (is_white) {
+                self->_frameBuffer[byte_idx] |= (1 << bit_pos);
             } else {
-                heap_caps_free(packed);
+                self->_frameBuffer[byte_idx] &= ~(1 << bit_pos);
             }
-        } else {
-            xSemaphoreGive(self->_framebufferMutex);
-            ESP_LOGE(TAG, "Failed to allocate display buffer");
+
+            // expand touched bounding box
+            min_px = std::min(min_px, physical_x_abs);
+            max_px = std::max(max_px, physical_x_abs);
+            min_py = std::min(min_py, physical_y_abs);
+            max_py = std::max(max_py, physical_y_abs);
         }
+    }
+
+    // If nothing changed (shouldn't happen since LVGL wouldn't flush empty), just release and return
+    if (max_px < 0 || max_py < 0) {
+        xSemaphoreGive(self->_framebufferMutex);
+        lv_display_flush_ready(disp);
+        return;
+    }
+
+    // Align x0/w to byte (8-pixel) boundaries required by controllers
+    int aligned_x0 = (min_px / 8) * 8;
+    int aligned_x1 = ((max_px + 8) / 8) * 8 - 1; // inclusive
+    if (aligned_x0 < 0) aligned_x0 = 0;
+    if (aligned_x1 >= panel_width) aligned_x1 = panel_width - 1;
+    int aligned_w = aligned_x1 - aligned_x0 + 1;
+    int packed_row_bytes = (aligned_w + 7) / 8;
+
+    // Vertical bounds
+    int y0 = min_py;
+    int y1 = max_py;
+    if (y0 < 0) y0 = 0;
+    if (y1 >= panel_height) y1 = panel_height - 1;
+    int packed_h = y1 - y0 + 1;
+
+    // Allocate packed buffer for the minimal aligned rectangle (MALLOC_CAP_DMA for SPI DMA)
+    size_t packed_size = (size_t)packed_row_bytes * (size_t)packed_h;
+    uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
+    if (!packed) {
+        xSemaphoreGive(self->_framebufferMutex);
+        ESP_LOGE(TAG, "Failed to allocate packed buffer of %zu bytes", packed_size);
+        lv_display_flush_ready(disp);
+        return;
+    }
+
+    // Pack the minimal rectangle from the persistent framebuffer into packed buffer
+    // Source framebuffer uses panel_bytes_per_row bytes per full panel row.
+    for (int ry = 0; ry < packed_h; ++ry) {
+        int src_y = y0 + ry;
+        uint8_t* dst_row = packed + (size_t)ry * packed_row_bytes;
+        // For each byte in destination row
+        for (int bx = 0; bx < packed_row_bytes; ++bx) {
+            uint8_t out = 0;
+            int base_x = aligned_x0 + bx * 8;
+            for (int bit = 0; bit < 8; ++bit) {
+                int sx = base_x + bit;
+                if (sx >= panel_width) {
+                    // out bit remains as 0 (treated as black) or set to white? keeping 0 is fine if outside
+                    out <<= 1;
+                } else {
+                    int src_byte_idx = src_y * panel_bytes_per_row + (sx / 8);
+                    int src_bit_pos = 7 - (sx & 7);
+                    bool white = (self->_frameBuffer[src_byte_idx] & (1 << src_bit_pos)) != 0;
+                    out <<= 1;
+                    if (white) out |= 1;
+                }
+            }
+            dst_row[bx] = out;
+        }
+    }
+
+    // Release framebuffer mutex before enqueueing as we no longer touch framebuffer
+    xSemaphoreGive(self->_framebufferMutex);
+
+    // Enqueue the packed minimal rectangle for the worker to write
+    if (self->_queue) {
+        QueueItem qi;
+        qi.buf = packed;
+        qi.x = (uint16_t)aligned_x0;
+        qi.y = (uint16_t)y0;
+        qi.w = (uint16_t)aligned_w;
+        qi.h = (uint16_t)packed_h;
+
+        if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
+            ESP_LOGW(TAG, "Display queue full; minimal frame dropped.");
+            heap_caps_free(packed);
+        }
+    } else {
+        // No queue available - attempt direct write (best-effort)
+        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+        self->_display->writeImage(packed, aligned_x0, y0, aligned_w, packed_h, false, false, false);
+        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+        heap_caps_free(packed);
     }
 
     lv_display_flush_ready(disp);
