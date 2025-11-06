@@ -370,26 +370,53 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     }
 
     QueueItem item;
+    QueueItem pending_item = {nullptr, 0, 0, 0, 0};
+    bool has_pending = false;
 
     while (true) {
-        if (xQueueReceive(self->_queue, &item, portMAX_DELAY)) {
+        // Try to receive an item with a short timeout to allow debouncing
+        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(100))) {
             if (item.buf == nullptr) {
                 ESP_LOGI(TAG, "Worker: termination received");
                 break;
             }
 
-            if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+            // If we already have a pending item, free it (we'll use the newer one)
+            if (has_pending && pending_item.buf) {
+                ESP_LOGI(TAG, "Worker: discarding stale frame x=%d y=%d w=%d h=%d (superseded by newer frame)",
+                         pending_item.x, pending_item.y, pending_item.w, pending_item.h);
+                heap_caps_free(pending_item.buf);
+            }
 
-            ESP_LOGI(TAG, "Worker: writeImage x=%d y=%d w=%d h=%d", item.x, item.y, item.w, item.h);
-            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
+            // Store this item as pending
+            pending_item = item;
+            has_pending = true;
 
-            ESP_LOGI(TAG, "Worker: refresh(true)");
-            self->_display->refresh(true);
-            
-            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+        } else {
+            // Timeout: if we have a pending item, process it now
+            if (has_pending && pending_item.buf) {
+                if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            heap_caps_free(item.buf);
+                ESP_LOGI(TAG, "Worker: writeImage x=%d y=%d w=%d h=%d", 
+                         pending_item.x, pending_item.y, pending_item.w, pending_item.h);
+                self->_display->writeImage(pending_item.buf, pending_item.x, pending_item.y, 
+                                          pending_item.w, pending_item.h, false, false, false);
+
+                ESP_LOGI(TAG, "Worker: refresh(true)");
+                self->_display->refresh(true);
+
+                if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+
+                heap_caps_free(pending_item.buf);
+                pending_item.buf = nullptr;
+                has_pending = false;
+            }
         }
+    }
+
+    // Clean up any remaining pending item
+    if (has_pending && pending_item.buf) {
+        heap_caps_free(pending_item.buf);
     }
 
     self->_workerRunning = false;
