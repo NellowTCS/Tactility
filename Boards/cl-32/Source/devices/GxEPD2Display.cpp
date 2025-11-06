@@ -20,6 +20,8 @@ GxEPD2Display::GxEPD2Display(const Configuration& config)
     , _workerTaskHandle(nullptr)
     , _spiMutex(nullptr)
     , _workerRunning(false)
+    , _gapX(0)
+    , _gapY(0)
 {
 }
 
@@ -325,7 +327,8 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                 break;
             }
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-            self->_display->writeImage(item.buf, item.y, item.x, item.h, item.w, false, false, false);
+            // Use the aligned coordinates and width we enqueued
+            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
             item.buf = nullptr;
@@ -344,7 +347,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
         if (item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-            self->_display->writeImage(item.buf, item.y, item.x, item.h, item.w, false, false, false);
+            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
         }
@@ -400,31 +403,45 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    const int epd_row_bytes = (epd_w + 7) / 8;
-    const size_t packed_size = (size_t)epd_row_bytes * epd_h;
+    // Align X to byte boundary that the driver expects
+    const int start_bit_offset = epd_x & 7; // epd_x % 8
+    const int aligned_x = epd_x - start_bit_offset; // floor to byte boundary
+    const int padded_w = epd_w + start_bit_offset; // include left padding in width
+    const int padded_w_bytes = (padded_w + 7) / 8; // bytes per row for the driver
+    const size_t packed_size = (size_t)padded_w_bytes * (size_t)epd_h;
+
     uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
     if (!packed) {
         ESP_LOGE(TAG, "Failed to allocate %zu bytes for 1-bit buffer", packed_size);
         lv_display_flush_ready(disp);
         return;
     }
+    // default to white
     memset(packed, 0xFF, packed_size);
 
     const int logical_w = area->x2 - area->x1 + 1;
     lv_color_format_t cf = lv_display_get_color_format(disp);
     uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
-    lv_color_t* src_buf = (lv_color_t*)px_map;
+    uint8_t* src_bytes = (uint8_t*)px_map;
 
-    // Iterate over the source logical buffer and place each pixel in its correct rotated position.
-    for (int ly = 0; ly < (area->y2 - area->y1 + 1); ly++) {
-        lv_color_t* src_row = (lv_color_t*)((uint8_t*)src_buf + ly * src_row_stride_bytes);
-        for (int lx = 0; lx < (area->x2 - area->x1 + 1); lx++) {
+    static int s_flush_debug_count = 0;
+    if (s_flush_debug_count < 8) {
+        ESP_LOGI(TAG, "lvglFlush: logical=[%d,%d %dx%d] physical=[%d,%d %dx%d] aligned_x=%d start_bit=%d padded_w=%d bytes=%d rot=%d",
+                 area->x1, area->y1, logical_w, area->y2 - area->y1 + 1,
+                 epd_x, epd_y, epd_w, epd_h, aligned_x, start_bit_offset, padded_w, padded_w_bytes, (int)rotation);
+    }
+
+    // For each logical pixel, compute destination physical coords and pack into the aligned buffer.
+    for (int ly = 0; ly < (area->y2 - area->y1 + 1); ++ly) {
+        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
+        for (int lx = 0; lx < logical_w; ++lx) {
             int logical_x_abs = area->x1 + lx;
             int logical_y_abs = area->y1 + ly;
 
             int physical_x_abs = 0;
             int physical_y_abs = 0;
 
+            // Map logical -> physical depending on rotation
             if (rotation == LV_DISPLAY_ROTATION_0) {
                 physical_x_abs = logical_x_abs;
                 physical_y_abs = logical_y_abs;
@@ -434,27 +451,56 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
             } else if (rotation == LV_DISPLAY_ROTATION_180) {
                 physical_x_abs = hor_res - 1 - logical_x_abs;
                 physical_y_abs = ver_res - 1 - logical_y_abs;
-            } else if (rotation == LV_DISPLAY_ROTATION_270) {
+            } else { // 270
                 physical_x_abs = ver_res - 1 - logical_y_abs;
                 physical_y_abs = logical_x_abs;
             }
 
-            int px_rel = physical_x_abs - epd_x;
+            // Convert to buffer-relative coords using ALIGNED origin
+            int px_rel = physical_x_abs - aligned_x; // note aligned_x used here
             int py_rel = physical_y_abs - epd_y;
 
-            if (px_rel >= 0 && px_rel < epd_w && py_rel >= 0 && py_rel < epd_h) {
-                if (!self->rgb565ToMono(src_row[lx])) { // if black
-                    int byte_index = py_rel * epd_row_bytes + (px_rel / 8);
-                    int bit_index = 7 - (px_rel % 8);
-                    packed[byte_index] &= ~(1 << bit_index);
-                }
+            if (px_rel < 0 || px_rel >= padded_w || py_rel < 0 || py_rel >= epd_h) {
+                continue;
+            }
+
+            // Read LVGL pixel from source row
+            lv_color_t pixel = src_row[lx];
+            bool is_white = rgb565ToMono(pixel);
+
+            // Pack into buffer that starts at aligned_x. byte index uses padded_w_bytes (driver wb)
+            const int byte_idx = py_rel * padded_w_bytes + (px_rel / 8);
+            const int bit_pos = 7 - (px_rel & 7);
+
+            if (is_white) {
+                packed[byte_idx] |= (1 << bit_pos);
+            } else {
+                packed[byte_idx] &= ~(1 << bit_pos);
             }
         }
     }
 
-    // Enqueue the packed buffer for the worker
+    if (s_flush_debug_count < 8) {
+        const int dump_bytes = std::min<int>((int)packed_size, 16);
+        char buf_hex[16 * 3 + 1];
+        char *p = buf_hex;
+        for (int i = 0; i < dump_bytes; ++i) {
+            int n = sprintf(p, "%02X ", packed[i]);
+            p += n;
+        }
+        *p = '\0';
+        ESP_LOGI(TAG, "packed[%d]= %s (aligned_x=%d padded_w=%d bytes=%d)", dump_bytes, buf_hex, aligned_x, padded_w, padded_w_bytes);
+        ++s_flush_debug_count;
+    }
+
+    // Enqueue using aligned coords and padded width (in pixels = padded_w_bytes*8)
     if (self->_queue) {
-        QueueItem qi = { packed, (uint16_t)epd_x, (uint16_t)epd_y, (uint16_t)epd_w, (uint16_t)epd_h };
+        QueueItem qi;
+        qi.buf = packed;
+        qi.x = (uint16_t)aligned_x;                 // aligned to byte boundary
+        qi.y = (uint16_t)epd_y;
+        qi.w = (uint16_t)(padded_w_bytes * 8);      // width rounded to bytes, in pixels
+        qi.h = (uint16_t)epd_h;
         if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
             ESP_LOGW(TAG, "Display queue full; frame dropped.");
             heap_caps_free(packed);
