@@ -325,7 +325,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                 break;
             }
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
+            self->_display->writeImage(item.buf, item.y, item.x, item.h, item.w, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
             item.buf = nullptr;
@@ -344,7 +344,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
         if (item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
+            self->_display->writeImage(item.buf, item.y, item.x, item.h, item.w, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
         }
