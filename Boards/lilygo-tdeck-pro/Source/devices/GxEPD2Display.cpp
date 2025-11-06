@@ -1,11 +1,13 @@
 #include "GxEPD2Display.h"
 #include "GxEPD2/GxEPD2_310_GDEQ031T10.h"
+#include "DisplayTester.h"
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
+#include <vector>
 
 static const char* TAG = "GxEPD2Display";
 
@@ -96,10 +98,21 @@ bool GxEPD2Display::stop() {
         ESP_LOGI(TAG, "Stopping display...");
         destroyWorker();
 
-        if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
+        bool have = false;
+        if (_spiMutex) {
+            if (xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+                have = true;
+            } else {
+                ESP_LOGW(TAG, "Failed to take SPI mutex while stopping; proceeding anyway");
+            }
+        }
+
         _display->hibernate();
         _display.reset();
-        if (_spiMutex) xSemaphoreGive(_spiMutex);
+
+        if (have && _spiMutex) {
+            xSemaphoreGive(_spiMutex);
+        }
     }
     return true;
 }
@@ -145,13 +158,23 @@ void GxEPD2Display::destroyWorker() {
     QueueItem term;
     term.buf = nullptr;
     term.x = term.y = term.w = term.h = 0;
-    xQueueSend(_queue, &term, pdMS_TO_TICKS(50));
+    // Ensure termination message is enqueued so worker can exit normally.
+    if (xQueueSend(_queue, &term, portMAX_DELAY) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to send termination message to display worker");
+    }
     if (_workerTaskHandle) {
         vTaskDelay(pdMS_TO_TICKS(100));
         if (eTaskGetState(_workerTaskHandle) != eDeleted) {
             vTaskDelete(_workerTaskHandle);
         }
         _workerTaskHandle = nullptr;
+    }
+    // Drain and free any remaining buffers that might be left in the queue
+    QueueItem item;
+    while (xQueueReceive(_queue, &item, 0) == pdTRUE) {
+        if (item.buf) {
+            heap_caps_free(item.buf);
+        }
     }
     vQueueDelete(_queue);
     _queue = nullptr;
@@ -199,7 +222,8 @@ bool GxEPD2Display::startLvgl() {
 
     // Allocate persistent framebuffer for e-paper (stores complete display state)
     const size_t fb_size = ((size_t)_config.width * (size_t)_config.height + 7) / 8;
-    _frameBuffer = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_SPIRAM);
+    // Use internal RAM for the small persistent framebuffer to avoid SPIRAM TLSF allocator issues
+    _frameBuffer = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_INTERNAL);
     if (!_frameBuffer) {
         ESP_LOGE(TAG, "Failed to allocate framebuffer (%zu bytes)", fb_size);
         lv_display_delete(_lvglDisplay);
@@ -221,8 +245,9 @@ bool GxEPD2Display::startLvgl() {
 
     // Allocate draw buffers using LVGL's reported horizontal resolution
     const size_t bufSize = (size_t)hor_res * DRAW_BUF_LINES;
-    _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
-    _drawBuf2 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    // LVGL draw buffers should be in internal RAM (fast, stable allocator)
+    _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_INTERNAL);
+    _drawBuf2 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_INTERNAL);
     if (!_drawBuf1 || !_drawBuf2) {
         ESP_LOGE(TAG, "Failed to allocate LVGL draw buffers (requested %zu bytes each)", bufSize * sizeof(lv_color_t));
         if (_drawBuf1) heap_caps_free(_drawBuf1);
@@ -307,24 +332,49 @@ uint16_t GxEPD2Display::getHeight() const {
 void GxEPD2Display::writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, int16_t w, int16_t h,
                                    bool invert, bool mirror_y) {
     if (!_display) return;
-    if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
+    bool took = false;
+    if (_spiMutex) {
+        if (xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) took = true;
+        else ESP_LOGW(TAG, "writeRawImage: failed to take spi mutex");
+    }
     _display->writeImage(bitmap, x, y, w, h, invert, mirror_y, false);
-    if (_spiMutex) xSemaphoreGive(_spiMutex);
+    if (took && _spiMutex) xSemaphoreGive(_spiMutex);
 }
 
 void GxEPD2Display::refreshDisplay(bool partial) {
     if (!_display) return;
-    if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
+    bool took = false;
+    if (_spiMutex) {
+        if (xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) took = true;
+        else ESP_LOGW(TAG, "refreshDisplay: failed to take spi mutex");
+    }
     _display->refresh(partial);
-    if (_spiMutex) xSemaphoreGive(_spiMutex);
+    if (took && _spiMutex) xSemaphoreGive(_spiMutex);
 }
 
-inline bool GxEPD2Display::rgb565ToMono(lv_color_t pixel) {
+static inline bool bayer4x4Dither(lv_color_t pixel, int x, int y) {
+    // Compute brightness 0..255
     uint8_t r = pixel.red;
     uint8_t g = pixel.green;
     uint8_t b = pixel.blue;
     uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
-    return brightness > 127;
+
+    // Standard 4x4 Bayer matrix (values 0..15)
+    // Layout:
+    // 0  8  2 10
+    //12  4 14  6
+    //3 11  1  9
+    //15  7 13  5
+    static const uint8_t bayer4[4][4] = {
+        { 0,  8,  2, 10},
+        {12,  4, 14,  6},
+        { 3, 11,  1,  9},
+        {15,  7, 13,  5}
+    };
+
+    // Map matrix value (0..15) to threshold 0..255 (roughly multiply by 16)
+    uint8_t thresh = (uint8_t)(bayer4[y & 3][x & 3] * 16 + 8); // center
+    return brightness > thresh;
 }
 
 void GxEPD2Display::displayWorkerTask(void* arg) {
@@ -337,24 +387,131 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     QueueItem item;
     bool processed_since_refresh = false;
 
+    // Keep last written buffer + rect for syncing 0x26 after refresh
+    uint8_t* last_buf = nullptr;
+    int16_t last_x = 0, last_y = 0;
+    uint16_t last_w = 0, last_h = 0;
+
     while (true) {
-        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(150))) {
+        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(500))) {
             if (item.buf == nullptr) {
+                ESP_LOGI(TAG, "Worker: termination received");
                 break;
             }
+
+            std::vector<QueueItem> items;
+            items.push_back(item);
+
+            while (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(5)) == pdTRUE) {
+                if (item.buf == nullptr) {
+                    QueueItem term = { nullptr, 0, 0, 0, 0 };
+                    xQueueSend(self->_queue, &term, portMAX_DELAY);
+                    break;
+                }
+                items.push_back(item);
+            }
+
+            int union_x0 = INT32_MAX, union_y0 = INT32_MAX;
+            int union_x1 = INT32_MIN, union_y1 = INT32_MIN;
+            for (const auto &qi : items) {
+                union_x0 = std::min<int>(union_x0, qi.x);
+                union_y0 = std::min<int>(union_y0, qi.y);
+                union_x1 = std::max<int>(union_x1, qi.x + qi.w - 1);
+                union_y1 = std::max<int>(union_y1, qi.y + qi.h - 1);
+            }
+
+            if (union_x0 == INT32_MAX) {
+                for (auto &q : items) if (q.buf) heap_caps_free(q.buf);
+                continue;
+            }
+
+            int aligned_union_x0 = (union_x0 / 8) * 8;
+            int aligned_union_x1 = ((union_x1 + 8) / 8) * 8 - 1;
+            if (aligned_union_x0 < 0) aligned_union_x0 = 0;
+            if (aligned_union_x1 >= (int)self->_config.width) aligned_union_x1 = (int)self->_config.width - 1;
+            int union_w = aligned_union_x1 - aligned_union_x0 + 1;
+
+            int aligned_union_y0 = std::max(0, union_y0);
+            int aligned_union_y1 = std::min<int>(union_y1, self->_config.height - 1);
+            int union_h = aligned_union_y0 <= aligned_union_y1 ? (aligned_union_y1 - aligned_union_y0 + 1) : 0;
+            if (union_h <= 0 || union_w <= 0) {
+                for (auto &q : items) if (q.buf) heap_caps_free(q.buf);
+                continue;
+            }
+
+            int union_row_bytes = (union_w + 7) / 8;
+            size_t union_size = (size_t)union_row_bytes * (size_t)union_h;
+            // Use internal RAM for temporary union buffer
+            uint8_t* union_buf = (uint8_t*)heap_caps_malloc(union_size, MALLOC_CAP_INTERNAL);
+            if (!union_buf) {
+                ESP_LOGE(TAG, "Worker: failed to alloc union buffer %zu bytes", union_size);
+                for (auto &q : items) if (q.buf) heap_caps_free(q.buf);
+                continue;
+            }
+            memset(union_buf, 0xFF, union_size);
+
+            for (const auto &qi : items) {
+                int item_row_bytes = (qi.w + 7) / 8;
+                for (int ry = 0; ry < qi.h; ++ry) {
+                    int dst_row = (qi.y + ry) - aligned_union_y0;
+                    if (dst_row < 0 || dst_row >= union_h) continue;
+                    uint8_t* dst = union_buf + (size_t)dst_row * union_row_bytes;
+                    int dst_byte_offset = (qi.x - aligned_union_x0) / 8;
+                    uint8_t* dst_ptr = dst + dst_byte_offset;
+                    uint8_t* src_ptr = qi.buf + (size_t)ry * item_row_bytes;
+                    memcpy(dst_ptr, src_ptr, item_row_bytes);
+                }
+            }
+
+            for (auto &q : items) {
+                if (q.buf) {
+                    heap_caps_free(q.buf);
+                    q.buf = nullptr;
+                }
+            }
+
+            if (last_buf) {
+                heap_caps_free(last_buf);
+                last_buf = nullptr;
+            }
+
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
+            ESP_LOGI(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items)",
+                     aligned_union_x0, aligned_union_y0, union_w, union_h, (int)items.size());
+
+            self->_display->writeImage(union_buf, (int16_t)aligned_union_x0, (int16_t)aligned_union_y0,
+                                       (int16_t)union_w, (int16_t)union_h, false, false, false);
+
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-            heap_caps_free(item.buf);
-            item.buf = nullptr;
+
+            last_buf = union_buf;
+            last_x = (int16_t)aligned_union_x0;
+            last_y = (int16_t)aligned_union_y0;
+            last_w = (uint16_t)union_w;
+            last_h = (uint16_t)union_h;
+
             processed_since_refresh = true;
             continue;
         } else {
             if (processed_since_refresh) {
                 if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+                ESP_LOGI(TAG, "Worker: refresh(true)");
                 self->_display->refresh(true);
+
+                if (last_buf) {
+                    ESP_LOGI(TAG, "Worker: writeImagePrevious (sync 0x26) x=%d y=%d w=%d h=%d",
+                             last_x, last_y, last_w, last_h);
+                    self->_display->writeImagePrevious(last_buf, last_x, last_y, last_w, last_h, false, false, false);
+                }
+
                 if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+
+                if (last_buf) {
+                    heap_caps_free(last_buf);
+                    last_buf = nullptr;
+                }
+
                 processed_since_refresh = false;
             }
         }
@@ -363,6 +520,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
         if (item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+            ESP_LOGI(TAG, "Worker: draining and writeImage x=%u y=%u w=%u h=%u", item.x, item.y, item.w, item.h);
             self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
@@ -370,9 +528,21 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     }
     if (processed_since_refresh) {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+        ESP_LOGI(TAG, "Worker: final refresh(true)");
         self->_display->refresh(true);
+        if (last_buf) {
+            ESP_LOGI(TAG, "Worker: final writeImagePrevious (sync 0x26) x=%d y=%d w=%d h=%d",
+                     last_x, last_y, last_w, last_h);
+            self->_display->writeImagePrevious(last_buf, last_x, last_y, last_w, last_h, false, false, false);
+        }
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
     }
+
+    if (last_buf) {
+        heap_caps_free(last_buf);
+        last_buf = nullptr;
+    }
+
     self->_workerRunning = false;
     vTaskDelete(NULL);
 }
@@ -384,92 +554,176 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    lv_display_rotation_t rotation = lv_display_get_rotation(disp);
+    const int logical_w = area->x2 - area->x1 + 1;
+    const int logical_h = area->y2 - area->y1 + 1;
+    
     int32_t hor_res = lv_display_get_horizontal_resolution(disp);
     int32_t ver_res = lv_display_get_vertical_resolution(disp);
+    
+    lv_color_format_t cf = lv_display_get_color_format(disp);
+    // stride must be based on hor_res (buffer width), not logical_w (area width)
+    uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(hor_res, cf);
+    uint8_t* src_bytes = (uint8_t*)px_map;
 
     const int panel_width = self->_config.width;
     const int panel_height = self->_config.height;
-    const int bytes_per_row = (panel_width + 7) / 8;
+    const int panel_bytes_per_row = (panel_width + 7) / 8;
 
-    const int logical_w = area->x2 - area->x1 + 1;
-    const int logical_h = area->y2 - area->y1 + 1;
-    lv_color_format_t cf = lv_display_get_color_format(disp);
-    uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
-    uint8_t* src_bytes = (uint8_t*)px_map;
+    int min_px = panel_width, min_py = panel_height, max_px = -1, max_py = -1;
 
-    // Lock framebuffer and update only the dirty region
-    if (xSemaphoreTake(self->_framebufferMutex, pdMS_TO_TICKS(100))) {
-        for (int ly = 0; ly < logical_h; ++ly) {
-            lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
-            
-            for (int lx = 0; lx < logical_w; ++lx) {
-                int logical_x_abs = area->x1 + lx;
-                int logical_y_abs = area->y1 + ly;
+    if (xSemaphoreTake(self->_framebufferMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGW(TAG, "Framebuffer mutex busy; dropping LVGL flush");
+        lv_display_flush_ready(disp);
+        return;
+    }
 
-                int physical_x_abs, physical_y_abs;
+    lv_display_rotation_t lv_rotation = lv_display_get_rotation(disp);
+    int rotation = 0;
+    switch (lv_rotation) {
+        case LV_DISPLAY_ROTATION_90: rotation = 1; break;
+        case LV_DISPLAY_ROTATION_180: rotation = 2; break;
+        case LV_DISPLAY_ROTATION_270: rotation = 3; break;
+        default: rotation = 0; break;
+    }
+    
+    ESP_LOGI(TAG, "lvglFlushCallback: LVGL rotation=%d config.rotation=%d hor_res=%d ver_res=%d area=(%d,%d)-(%d,%d) stride_bytes=%u",
+             rotation, (int)self->_config.rotation, (int)hor_res, (int)ver_res, 
+             area->x1, area->y1, area->x2, area->y2, src_row_stride_bytes);
 
-                // Rotation mapping
-                if (rotation == LV_DISPLAY_ROTATION_90) {
-                    physical_x_abs = logical_y_abs;
-                    physical_y_abs = (hor_res - 1) - logical_x_abs;
-                } else if (rotation == LV_DISPLAY_ROTATION_270) {
-                    physical_x_abs = (ver_res - 1) - logical_y_abs;
-                    physical_y_abs = logical_x_abs;
-                } else if (rotation == LV_DISPLAY_ROTATION_180) {
-                    physical_x_abs = (hor_res - 1) - logical_x_abs;
-                    physical_y_abs = (ver_res - 1) - logical_y_abs;
-                } else {
-                    physical_x_abs = logical_x_abs;
-                    physical_y_abs = logical_y_abs;
-                }
-
-                if (physical_x_abs < 0 || physical_x_abs >= panel_width || 
-                    physical_y_abs < 0 || physical_y_abs >= panel_height) {
-                    continue;
-                }
-
-                lv_color_t pixel = src_row[lx];
-                bool is_white = rgb565ToMono(pixel);
-
-                const int byte_idx = physical_y_abs * bytes_per_row + (physical_x_abs / 8);
-                const int bit_pos = 7 - (physical_x_abs & 7);
-
-                if (is_white) {
-                    self->_frameBuffer[byte_idx] |= (1 << bit_pos);
-                } else {
-                    self->_frameBuffer[byte_idx] &= ~(1 << bit_pos);
-                }
-            }
+    auto map_logical_to_physical = [&](int logical_x_abs, int logical_y_abs, int& physical_x_abs, int& physical_y_abs) {
+        switch (rotation) {
+            case 1:
+                physical_x_abs = logical_y_abs;
+                physical_y_abs = (hor_res - 1) - logical_x_abs;
+                break;
+            case 2:
+                physical_x_abs = (hor_res - 1) - logical_x_abs;
+                physical_y_abs = (ver_res - 1) - logical_y_abs;
+                break;
+            case 3:
+                physical_x_abs = (ver_res - 1) - logical_y_abs;
+                physical_y_abs = logical_x_abs;
+                break;
+            case 0:
+            default:
+                physical_x_abs = logical_x_abs;
+                physical_y_abs = logical_y_abs;
+                break;
         }
+        physical_x_abs += self->_gapX;
+        physical_y_abs += self->_gapY;
+    };
 
-        // Copy full framebuffer for sending to display
-        const size_t fb_size = (size_t)bytes_per_row * (size_t)panel_height;
-        uint8_t* packed = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_DMA);
-        if (packed) {
-            memcpy(packed, self->_frameBuffer, fb_size);
-            xSemaphoreGive(self->_framebufferMutex);
+    for (int ly = 0; ly < logical_h; ++ly) {
+        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
 
-            // Enqueue full frame
-            if (self->_queue) {
-                QueueItem qi;
-                qi.buf = packed;
-                qi.x = 0;
-                qi.y = 0;
-                qi.w = (uint16_t)panel_width;
-                qi.h = (uint16_t)panel_height;
-                
-                if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
-                    ESP_LOGW(TAG, "Display queue full; frame dropped.");
-                    heap_caps_free(packed);
-                }
+        for (int lx = 0; lx < logical_w; ++lx) {
+            int logical_x_abs = area->x1 + lx;
+            int logical_y_abs = area->y1 + ly;
+
+            int physical_x_abs = 0, physical_y_abs = 0;
+            map_logical_to_physical(logical_x_abs, logical_y_abs, physical_x_abs, physical_y_abs);
+
+            if (physical_x_abs < 0 || physical_x_abs >= panel_width ||
+                physical_y_abs < 0 || physical_y_abs >= panel_height) {
+                continue;
+            }
+
+            lv_color_t pixel = src_row[lx];
+            bool is_white = bayer4x4Dither(pixel, physical_x_abs, physical_y_abs);
+
+            const int byte_idx = physical_y_abs * panel_bytes_per_row + (physical_x_abs / 8);
+            const int bit_pos = 7 - (physical_x_abs & 7);
+
+            if (is_white) {
+                self->_frameBuffer[byte_idx] |= (1 << bit_pos);
             } else {
-                heap_caps_free(packed);
+                self->_frameBuffer[byte_idx] &= ~(1 << bit_pos);
             }
-        } else {
-            xSemaphoreGive(self->_framebufferMutex);
-            ESP_LOGE(TAG, "Failed to allocate display buffer");
+
+            min_px = std::min(min_px, physical_x_abs);
+            max_px = std::max(max_px, physical_x_abs);
+            min_py = std::min(min_py, physical_y_abs);
+            max_py = std::max(max_py, physical_y_abs);
         }
+    }
+
+    if (max_px < 0 || max_py < 0) {
+        xSemaphoreGive(self->_framebufferMutex);
+        lv_display_flush_ready(disp);
+        return;
+    }
+
+    int aligned_x0 = (min_px / 8) * 8;
+    int aligned_x1 = ((max_px + 8) / 8) * 8 - 1;
+    if (aligned_x0 < 0) aligned_x0 = 0;
+    if (aligned_x1 >= panel_width) aligned_x1 = panel_width - 1;
+    int aligned_w = aligned_x1 - aligned_x0 + 1;
+    int packed_row_bytes = (aligned_w + 7) / 8;
+
+    int y0 = min_py;
+    int y1 = max_py;
+    if (y0 < 0) y0 = 0;
+    if (y1 >= panel_height) y1 = panel_height - 1;
+    int packed_h = y1 - y0 + 1;
+
+    size_t packed_size = (size_t)packed_row_bytes * (size_t)packed_h;
+    // Use internal RAM for the packed 1-bit buffer
+    uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_INTERNAL);
+    if (!packed) {
+        xSemaphoreGive(self->_framebufferMutex);
+        ESP_LOGE(TAG, "Failed to allocate packed buffer of %zu bytes", packed_size);
+        lv_display_flush_ready(disp);
+        return;
+    }
+
+    for (int ry = 0; ry < packed_h; ++ry) {
+        int src_y = y0 + ry;
+        uint8_t* dst_row = packed + (size_t)ry * packed_row_bytes;
+        for (int bx = 0; bx < packed_row_bytes; ++bx) {
+            uint8_t out = 0;
+            int base_x = aligned_x0 + bx * 8;
+            for (int bit = 0; bit < 8; ++bit) {
+                int sx = base_x + bit;
+                out <<= 1;
+                if (sx >= panel_width) {
+                    // leave bit as 0
+                } else {
+                    int src_byte_idx = src_y * panel_bytes_per_row + (sx / 8);
+                    int src_bit_pos = 7 - (sx & 7);
+                    bool white = (self->_frameBuffer[src_byte_idx] & (1 << src_bit_pos)) != 0;
+                    if (white) out |= 1;
+                }
+            }
+            dst_row[bx] = out;
+        }
+    }
+
+    xSemaphoreGive(self->_framebufferMutex);
+
+    ESP_LOGI(TAG, "Mapped physical bbox (pre-align) = x[%d..%d] y[%d..%d] aligned_x0=%d y0=%d w=%d h=%d packed_bytes=%zu",
+             min_px, max_px, min_py, max_py, aligned_x0, y0, aligned_w, packed_h, packed_size);
+
+    if (self->_queue) {
+        QueueItem qi;
+        qi.buf = packed;
+        qi.x = (uint16_t)aligned_x0;
+        qi.y = (uint16_t)y0;
+        qi.w = (uint16_t)aligned_w;
+        qi.h = (uint16_t)packed_h;
+
+        if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
+            ESP_LOGW(TAG, "Display queue full; minimal frame dropped. x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
+            heap_caps_free(packed);
+        } else {
+            ESP_LOGI(TAG, "Enqueued frame x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
+        }
+    } else {
+        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+        ESP_LOGI(TAG, "Direct write (no queue) x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
+        self->_display->writeImage(packed, aligned_x0, y0, aligned_w, packed_h, false, false, false);
+        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+        heap_caps_free(packed);
     }
 
     lv_display_flush_ready(disp);
