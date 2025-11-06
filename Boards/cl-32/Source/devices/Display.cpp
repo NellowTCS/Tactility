@@ -13,5 +13,8 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         .rotation = 1  // 0=portrait, 1=landscape 90°CW, 2=portrait 180°, 3=landscape 270°CW
     };
 
-    return std::make_shared<GxEPD2Display>(config);
+    auto disp = std::make_shared<GxEPD2Display>(config);
+    // Compensate panel driver SOURCE_SHIFT (quick test). Remove if not needed.
+    disp->setGap(-GxEPD2_290_GDEY029T71H::SOURCE_SHIFT, 0);
+    return disp;
 }
