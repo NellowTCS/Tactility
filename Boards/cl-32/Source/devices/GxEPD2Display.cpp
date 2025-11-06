@@ -10,32 +10,6 @@
 
 static const char* TAG = "GxEPD2Display";
 
-// Bayer helpers (16x16 ordered dither)
-// 2x2 base matrix for recursive construction
-static const uint8_t bayer2x2[2][2] = {
-    {0, 2},
-    {3, 1}
-};
-
-// Compute Bayer matrix value for power-of-two size N using recursive quadrant method.
-// x,y must be in [0..N-1]. N must be power of two.
-static inline int bayer_val_pow2(int x, int y, int N)
-{
-    int v = 0;
-    int n = N;
-    while (n > 1) {
-        int half = n >> 1;
-        int qx = (x >= half) ? 1 : 0; // quadrant x (0 left, 1 right)
-        int qy = (y >= half) ? 1 : 0; // quadrant y (0 top, 1 bottom)
-        int add = bayer2x2[qy][qx];
-        v = (v << 2) + add;
-        if (qx) x -= half;
-        if (qy) y -= half;
-        n = half;
-    }
-    return v; // 0 .. N*N-1
-}
-
 GxEPD2Display::GxEPD2Display(const Configuration& config)
     : _config(config)
     , _display(nullptr)
@@ -46,8 +20,6 @@ GxEPD2Display::GxEPD2Display(const Configuration& config)
     , _workerTaskHandle(nullptr)
     , _spiMutex(nullptr)
     , _workerRunning(false)
-    , _gapX(-30)   // default positive shift (lessened to test if the Y and X are flipped, and also if it works)
-    , _gapY(0)
 {
 }
 
@@ -430,25 +402,25 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     int32_t ver_res = lv_display_get_vertical_resolution(disp);    // logical height LVGL is using
 
     // Map logical rectangle -> physical rectangle for known rotations
-    // Use LVGL logical resolution (hor_res/ver_res) as rotation pivot.
+    // Use the panel's physical dimensions (self->_config.width/height) to compute the transformed rectangle.
     if (rotation == LV_DISPLAY_ROTATION_90) {
-        // 90° CW: logical coords (lx,ly) -> physical (px,py) = (ly, hor_res-1 - lx)
+        // 90° CW: logical coords (lx,ly) -> physical (px,py) = (ly, panel_width-1 - lx)
         physical_area.x1 = area->y1;
-        physical_area.y1 = (hor_res - 1) - area->x2;
+        physical_area.y1 = (self->_config.width - 1) - area->x2;
         physical_area.x2 = area->y2;
-        physical_area.y2 = (hor_res - 1) - area->x1;
+        physical_area.y2 = (self->_config.width - 1) - area->x1;
     } else if (rotation == LV_DISPLAY_ROTATION_270) {
-        // 270° CW: logical -> physical (px,py) = (ver_res-1 - ly, lx)
-        physical_area.x1 = (ver_res - 1) - area->y2;
+        // 270° CW: logical -> physical (px,py) = (panel_height-1 - ly, lx)
+        physical_area.x1 = (self->_config.height - 1) - area->y2;
         physical_area.y1 = area->x1;
-        physical_area.x2 = (ver_res - 1) - area->y1;
+        physical_area.x2 = (self->_config.height - 1) - area->y1;
         physical_area.y2 = area->x2;
     } else if (rotation == LV_DISPLAY_ROTATION_180) {
-        // 180°: logical -> physical (px,py) = (hor_res-1 - lx, ver_res-1 - ly)
-        physical_area.x1 = (hor_res - 1) - area->x2;
-        physical_area.y1 = (ver_res - 1) - area->y2;
-        physical_area.x2 = (hor_res - 1) - area->x1;
-        physical_area.y2 = (ver_res - 1) - area->y1;
+        // 180°: logical -> physical (px,py) = (panel_width-1 - lx, panel_height-1 - ly)
+        physical_area.x1 = (self->_config.width - 1) - area->x2;
+        physical_area.y1 = (self->_config.height - 1) - area->y2;
+        physical_area.x2 = (self->_config.width - 1) - area->x1;
+        physical_area.y2 = (self->_config.height - 1) - area->y1;
     } else {
         // LV_DISPLAY_ROTATION_0: no change
         physical_area = *area;
@@ -502,6 +474,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_bytes);
         for (int lx = 0; lx < logical_w; ++lx) {
             lv_color_t pixel = src_row[lx];
+            bool is_white = self->rgb565ToMono(pixel);
 
             // absolute logical coordinates (within LVGL logical screen)
             int lx_abs = area->x1 + lx;
@@ -515,37 +488,20 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 px_abs = lx_abs;
                 py_abs = ly_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_90) {
-                // 90° CW: (lx_abs,ly_abs) -> (px,py) = (ly_abs, hor_res-1 - lx_abs)
+                // 90° CW: (lx_abs,ly_abs) -> (px,py) = (ly_abs, panel_width-1 - lx_abs)
                 px_abs = ly_abs;
-                py_abs = (hor_res - 1) - lx_abs;
+                py_abs = (self->_config.width - 1) - lx_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_180) {
-                px_abs = (hor_res - 1) - lx_abs;
-                py_abs = (ver_res - 1) - ly_abs;
+                px_abs = (self->_config.width - 1) - lx_abs;
+                py_abs = (self->_config.height - 1) - ly_abs;
             } else if (rotation == LV_DISPLAY_ROTATION_270) {
-                // 270° CW: (lx_abs,ly_abs) -> (px,py) = (ver_res-1 - ly_abs, lx_abs)
-                px_abs = (ver_res - 1) - ly_abs;
+                // 270° CW: (lx_abs,ly_abs) -> (px,py) = (panel_height-1 - ly_abs, lx_abs)
+                px_abs = (self->_config.height - 1) - ly_abs;
                 py_abs = lx_abs;
             } else {
                 px_abs = lx_abs;
                 py_abs = ly_abs;
             }
-
-            // Apply gap offsets (user-requested)
-            px_abs += self->_gapX;
-            py_abs += self->_gapY;
-
-            // Compute brightness for dither
-            uint8_t r = pixel.red;
-            uint8_t g = pixel.green;
-            uint8_t b = pixel.blue;
-            uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8; // 0..255
-
-            // map to local 16x16 Bayer coordinates (wrap)
-            int bx = (px_abs & 15);
-            int by = (py_abs & 15);
-            int bval = bayer_val_pow2(bx, by, 16); // 0..255
-
-            bool is_white = (brightness > (uint8_t)bval);
 
             // Convert to buffer-relative coordinates using computed physical_area origin
             int px_rel = px_abs - epd_x;
