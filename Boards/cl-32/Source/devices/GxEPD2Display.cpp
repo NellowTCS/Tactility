@@ -386,27 +386,23 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     QueueItem item;
     bool processed_since_refresh = false;
 
-    // Keep last written buffer for "writeAgain" after refresh (two-phase)
+    // Keep last written buffer + rect for syncing 0x26 after refresh
     uint8_t* last_buf = nullptr;
     int16_t last_x = 0, last_y = 0;
     uint16_t last_w = 0, last_h = 0;
 
     while (true) {
-        // Wait for at least one item
-        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(1000))) {
+        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(500))) {
             if (item.buf == nullptr) {
                 ESP_LOGI(TAG, "Worker: termination received");
                 break;
             }
 
-            // Collect this and any immediately available items to merge/union them
             std::vector<QueueItem> items;
             items.push_back(item);
 
-            // Pull any other immediate items to merge into one union write (short non-blocking loop)
             while (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(5)) == pdTRUE) {
                 if (item.buf == nullptr) {
-                    // re-enqueue termination marker for outer logic and stop collection
                     QueueItem term = { nullptr, 0, 0, 0, 0 };
                     xQueueSend(self->_queue, &term, portMAX_DELAY);
                     break;
@@ -414,7 +410,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                 items.push_back(item);
             }
 
-            // Compute union rectangle of dequeued items
             int union_x0 = INT32_MAX, union_y0 = INT32_MAX;
             int union_x1 = INT32_MIN, union_y1 = INT32_MIN;
             for (const auto &qi : items) {
@@ -425,24 +420,20 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             }
 
             if (union_x0 == INT32_MAX) {
-                // nothing to do
                 for (auto &q : items) if (q.buf) heap_caps_free(q.buf);
                 continue;
             }
 
-            // Align horizontally to byte boundaries required by EPDs
             int aligned_union_x0 = (union_x0 / 8) * 8;
             int aligned_union_x1 = ((union_x1 + 8) / 8) * 8 - 1;
             if (aligned_union_x0 < 0) aligned_union_x0 = 0;
             if (aligned_union_x1 >= (int)self->_config.width) aligned_union_x1 = (int)self->_config.width - 1;
             int union_w = aligned_union_x1 - aligned_union_x0 + 1;
 
-            // Vertical bounds (no special alignment)
             int aligned_union_y0 = std::max(0, union_y0);
             int aligned_union_y1 = std::min<int>(union_y1, self->_config.height - 1);
             int union_h = aligned_union_y0 <= aligned_union_y1 ? (aligned_union_y1 - aligned_union_y0 + 1) : 0;
             if (union_h <= 0 || union_w <= 0) {
-                // free items and continue
                 for (auto &q : items) if (q.buf) heap_caps_free(q.buf);
                 continue;
             }
@@ -452,18 +443,16 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             uint8_t* union_buf = (uint8_t*)heap_caps_malloc(union_size, MALLOC_CAP_DMA);
             if (!union_buf) {
                 ESP_LOGE(TAG, "Worker: failed to alloc union buffer %zu bytes", union_size);
-                // free item buffers
                 for (auto &q : items) if (q.buf) heap_caps_free(q.buf);
                 continue;
             }
-            // Initialize union buffer to the "white" state (0xFF)
             memset(union_buf, 0xFF, union_size);
 
-            // Copy each item's packed data into the union buffer in dequeued order (later items override earlier)
             for (const auto &qi : items) {
                 int item_row_bytes = (qi.w + 7) / 8;
                 for (int ry = 0; ry < qi.h; ++ry) {
                     int dst_row = (qi.y + ry) - aligned_union_y0;
+                    if (dst_row < 0 || dst_row >= union_h) continue;
                     uint8_t* dst = union_buf + (size_t)dst_row * union_row_bytes;
                     int dst_byte_offset = (qi.x - aligned_union_x0) / 8;
                     uint8_t* dst_ptr = dst + dst_byte_offset;
@@ -472,7 +461,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                 }
             }
 
-            // Free original per-item buffers
             for (auto &q : items) {
                 if (q.buf) {
                     heap_caps_free(q.buf);
@@ -480,14 +468,11 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                 }
             }
 
-            // If we had a previous last_buf that hasn't yet been consumed (e.g. refresh didn't occur),
-            // free it now because it's being replaced by this new write (we only keep the most recent).
             if (last_buf) {
                 heap_caps_free(last_buf);
                 last_buf = nullptr;
             }
 
-            // Perform SPI write once for the union rect
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
             ESP_LOGI(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items)",
@@ -498,8 +483,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
-            // Save the union buffer and its rect for the post-refresh writeAgain step.
-            // We don't free union_buf here. It will be freed after the refresh and (if needed) writeImageAgain.
             last_buf = union_buf;
             last_x = (int16_t)aligned_union_x0;
             last_y = (int16_t)aligned_union_y0;
@@ -509,24 +492,19 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             processed_since_refresh = true;
             continue;
         } else {
-            // No item received within timeout: if we did writes since last refresh, perform refresh and post-step.
             if (processed_since_refresh) {
                 if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
                 ESP_LOGI(TAG, "Worker: refresh(true)");
                 self->_display->refresh(true);
 
-                // If the driver supports fast partial update, make the second-phase write to sync previous buffer
-                if (self->_display && self->_display->hasFastPartialUpdate) {
-                    if (last_buf) {
-                        ESP_LOGI(TAG, "Worker: writeImageAgain for last region x=%d y=%d w=%d h=%d",
-                                 last_x, last_y, last_w, last_h);
-                        self->_display->writeImageAgain(last_buf, last_x, last_y, last_w, last_h, false, false, false);
-                    }
+                if (last_buf) {
+                    ESP_LOGI(TAG, "Worker: writeImageAgain (sync 0x26) x=%d y=%d w=%d h=%d",
+                             last_x, last_y, last_w, last_h);
+                    self->_display->writeImageAgain(last_buf, last_x, last_y, last_w, last_h, false, false, false);
                 }
 
                 if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
-                // Free last_buf now that we've completed the second phase (or if panel doesn't need it)
                 if (last_buf) {
                     heap_caps_free(last_buf);
                     last_buf = nullptr;
@@ -537,7 +515,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
         }
     }
 
-    // Termination: drain remaining items and free memory, then final refresh if necessary
     while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
         if (item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
@@ -551,8 +528,8 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
         ESP_LOGI(TAG, "Worker: final refresh(true)");
         self->_display->refresh(true);
-        if (self->_display && self->_display->hasFastPartialUpdate && last_buf) {
-            ESP_LOGI(TAG, "Worker: final writeImageAgain for last region x=%d y=%d w=%d h=%d",
+        if (last_buf) {
+            ESP_LOGI(TAG, "Worker: final writeImageAgain (sync 0x26) x=%d y=%d w=%d h=%d",
                      last_x, last_y, last_w, last_h);
             self->_display->writeImageAgain(last_buf, last_x, last_y, last_w, last_h, false, false, false);
         }
