@@ -94,6 +94,9 @@ private:
     int16_t _gapX;
     int16_t _gapY;
 
+    lv_color_t* _fullFb;
+    size_t _fullFbSize;
+
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
     
     // Convert RGB565 pixel to monochrome (true=white, false=black)

@@ -257,7 +257,8 @@ bool GxEPD2Display::startLvgl() {
     } else {
         _fullFbSize = full_fb_bytes;
         // initialize to white
-        for (size_t i = 0; i < (size_t)hor_res * (size_t)ver_res; ++i) _fullFb[i] = LV_COLOR_WHITE;
+        lv_color_t white = lv_color_white();
+        for (size_t i = 0; i < (size_t)hor_res * (size_t)ver_res; ++i) _fullFb[i] = white;
         ESP_LOGI(TAG, "Allocated full shadow framebuffer: %zu bytes (%dx%d)", full_fb_bytes, hor_res, ver_res);
     }
 
@@ -516,6 +517,6 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         heap_caps_free(packed);
     }
 
-    // Acknowledge LVGL flush immediately — we've captured the pixels into our shadow. (MWHAHAHA)
+    // Acknowledge LVGL flush immediately — we've captured the pixels into our shadow.
     lv_display_flush_ready(disp);
 }
