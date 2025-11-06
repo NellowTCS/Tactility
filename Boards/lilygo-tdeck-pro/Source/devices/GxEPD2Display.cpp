@@ -2,7 +2,10 @@
 #include "GxEPD2/GxEPD2_310_GDEQ031T10.h"
 #include <esp_log.h>
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
 #include <cstring>
+#include <cstdio>
+#include <algorithm>
 
 static const char* TAG = "GxEPD2Display";
 
@@ -12,33 +15,49 @@ GxEPD2Display::GxEPD2Display(const Configuration& config)
     , _lvglDisplay(nullptr)
     , _drawBuf1(nullptr)
     , _drawBuf2(nullptr)
+    , _frameBuffer(nullptr)
+    , _framebufferMutex(nullptr)
+    , _queue(nullptr)
+    , _workerTaskHandle(nullptr)
+    , _spiMutex(nullptr)
+    , _workerRunning(false)
+    , _gapX(0)
+    , _gapY(0)
 {
 }
 
 GxEPD2Display::~GxEPD2Display() {
     stopLvgl();
     stop();
+    destroyWorker();
+    if (_spiMutex) {
+        vSemaphoreDelete(_spiMutex);
+        _spiMutex = nullptr;
+    }
+    if (_framebufferMutex) {
+        vSemaphoreDelete(_framebufferMutex);
+        _framebufferMutex = nullptr;
+    }
 }
 
-std::string GxEPD2Display::getName() const { 
-    return "GxEPD2"; 
+std::string GxEPD2Display::getName() const {
+    return "GxEPD2";
 }
 
-std::string GxEPD2Display::getDescription() const { 
-    return "E-paper display GDEQ031T10"; 
+std::string GxEPD2Display::getDescription() const {
+    return "E-paper display GDEY029T71H";
 }
 
 bool GxEPD2Display::start() {
     ESP_LOGI(TAG, "Starting e-paper display...");
 
-    _display = std::make_unique<GxEPD2_310_GDEQ031T10>(
+    _display = std::make_unique<GxEPD2_290_GDEY029T71H>(
         _config.csPin,
         _config.dcPin,
         _config.rstPin,
         _config.busyPin
     );
 
-    // spi_device_interface_config_t setup for SPI initialization
     spi_device_interface_config_t devcfg = {
         .command_bits = 0,
         .address_bits = 0,
@@ -51,7 +70,7 @@ bool GxEPD2Display::start() {
         .input_delay_ns = 0,
         .spics_io_num = _config.csPin,
         .flags = 0,
-        .queue_size = 7,
+        .queue_size = 20,
         .pre_cb = nullptr,
         .post_cb = nullptr
     };
@@ -61,6 +80,13 @@ bool GxEPD2Display::start() {
     _display->clearScreen(0xFF);
     _display->refresh(false);
 
+    if (!_spiMutex) {
+        _spiMutex = xSemaphoreCreateMutex();
+        if (!_spiMutex) {
+            ESP_LOGW(TAG, "Failed to create SPI mutex");
+        }
+    }
+
     ESP_LOGI(TAG, "E-paper display started successfully");
     return true;
 }
@@ -68,18 +94,69 @@ bool GxEPD2Display::start() {
 bool GxEPD2Display::stop() {
     if (_display) {
         ESP_LOGI(TAG, "Stopping display...");
+        destroyWorker();
+
+        if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
         _display->hibernate();
         _display.reset();
+        if (_spiMutex) xSemaphoreGive(_spiMutex);
     }
     return true;
 }
 
-std::shared_ptr<tt::hal::touch::TouchDevice> GxEPD2Display::getTouchDevice() { 
-    return nullptr; 
+std::shared_ptr<tt::hal::touch::TouchDevice> GxEPD2Display::getTouchDevice() {
+    return nullptr;
 }
 
-bool GxEPD2Display::supportsLvgl() const { 
-    return true; 
+bool GxEPD2Display::supportsLvgl() const {
+    return true;
+}
+
+bool GxEPD2Display::createWorker() {
+    if (_queue) return true;
+    _queue = xQueueCreate(QUEUE_LENGTH, sizeof(QueueItem));
+    if (!_queue) {
+        ESP_LOGE(TAG, "Failed to create display queue");
+        return false;
+    }
+    _workerRunning = true;
+    BaseType_t r = xTaskCreate(
+        displayWorkerTask,
+        "epd_worker",
+        8192,
+        this,
+        tskIDLE_PRIORITY + 2,
+        &_workerTaskHandle
+    );
+    if (r != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create worker task");
+        vQueueDelete(_queue);
+        _queue = nullptr;
+        _workerTaskHandle = nullptr;
+        _workerRunning = false;
+        return false;
+    }
+    ESP_LOGI(TAG, "Display worker created");
+    return true;
+}
+
+void GxEPD2Display::destroyWorker() {
+    if (!_queue) return;
+    QueueItem term;
+    term.buf = nullptr;
+    term.x = term.y = term.w = term.h = 0;
+    xQueueSend(_queue, &term, pdMS_TO_TICKS(50));
+    if (_workerTaskHandle) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        if (eTaskGetState(_workerTaskHandle) != eDeleted) {
+            vTaskDelete(_workerTaskHandle);
+        }
+        _workerTaskHandle = nullptr;
+    }
+    vQueueDelete(_queue);
+    _queue = nullptr;
+    _workerRunning = false;
+    ESP_LOGI(TAG, "Display worker destroyed");
 }
 
 bool GxEPD2Display::startLvgl() {
@@ -92,69 +169,91 @@ bool GxEPD2Display::startLvgl() {
         return false;
     }
 
-    // --- LVGL Configuration based on Rotation ---
-    // Physical display dimensions (portrait: 240x320)
-    uint16_t lv_width = _config.width;
-    uint16_t lv_height = _config.height;
     lv_display_rotation_t lv_rotation = LV_DISPLAY_ROTATION_0;
-
-    // Map config rotation to LVGL rotation
-    // 0 = 0° (portrait), 1 = 90° CW (landscape), 2 = 180° (portrait flipped), 3 = 270° CW (landscape flipped)
     switch (_config.rotation) {
-        case 1:
-            lv_rotation = LV_DISPLAY_ROTATION_90;  // Landscape
-            break;
-        case 2:
-            lv_rotation = LV_DISPLAY_ROTATION_180; // Portrait upside down
-            break;
-        case 3:
-            lv_rotation = LV_DISPLAY_ROTATION_270; // Landscape flipped
-            break;
-        default:
-            lv_rotation = LV_DISPLAY_ROTATION_0;   // Portrait (default)
-            break;
+        case 1: lv_rotation = LV_DISPLAY_ROTATION_90; break;
+        case 2: lv_rotation = LV_DISPLAY_ROTATION_180; break;
+        case 3: lv_rotation = LV_DISPLAY_ROTATION_270; break;
+        default: lv_rotation = LV_DISPLAY_ROTATION_0; break;
     }
 
-    ESP_LOGI(TAG, "Starting LVGL: physical=%ux%u rotation=%d (config.rotation=%d, sw_rotate=implicit)", 
-             lv_width, lv_height, lv_rotation, _config.rotation);
+    ESP_LOGI(TAG, "Starting LVGL: requested physical=%ux%u rotation=%d (config.rotation=%d)",
+             _config.width, _config.height, lv_rotation, _config.rotation);
 
-    // Allocate draw buffers (RGB565 format - 2 bytes per pixel)
-    const size_t bufSize = lv_width * DRAW_BUF_LINES; 
+    ESP_LOGI(TAG, "Driver native panel: WIDTH=%u HEIGHT=%u SOURCE_SHIFT=%u",
+             (unsigned)GxEPD2_290_GDEY029T71H::WIDTH,
+             (unsigned)GxEPD2_290_GDEY029T71H::HEIGHT,
+             (unsigned)GxEPD2_290_GDEY029T71H::SOURCE_SHIFT);
+
+    _lvglDisplay = lv_display_create(_config.width, _config.height);
+    if (!_lvglDisplay) {
+        ESP_LOGE(TAG, "Failed to create LVGL display (lv_display_create)");
+        return false;
+    }
+
+    lv_display_set_rotation(_lvglDisplay, lv_rotation);
+
+    int32_t hor_res = lv_display_get_horizontal_resolution(_lvglDisplay);
+    int32_t ver_res = lv_display_get_vertical_resolution(_lvglDisplay);
+
+    ESP_LOGI(TAG, "LVGL reports logical resolution: %dx%d (after rotation)", hor_res, ver_res);
+
+    // Allocate persistent framebuffer for e-paper (stores complete display state)
+    const size_t fb_size = ((size_t)_config.width * (size_t)_config.height + 7) / 8;
+    _frameBuffer = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_SPIRAM);
+    if (!_frameBuffer) {
+        ESP_LOGE(TAG, "Failed to allocate framebuffer (%zu bytes)", fb_size);
+        lv_display_delete(_lvglDisplay);
+        _lvglDisplay = nullptr;
+        return false;
+    }
+    memset(_frameBuffer, 0xFF, fb_size); // Initialize to white
+    ESP_LOGI(TAG, "Allocated framebuffer: %zu bytes", fb_size);
+
+    _framebufferMutex = xSemaphoreCreateMutex();
+    if (!_framebufferMutex) {
+        ESP_LOGE(TAG, "Failed to create framebuffer mutex");
+        heap_caps_free(_frameBuffer);
+        _frameBuffer = nullptr;
+        lv_display_delete(_lvglDisplay);
+        _lvglDisplay = nullptr;
+        return false;
+    }
+
+    // Allocate draw buffers using LVGL's reported horizontal resolution
+    const size_t bufSize = (size_t)hor_res * DRAW_BUF_LINES;
     _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
     _drawBuf2 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
     if (!_drawBuf1 || !_drawBuf2) {
-        ESP_LOGE(TAG, "Failed to allocate LVGL draw buffers");
+        ESP_LOGE(TAG, "Failed to allocate LVGL draw buffers (requested %zu bytes each)", bufSize * sizeof(lv_color_t));
         if (_drawBuf1) heap_caps_free(_drawBuf1);
         if (_drawBuf2) heap_caps_free(_drawBuf2);
         _drawBuf1 = _drawBuf2 = nullptr;
+        heap_caps_free(_frameBuffer);
+        _frameBuffer = nullptr;
+        vSemaphoreDelete(_framebufferMutex);
+        _framebufferMutex = nullptr;
+        lv_display_delete(_lvglDisplay);
+        _lvglDisplay = nullptr;
         return false;
     }
 
-    ESP_LOGI(TAG, "Allocated %zu bytes per buffer", bufSize * sizeof(lv_color_t));
+    ESP_LOGI(TAG, "Allocated %zu bytes per buffer (hor_res=%d, draw_lines=%zu)", bufSize * sizeof(lv_color_t), (int)hor_res, DRAW_BUF_LINES);
 
-    // Create LVGL display with physical dimensions
-    _lvglDisplay = lv_display_create(lv_width, lv_height);
-    if (!_lvglDisplay) {
-        ESP_LOGE(TAG, "Failed to create LVGL display");
-        heap_caps_free(_drawBuf1);
-        heap_caps_free(_drawBuf2);
-        _drawBuf1 = _drawBuf2 = nullptr;
-        return false;
-    }
-
-    // Set rotation - LVGL will handle dimension swapping and software rotation
-    // This is equivalent to esp_lvgl_port with sw_rotate=true
-    lv_display_set_rotation(_lvglDisplay, lv_rotation);
-
-    // Use RGB565 format - standard LVGL rendering
     lv_display_set_color_format(_lvglDisplay, LV_COLOR_FORMAT_RGB565);
-    lv_display_set_buffers(_lvglDisplay, _drawBuf1, _drawBuf2, 
-                           bufSize * sizeof(lv_color_t), 
+    lv_display_set_buffers(_lvglDisplay, _drawBuf1, _drawBuf2,
+                           bufSize * sizeof(lv_color_t),
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
-    ESP_LOGI(TAG, "LVGL started successfully");
+    if (!createWorker()) {
+        ESP_LOGW(TAG, "Failed to create display worker - LVGL flushes will still attempt direct writes (risky)");
+    }
+
+    ESP_LOGI(TAG, "LVGL started successfully (physical=%ux%u logical=%dx%d rotation=%d)",
+             _config.width, _config.height, hor_res, ver_res, (int)lv_rotation);
+
     return true;
 }
 
@@ -164,199 +263,215 @@ bool GxEPD2Display::stopLvgl() {
         lv_display_delete(_lvglDisplay);
         _lvglDisplay = nullptr;
     }
-    if (_drawBuf1) { 
-        heap_caps_free(_drawBuf1); 
-        _drawBuf1 = nullptr; 
+    if (_drawBuf1) {
+        heap_caps_free(_drawBuf1);
+        _drawBuf1 = nullptr;
     }
-    if (_drawBuf2) { 
-        heap_caps_free(_drawBuf2); 
-        _drawBuf2 = nullptr; 
+    if (_drawBuf2) {
+        heap_caps_free(_drawBuf2);
+        _drawBuf2 = nullptr;
     }
+    if (_frameBuffer) {
+        heap_caps_free(_frameBuffer);
+        _frameBuffer = nullptr;
+    }
+    if (_framebufferMutex) {
+        vSemaphoreDelete(_framebufferMutex);
+        _framebufferMutex = nullptr;
+    }
+
+    destroyWorker();
+
     return true;
 }
 
-lv_display_t* GxEPD2Display::getLvglDisplay() const { 
-    return _lvglDisplay; 
+lv_display_t* GxEPD2Display::getLvglDisplay() const {
+    return _lvglDisplay;
 }
 
-bool GxEPD2Display::supportsDisplayDriver() const { 
-    return false; 
+bool GxEPD2Display::supportsDisplayDriver() const {
+    return false;
 }
 
-std::shared_ptr<tt::hal::display::DisplayDriver> GxEPD2Display::getDisplayDriver() { 
-    return nullptr; 
+std::shared_ptr<tt::hal::display::DisplayDriver> GxEPD2Display::getDisplayDriver() {
+    return nullptr;
 }
 
-uint16_t GxEPD2Display::getWidth() const { 
-    return _config.width; 
+uint16_t GxEPD2Display::getWidth() const {
+    return _config.width;
 }
 
-uint16_t GxEPD2Display::getHeight() const { 
-    return _config.height; 
+uint16_t GxEPD2Display::getHeight() const {
+    return _config.height;
 }
 
-void GxEPD2Display::writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, int16_t w, int16_t h, 
+void GxEPD2Display::writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, int16_t w, int16_t h,
                                    bool invert, bool mirror_y) {
     if (!_display) return;
+    if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
     _display->writeImage(bitmap, x, y, w, h, invert, mirror_y, false);
+    if (_spiMutex) xSemaphoreGive(_spiMutex);
 }
 
 void GxEPD2Display::refreshDisplay(bool partial) {
     if (!_display) return;
+    if (_spiMutex) xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200));
     _display->refresh(partial);
+    if (_spiMutex) xSemaphoreGive(_spiMutex);
 }
 
-// Helper: Convert RGB565 to monochrome using brightness threshold
-// Uses ITU-R BT.601 luma coefficients for RGB to grayscale conversion
 inline bool GxEPD2Display::rgb565ToMono(lv_color_t pixel) {
-    // Extract RGB components from lv_color_t
-    // Note: LVGL9 uses 8-bit color channels internally
-    uint8_t r = pixel.red;   
-    uint8_t g = pixel.green; 
-    uint8_t b = pixel.blue;  
-    
-    // Calculate brightness using standard luminance weights
-    // Y = 0.299*R + 0.587*G + 0.114*B
-    // Approximated as (77*R + 151*G + 28*B) / 256 for speed
+    uint8_t r = pixel.red;
+    uint8_t g = pixel.green;
+    uint8_t b = pixel.blue;
     uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
-    
-    // Threshold at 50% gray: >127 = white (bit=1), <=127 = black (bit=0)
     return brightness > 127;
+}
+
+void GxEPD2Display::displayWorkerTask(void* arg) {
+    GxEPD2Display* self = static_cast<GxEPD2Display*>(arg);
+    if (!self) {
+        vTaskDelete(NULL);
+        return;
+    }
+
+    QueueItem item;
+    bool processed_since_refresh = false;
+
+    while (true) {
+        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(150))) {
+            if (item.buf == nullptr) {
+                break;
+            }
+            if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+
+            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
+            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+            heap_caps_free(item.buf);
+            item.buf = nullptr;
+            processed_since_refresh = true;
+            continue;
+        } else {
+            if (processed_since_refresh) {
+                if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+                self->_display->refresh(true);
+                if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+                processed_since_refresh = false;
+            }
+        }
+    }
+
+    while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
+        if (item.buf) {
+            if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
+            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+            heap_caps_free(item.buf);
+        }
+    }
+    if (processed_since_refresh) {
+        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+        self->_display->refresh(true);
+        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+    }
+    self->_workerRunning = false;
+    vTaskDelete(NULL);
 }
 
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* self = static_cast<GxEPD2Display*>(lv_display_get_user_data(disp));
-    if (!self || !self->_display) { 
-        lv_display_flush_ready(disp); 
-        return; 
-    }
-
-    // LVGL provides coordinates and pixel data in logical orientation (after rotation)
-    // For software rotation, we need to transform them back to physical orientation
-    // to match the hardware's native coordinate system (240×320 portrait)
-    
-    lv_display_rotation_t rotation = lv_display_get_rotation(disp);
-    lv_area_t physical_area = *area;
-    
-    // Transform logical area to physical area based on rotation
-    if (rotation == LV_DISPLAY_ROTATION_90) {
-        // Logical: 320×240 (landscape) → Physical: 240×320 (portrait)
-        // Transformation: (x,y) → (y, width-1-x)
-        int32_t hor_res = lv_display_get_horizontal_resolution(disp);  // 320 (logical width)
-        physical_area.x1 = area->y1;
-        physical_area.y1 = hor_res - 1 - area->x2;
-        physical_area.x2 = area->y2;
-        physical_area.y2 = hor_res - 1 - area->x1;
-    }
-    // TODO: Add support for other rotations (180, 270)
-    
-    const int epd_x = physical_area.x1;
-    const int epd_y = physical_area.y1;
-    const int epd_w = physical_area.x2 - physical_area.x1 + 1;
-    const int epd_h = physical_area.y2 - physical_area.y1 + 1;
-
-    if (epd_w <= 0 || epd_h <= 0) { 
-        lv_display_flush_ready(disp); 
-        return; 
-    }
-
-    ESP_LOGD(TAG, "Flush: EPD=[%d,%d] %dx%d", epd_x, epd_y, epd_w, epd_h);
-
-    // Get logical area dimensions (what LVGL rendered)
-    const int logical_w = area->x2 - area->x1 + 1;
-    const int logical_h = area->y2 - area->y1 + 1;
-
-    // Allocate 1-bit packed buffer for monochrome e-paper (physical dimensions)
-    // Format: MSB first, horizontal byte packing (left-to-right)
-    const int epd_row_bytes = (epd_w + 7) / 8;
-    const size_t packed_size = epd_row_bytes * epd_h;
-    uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
-    if (!packed) {
-        ESP_LOGE(TAG, "Failed to allocate %zu bytes for 1-bit buffer", packed_size);
+    if (!self || !self->_display || !self->_frameBuffer) {
         lv_display_flush_ready(disp);
         return;
     }
-    
-    // Initialize to 0xFF (all white) - GxEPD2 uses 0xFF=white, 0x00=black
-    memset(packed, 0xFF, packed_size); 
 
-    // Convert LVGL pixel buffer -> 1-bit monochrome for e-paper
-    // The source buffer is in logical dimensions (after LVGL rendering)
+    lv_display_rotation_t rotation = lv_display_get_rotation(disp);
+    int32_t hor_res = lv_display_get_horizontal_resolution(disp);
+    int32_t ver_res = lv_display_get_vertical_resolution(disp);
+
+    const int panel_width = self->_config.width;
+    const int panel_height = self->_config.height;
+    const int bytes_per_row = (panel_width + 7) / 8;
+
+    const int logical_w = area->x2 - area->x1 + 1;
+    const int logical_h = area->y2 - area->y1 + 1;
     lv_color_format_t cf = lv_display_get_color_format(disp);
-    uint32_t src_row_bytes = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
+    uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
     uint8_t* src_bytes = (uint8_t*)px_map;
 
-    // Debugging: print a few diagnostics for the first several flushes to detect stride/packing issues
-    static int s_flush_debug_count = 0;
-    if (s_flush_debug_count < 6) {
-        ESP_LOGI(TAG, "lvglFlush: logical=%dx%d physical=%dx%d at (%d,%d) rot=%d cf=%d src_row_bytes=%u", 
-                 logical_w, logical_h, epd_w, epd_h, epd_x, epd_y, (int)rotation, (int)cf, (unsigned)src_row_bytes);
-    }
-
-    // Convert and rotate pixels from logical to physical orientation
-    if (rotation == LV_DISPLAY_ROTATION_90) {
-        // 90° CW rotation: logical (320×h) → physical (h×320)
-        // For each pixel at logical (lx, ly), it maps to physical (ly, 319-lx)
+    // Lock framebuffer and update only the dirty region
+    if (xSemaphoreTake(self->_framebufferMutex, pdMS_TO_TICKS(100))) {
         for (int ly = 0; ly < logical_h; ++ly) {
-            lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_bytes);
+            lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
+            
             for (int lx = 0; lx < logical_w; ++lx) {
+                int logical_x_abs = area->x1 + lx;
+                int logical_y_abs = area->y1 + ly;
+
+                int physical_x_abs, physical_y_abs;
+
+                // Rotation mapping
+                if (rotation == LV_DISPLAY_ROTATION_90) {
+                    physical_x_abs = logical_y_abs;
+                    physical_y_abs = (hor_res - 1) - logical_x_abs;
+                } else if (rotation == LV_DISPLAY_ROTATION_270) {
+                    physical_x_abs = (ver_res - 1) - logical_y_abs;
+                    physical_y_abs = logical_x_abs;
+                } else if (rotation == LV_DISPLAY_ROTATION_180) {
+                    physical_x_abs = (hor_res - 1) - logical_x_abs;
+                    physical_y_abs = (ver_res - 1) - logical_y_abs;
+                } else {
+                    physical_x_abs = logical_x_abs;
+                    physical_y_abs = logical_y_abs;
+                }
+
+                if (physical_x_abs < 0 || physical_x_abs >= panel_width || 
+                    physical_y_abs < 0 || physical_y_abs >= panel_height) {
+                    continue;
+                }
+
                 lv_color_t pixel = src_row[lx];
-                bool is_white = self->rgb565ToMono(pixel);
+                bool is_white = rgb565ToMono(pixel);
 
-                // Map logical (lx, ly) to physical (px, py)
-                int px = ly;
-                int py = (logical_w - 1) - lx;
-
-                // Pack bit into physical buffer (MSB first, horizontal addressing)
-                const int byte_idx = py * epd_row_bytes + (px / 8);
-                const int bit_pos = 7 - (px & 7);  // MSB = leftmost pixel
+                const int byte_idx = physical_y_abs * bytes_per_row + (physical_x_abs / 8);
+                const int bit_pos = 7 - (physical_x_abs & 7);
 
                 if (is_white) {
-                    packed[byte_idx] |= (1 << bit_pos);   // Set bit (white)
+                    self->_frameBuffer[byte_idx] |= (1 << bit_pos);
                 } else {
-                    packed[byte_idx] &= ~(1 << bit_pos);  // Clear bit (black)
+                    self->_frameBuffer[byte_idx] &= ~(1 << bit_pos);
                 }
             }
         }
-    } else {
-        // No rotation (or unhandled rotation) - direct copy
-        for (int y = 0; y < epd_h; ++y) {
-            lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)y * src_row_bytes);
-            for (int x = 0; x < epd_w; ++x) {
-                lv_color_t pixel = src_row[x];
-                bool is_white = self->rgb565ToMono(pixel);
 
-                // Pack bit into byte (MSB first, horizontal addressing)
-                const int byte_idx = y * epd_row_bytes + (x / 8);
-                const int bit_pos = 7 - (x & 7);  // MSB = leftmost pixel
+        // Copy full framebuffer for sending to display
+        const size_t fb_size = (size_t)bytes_per_row * (size_t)panel_height;
+        uint8_t* packed = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_DMA);
+        if (packed) {
+            memcpy(packed, self->_frameBuffer, fb_size);
+            xSemaphoreGive(self->_framebufferMutex);
 
-                if (is_white) {
-                    packed[byte_idx] |= (1 << bit_pos);   // Set bit (white)
-                } else {
-                    packed[byte_idx] &= ~(1 << bit_pos);  // Clear bit (black)
+            // Enqueue full frame
+            if (self->_queue) {
+                QueueItem qi;
+                qi.buf = packed;
+                qi.x = 0;
+                qi.y = 0;
+                qi.w = (uint16_t)panel_width;
+                qi.h = (uint16_t)panel_height;
+                
+                if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
+                    ESP_LOGW(TAG, "Display queue full; frame dropped.");
+                    heap_caps_free(packed);
                 }
+            } else {
+                heap_caps_free(packed);
             }
+        } else {
+            xSemaphoreGive(self->_framebufferMutex);
+            ESP_LOGE(TAG, "Failed to allocate display buffer");
         }
     }
 
-    if (s_flush_debug_count < 6) {
-        // Dump first few bytes of packed buffer
-        const int dump_bytes = std::min<int>((int)packed_size, 16);
-        char buf_hex[16 * 3 + 1];
-        char *p = buf_hex;
-        for (int i = 0; i < dump_bytes; ++i) {
-            int n = sprintf(p, "%02X ", packed[i]);
-            p += n;
-        }
-        *p = '\0';
-        ESP_LOGI(TAG, "packed[%d]= %s", dump_bytes, buf_hex);
-        ++s_flush_debug_count;
-    }
-
-    // Write the 1-bit buffer to the e-paper display
-    self->_display->writeImage(packed, epd_x, epd_y, epd_w, epd_h, false, false, false);
-    self->_display->refresh(true); // Partial refresh (~400ms)
-
-    heap_caps_free(packed);
     lv_display_flush_ready(disp);
 }

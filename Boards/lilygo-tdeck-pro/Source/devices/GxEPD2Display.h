@@ -5,8 +5,14 @@
 #include <driver/spi_common.h>
 #include <memory>
 #include <lvgl.h>
+#include <esp_timer.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+#include <cstdint>
 
-class GxEPD2_310_GDEQ031T10; // Forward declaration
+class GxEPD2_290_GDEY029T71H; // Forward declaration
 
 class GxEPD2Display : public tt::hal::display::DisplayDevice {
 public:
@@ -18,7 +24,7 @@ public:
         gpio_num_t rstPin;
         gpio_num_t busyPin;
         spi_host_device_t spiHost;
-        uint8_t rotation;        // 0=portrait, 2=landscape (90° CW)
+        uint8_t rotation;        // 0=portrait, 1=90° CW, 2=180°, 3=270° CW
     };
 
     explicit GxEPD2Display(const Configuration& config);
@@ -50,17 +56,57 @@ public:
                        bool invert = false, bool mirror_y = false);
     void refreshDisplay(bool partial);
 
+    // Offsets to apply to all physical coordinates (useful to shift panels)
+    void setGap(int16_t gapX, int16_t gapY) { _gapX = gapX; _gapY = gapY; }
+    void getGap(int16_t& gapX, int16_t& gapY) const { gapX = _gapX; gapY = _gapY; }
+
 private:
     Configuration _config;
-    std::unique_ptr<GxEPD2_310_GDEQ031T10> _display;
+    std::unique_ptr<GxEPD2_290_GDEY029T71H> _display;
     lv_display_t* _lvglDisplay;
     lv_color_t* _drawBuf1;
     lv_color_t* _drawBuf2;
 
-    static constexpr size_t DRAW_BUF_LINES = 10;
+    // Persistent framebuffer for e-paper (stores complete display state)
+    uint8_t* _frameBuffer;
+    SemaphoreHandle_t _framebufferMutex;
+
+    // Number of logical rows per LVGL draw buffer. Adjust based on available RAM.
+    static constexpr size_t DRAW_BUF_LINES = 60;
+
+    // Display worker queue item (enqueued by lvglFlushCallback)
+    struct QueueItem {
+        uint8_t* buf;   // MALLOC_CAP_DMA allocated buffer (1-bit packed EPD format)
+        uint16_t x;
+        uint16_t y;
+        uint16_t w;
+        uint16_t h;
+    };
+
+    // Worker queue and task
+    QueueHandle_t _queue;
+    TaskHandle_t _workerTaskHandle;
+    static constexpr size_t QUEUE_LENGTH = 32;
+
+    // Mutex to protect direct access to _display (and to avoid races when tests write directly)
+    SemaphoreHandle_t _spiMutex;
+
+    // Refresh debouncing/batching is handled by the worker (it groups writes and then refreshes)
+    bool _workerRunning;
+
+    // Global pixel offsets (applied to physical coords)
+    int16_t _gapX;
+    int16_t _gapY;
 
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
     
     // Convert RGB565 pixel to monochrome (true=white, false=black)
     static inline bool rgb565ToMono(lv_color_t pixel);
+
+    // Worker task entry
+    static void displayWorkerTask(void* arg);
+
+    // Helper to create/destroy queue/task
+    bool createWorker();
+    void destroyWorker();
 };
