@@ -351,12 +351,29 @@ void GxEPD2Display::refreshDisplay(bool partial) {
     if (took && _spiMutex) xSemaphoreGive(_spiMutex);
 }
 
-inline bool GxEPD2Display::rgb565ToMono(lv_color_t pixel) {
+static inline bool bayer4x4Dither(lv_color_t pixel, int x, int y) {
+    // Compute brightness 0..255
     uint8_t r = pixel.red;
     uint8_t g = pixel.green;
     uint8_t b = pixel.blue;
     uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
-    return brightness > 127;
+
+    // Standard 4x4 Bayer matrix (values 0..15)
+    // Layout:
+    // 0  8  2 10
+    //12  4 14  6
+    //3 11  1  9
+    //15  7 13  5
+    static const uint8_t bayer4[4][4] = {
+        { 0,  8,  2, 10},
+        {12,  4, 14,  6},
+        { 3, 11,  1,  9},
+        {15,  7, 13,  5}
+    };
+
+    // Map matrix value (0..15) to threshold 0..255 (roughly multiply by 16)
+    uint8_t thresh = (uint8_t)(bayer4[y & 3][x & 3] * 16 + 8); // center
+    return brightness > thresh;
 }
 
 void GxEPD2Display::displayWorkerTask(void* arg) {
@@ -378,7 +395,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
         // Wait for at least one item
         if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(150))) {
             if (item.buf == nullptr) {
-                ESP_LOGD(TAG, "Worker: termination received");
+                ESP_LOGI(TAG, "Worker: termination received");
                 break;
             }
 
@@ -473,7 +490,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             // Perform SPI write once for the union rect
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            ESP_LOGD(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items)",
+            ESP_LOGI(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items)",
                      aligned_union_x0, aligned_union_y0, union_w, union_h, (int)items.size());
 
             self->_display->writeImage(union_buf, (int16_t)aligned_union_x0, (int16_t)aligned_union_y0,
@@ -495,13 +512,13 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             // No item received within timeout: if we did writes since last refresh, perform refresh and post-step.
             if (processed_since_refresh) {
                 if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-                ESP_LOGD(TAG, "Worker: refresh(true)");
+                ESP_LOGI(TAG, "Worker: refresh(true)");
                 self->_display->refresh(true);
 
                 // If the driver supports fast partial update, make the second-phase write to sync previous buffer
                 if (self->_display && self->_display->hasFastPartialUpdate) {
                     if (last_buf) {
-                        ESP_LOGD(TAG, "Worker: writeImageAgain for last region x=%d y=%d w=%d h=%d",
+                        ESP_LOGI(TAG, "Worker: writeImageAgain for last region x=%d y=%d w=%d h=%d",
                                  last_x, last_y, last_w, last_h);
                         self->_display->writeImageAgain(last_buf, last_x, last_y, last_w, last_h, false, false, false);
                     }
@@ -524,7 +541,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
         if (item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-            ESP_LOGD(TAG, "Worker: draining and writeImage x=%u y=%u w=%u h=%u", item.x, item.y, item.w, item.h);
+            ESP_LOGI(TAG, "Worker: draining and writeImage x=%u y=%u w=%u h=%u", item.x, item.y, item.w, item.h);
             self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             heap_caps_free(item.buf);
@@ -532,10 +549,10 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     }
     if (processed_since_refresh) {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-        ESP_LOGD(TAG, "Worker: final refresh(true)");
+        ESP_LOGI(TAG, "Worker: final refresh(true)");
         self->_display->refresh(true);
         if (self->_display && self->_display->hasFastPartialUpdate && last_buf) {
-            ESP_LOGD(TAG, "Worker: final writeImageAgain for last region x=%d y=%d w=%d h=%d",
+            ESP_LOGI(TAG, "Worker: final writeImageAgain for last region x=%d y=%d w=%d h=%d",
                      last_x, last_y, last_w, last_h);
             self->_display->writeImageAgain(last_buf, last_x, last_y, last_w, last_h, false, false, false);
         }
@@ -639,7 +656,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
             }
 
             lv_color_t pixel = src_row[lx];
-            bool is_white = rgb565ToMono(pixel);
+            bool is_white = bayer4x4Dither(pixel, physical_x_abs, physical_y_abs);
 
             const int byte_idx = physical_y_abs * panel_bytes_per_row + (physical_x_abs / 8);
             const int bit_pos = 7 - (physical_x_abs & 7);
