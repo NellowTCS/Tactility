@@ -1,6 +1,6 @@
 #include "GxEPD2Display.h"
 #include "GxEPD2/GxEPD2_310_GDEQ031T10.h"
-#include "DisplayTester.h"
+
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
