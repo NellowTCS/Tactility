@@ -11,6 +11,23 @@
 
 static const char* TAG = "GxEPD2Display";
 
+static inline bool bayer4x4Dither(lv_color_t pixel, int x, int y) {
+    uint8_t r = pixel.red;
+    uint8_t g = pixel.green;
+    uint8_t b = pixel.blue;
+    uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
+
+    static const uint8_t bayer4[4][4] = {
+        { 0,  8,  2, 10},
+        {12,  4, 14,  6},
+        { 3, 11,  1,  9},
+        {15,  7, 13,  5}
+    };
+
+    uint8_t thresh = (uint8_t)(bayer4[y & 3][x & 3] * 16 + 8);
+    return brightness > thresh;
+}
+
 GxEPD2Display::GxEPD2Display(const Configuration& config)
     : _config(config)
     , _display(nullptr)
@@ -158,7 +175,6 @@ void GxEPD2Display::destroyWorker() {
     QueueItem term;
     term.buf = nullptr;
     term.x = term.y = term.w = term.h = 0;
-    // Ensure termination message is enqueued so worker can exit normally.
     if (xQueueSend(_queue, &term, portMAX_DELAY) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to send termination message to display worker");
     }
@@ -169,7 +185,6 @@ void GxEPD2Display::destroyWorker() {
         }
         _workerTaskHandle = nullptr;
     }
-    // Drain and free any remaining buffers that might be left in the queue
     QueueItem item;
     while (xQueueReceive(_queue, &item, 0) == pdTRUE) {
         if (item.buf) {
@@ -221,7 +236,6 @@ bool GxEPD2Display::startLvgl() {
 
     ESP_LOGI(TAG, "LVGL reports logical resolution: %dx%d (after rotation)", hor_res, ver_res);
 
-    // Allocate persistent framebuffer for e-paper (stores complete display state)
     const size_t fb_size = ((size_t)_config.width * (size_t)_config.height + 7) / 8;
     _frameBuffer = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_SPIRAM);
     if (!_frameBuffer) {
@@ -230,7 +244,7 @@ bool GxEPD2Display::startLvgl() {
         _lvglDisplay = nullptr;
         return false;
     }
-    memset(_frameBuffer, 0xFF, fb_size); // Initialize to white
+    memset(_frameBuffer, 0xFF, fb_size);
     ESP_LOGI(TAG, "Allocated framebuffer: %zu bytes", fb_size);
 
     _framebufferMutex = xSemaphoreCreateMutex();
@@ -243,7 +257,6 @@ bool GxEPD2Display::startLvgl() {
         return false;
     }
 
-    // Allocate draw buffers using LVGL's reported horizontal resolution
     const size_t bufSize = (size_t)hor_res * DRAW_BUF_LINES;
     _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
     _drawBuf2 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_DMA);
@@ -351,31 +364,6 @@ void GxEPD2Display::refreshDisplay(bool partial) {
     if (took && _spiMutex) xSemaphoreGive(_spiMutex);
 }
 
-static inline bool bayer4x4Dither(lv_color_t pixel, int x, int y) {
-    // Compute brightness 0..255
-    uint8_t r = pixel.red;
-    uint8_t g = pixel.green;
-    uint8_t b = pixel.blue;
-    uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
-
-    // Standard 4x4 Bayer matrix (values 0..15)
-    // Layout:
-    // 0  8  2 10
-    //12  4 14  6
-    //3 11  1  9
-    //15  7 13  5
-    static const uint8_t bayer4[4][4] = {
-        { 0,  8,  2, 10},
-        {12,  4, 14,  6},
-        { 3, 11,  1,  9},
-        {15,  7, 13,  5}
-    };
-
-    // Map matrix value (0..15) to threshold 0..255 (roughly multiply by 16)
-    uint8_t thresh = (uint8_t)(bayer4[y & 3][x & 3] * 16 + 8); // center
-    return brightness > thresh;
-}
-
 void GxEPD2Display::displayWorkerTask(void* arg) {
     GxEPD2Display* self = static_cast<GxEPD2Display*>(arg);
     if (!self) {
@@ -386,119 +374,32 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     QueueItem item;
 
     while (true) {
-        // Collect ALL available items before processing (wait longer for frame completion)
-        std::vector<QueueItem> batch;
-        
-        // Block waiting for first item with longer timeout
-        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(500))) {
-            if (item.buf == nullptr) {
+        // Just wait for a single signal item (buf=nullptr means "refresh now")
+        if (xQueueReceive(self->_queue, &item, portMAX_DELAY)) {
+            if (item.buf == (uint8_t*)1) {
+                // Special marker: terminate
                 ESP_LOGD(TAG, "Worker: termination received");
                 break;
             }
-            batch.push_back(item);
-            
-            // Quickly collect any other immediately-available items (same frame)
-            while (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(20)) == pdTRUE) {
-                if (item.buf == nullptr) {
-                    QueueItem term = { nullptr, 0, 0, 0, 0 };
-                    xQueueSend(self->_queue, &term, portMAX_DELAY);
-                    break;
+            if (item.buf == nullptr) {
+                // Refresh signal from callback
+                if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+                
+                // Write entire framebuffer
+                if (xSemaphoreTake(self->_framebufferMutex, portMAX_DELAY) == pdTRUE) {
+                    ESP_LOGD(TAG, "Worker: writing full framebuffer %ux%u", self->_config.width, self->_config.height);
+                    self->_display->writeImage(self->_frameBuffer, 0, 0, self->_config.width, self->_config.height, false, false, false);
+                    xSemaphoreGive(self->_framebufferMutex);
+                } else {
+                    ESP_LOGW(TAG, "Worker: failed to take framebuffer mutex");
                 }
-                batch.push_back(item);
-            }
-        } else {
-            // Timeout with no items, continue waiting
-            continue;
-        }
-
-        if (batch.empty()) continue;
-
-        // Compute union of all items in this batch
-        int union_x0 = INT32_MAX, union_y0 = INT32_MAX;
-        int union_x1 = INT32_MIN, union_y1 = INT32_MIN;
-        for (const auto &qi : batch) {
-            union_x0 = std::min<int>(union_x0, qi.x);
-            union_y0 = std::min<int>(union_y0, qi.y);
-            union_x1 = std::max<int>(union_x1, qi.x + qi.w - 1);
-            union_y1 = std::max<int>(union_y1, qi.y + qi.h - 1);
-        }
-
-        if (union_x0 == INT32_MAX) {
-            for (auto &q : batch) if (q.buf) heap_caps_free(q.buf);
-            continue;
-        }
-
-        // Align to byte boundaries
-        int aligned_union_x0 = (union_x0 / 8) * 8;
-        int aligned_union_x1 = ((union_x1 + 8) / 8) * 8 - 1;
-        if (aligned_union_x0 < 0) aligned_union_x0 = 0;
-        if (aligned_union_x1 >= (int)self->_config.width) aligned_union_x1 = (int)self->_config.width - 1;
-        int union_w = aligned_union_x1 - aligned_union_x0 + 1;
-
-        int aligned_union_y0 = std::max(0, union_y0);
-        int aligned_union_y1 = std::min<int>(union_y1, self->_config.height - 1);
-        int union_h = aligned_union_y0 <= aligned_union_y1 ? (aligned_union_y1 - aligned_union_y0 + 1) : 0;
-        
-        if (union_h <= 0 || union_w <= 0) {
-            for (auto &q : batch) if (q.buf) heap_caps_free(q.buf);
-            continue;
-        }
-
-        int union_row_bytes = (union_w + 7) / 8;
-        size_t union_size = (size_t)union_row_bytes * (size_t)union_h;
-        uint8_t* union_buf = (uint8_t*)heap_caps_malloc(union_size, MALLOC_CAP_DMA);
-        if (!union_buf) {
-            ESP_LOGE(TAG, "Worker: failed to alloc union buffer %zu bytes", union_size);
-            for (auto &q : batch) if (q.buf) heap_caps_free(q.buf);
-            continue;
-        }
-        memset(union_buf, 0xFF, union_size);
-
-        // Merge all items into union buffer
-        for (const auto &qi : batch) {
-            int item_row_bytes = (qi.w + 7) / 8;
-            for (int ry = 0; ry < qi.h; ++ry) {
-                int dst_row = (qi.y + ry) - aligned_union_y0;
-                if (dst_row < 0 || dst_row >= union_h) continue;
-                uint8_t* dst = union_buf + (size_t)dst_row * union_row_bytes;
-                int dst_byte_offset = (qi.x - aligned_union_x0) / 8;
-                uint8_t* dst_ptr = dst + dst_byte_offset;
-                uint8_t* src_ptr = qi.buf + (size_t)ry * item_row_bytes;
-                memcpy(dst_ptr, src_ptr, item_row_bytes);
+                
+                ESP_LOGD(TAG, "Worker: refresh(true)");
+                self->_display->refresh(true);
+                
+                if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
             }
         }
-
-        // Free individual buffers
-        for (auto &q : batch) {
-            if (q.buf) {
-                heap_caps_free(q.buf);
-                q.buf = nullptr;
-            }
-        }
-
-        // Write union buffer once
-        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-
-        ESP_LOGD(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items)",
-                 aligned_union_x0, aligned_union_y0, union_w, union_h, (int)batch.size());
-
-        self->_display->writeImage(union_buf, (int16_t)aligned_union_x0, (int16_t)aligned_union_y0,
-                                   (int16_t)union_w, (int16_t)union_h, false, false, false);
-
-        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-
-        // Immediately refresh after each merged write
-        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-        ESP_LOGD(TAG, "Worker: refresh(true)");
-        self->_display->refresh(true);
-        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-
-        heap_caps_free(union_buf);
-    }
-
-    // Drain on termination
-    while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
-        if (item.buf) heap_caps_free(item.buf);
     }
 
     self->_workerRunning = false;
@@ -525,8 +426,6 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     int32_t hor_res = lv_display_get_horizontal_resolution(disp);
     int32_t ver_res = lv_display_get_vertical_resolution(disp);
 
-    int min_px = panel_width, min_py = panel_height, max_px = -1, max_py = -1;
-
     if (xSemaphoreTake(self->_framebufferMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
         ESP_LOGW(TAG, "Framebuffer mutex busy; dropping LVGL flush");
         lv_display_flush_ready(disp);
@@ -541,8 +440,6 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         case LV_DISPLAY_ROTATION_270: rotation = 3; break;
         default: rotation = 0; break;
     }
-    ESP_LOGI(TAG, "lvglFlushCallback: LVGL rotation=%d config.rotation=%d hor_res=%d ver_res=%d area=(%d,%d)-(%d,%d)",
-             rotation, (int)self->_config.rotation, (int)hor_res, (int)ver_res, area->x1, area->y1, area->x2, area->y2);
 
     auto map_logical_to_physical = [&](int logical_x_abs, int logical_y_abs, int& physical_x_abs, int& physical_y_abs) {
         switch (rotation) {
@@ -594,105 +491,17 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
             } else {
                 self->_frameBuffer[byte_idx] &= ~(1 << bit_pos);
             }
-
-            min_px = std::min(min_px, physical_x_abs);
-            max_px = std::max(max_px, physical_x_abs);
-            min_py = std::min(min_py, physical_y_abs);
-            max_py = std::max(max_py, physical_y_abs);
-        }
-    }
-
-    if (max_px < 0 || max_py < 0) {
-        xSemaphoreGive(self->_framebufferMutex);
-        lv_display_flush_ready(disp);
-        return;
-    }
-
-    int aligned_x0 = (min_px / 8) * 8;
-    int aligned_x1 = ((max_px + 8) / 8) * 8 - 1;
-    if (aligned_x0 < 0) aligned_x0 = 0;
-    if (aligned_x1 >= panel_width) aligned_x1 = panel_width - 1;
-    int aligned_w = aligned_x1 - aligned_x0 + 1;
-    int packed_row_bytes = (aligned_w + 7) / 8;
-
-    int y0 = min_py;
-    int y1 = max_py;
-    if (y0 < 0) y0 = 0;
-    if (y1 >= panel_height) y1 = panel_height - 1;
-    int packed_h = y1 - y0 + 1;
-
-    size_t packed_size = (size_t)packed_row_bytes * (size_t)packed_h;
-    uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
-    if (!packed) {
-        xSemaphoreGive(self->_framebufferMutex);
-        ESP_LOGE(TAG, "Failed to allocate packed buffer of %zu bytes", packed_size);
-        lv_display_flush_ready(disp);
-        return;
-    }
-
-    for (int ry = 0; ry < packed_h; ++ry) {
-        int src_y = y0 + ry;
-        uint8_t* dst_row = packed + (size_t)ry * packed_row_bytes;
-        for (int bx = 0; bx < packed_row_bytes; ++bx) {
-            uint8_t out = 0;
-            int base_x = aligned_x0 + bx * 8;
-            for (int bit = 0; bit < 8; ++bit) {
-                int sx = base_x + bit;
-                out <<= 1;
-                if (sx >= panel_width) {
-                } else {
-                    int src_byte_idx = src_y * panel_bytes_per_row + (sx / 8);
-                    int src_bit_pos = 7 - (sx & 7);
-                    bool white = (self->_frameBuffer[src_byte_idx] & (1 << src_bit_pos)) != 0;
-                    if (white) out |= 1;
-                }
-            }
-            dst_row[bx] = out;
         }
     }
 
     xSemaphoreGive(self->_framebufferMutex);
 
-    // Debug: dump first 16 bytes of packed buffer and corresponding framebuffer bytes
-    ESP_LOGI(TAG, "Mapped physical bbox (pre-align) = x[%d..%d] y[%d..%d] aligned_x0=%d y0=%d w=%d h=%d packed_bytes=%zu",
-             min_px, max_px, min_py, max_py, aligned_x0, y0, aligned_w, packed_h, packed_size);
-    
-    char hex_buf[128];
-    int print_bytes = std::min(16, (int)packed_size);
-    char* p = hex_buf;
-    for (int i = 0; i < print_bytes; ++i) {
-        p += snprintf(p, hex_buf + sizeof(hex_buf) - p, "%02X ", packed[i]);
-    }
-    ESP_LOGI(TAG, "Packed first %d bytes: %s", print_bytes, hex_buf);
-
-    // Also dump corresponding bytes from framebuffer at first row
-    int fb_row0_start = y0 * panel_bytes_per_row + (aligned_x0 / 8);
-    p = hex_buf;
-    for (int i = 0; i < std::min(print_bytes, packed_row_bytes); ++i) {
-        p += snprintf(p, hex_buf + sizeof(hex_buf) - p, "%02X ", self->_frameBuffer[fb_row0_start + i]);
-    }
-    ESP_LOGI(TAG, "Framebuffer row y=%d bytes [%d..%d]: %s", y0, fb_row0_start, fb_row0_start + print_bytes - 1, hex_buf);
-
+    // Signal worker to refresh (send nullptr as refresh signal)
     if (self->_queue) {
-        QueueItem qi;
-        qi.buf = packed;
-        qi.x = (uint16_t)aligned_x0;
-        qi.y = (uint16_t)y0;
-        qi.w = (uint16_t)aligned_w;
-        qi.h = (uint16_t)packed_h;
-
+        QueueItem qi = { nullptr, 0, 0, 0, 0 };
         if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
-            ESP_LOGW(TAG, "Display queue full; minimal frame dropped. x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
-            heap_caps_free(packed);
-        } else {
-            ESP_LOGI(TAG, "Enqueued frame x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
+            ESP_LOGW(TAG, "Display queue full; refresh signal dropped.");
         }
-    } else {
-        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-        ESP_LOGI(TAG, "Direct write (no queue) x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
-        self->_display->writeImage(packed, aligned_x0, y0, aligned_w, packed_h, false, false, false);
-        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-        heap_caps_free(packed);
     }
 
     lv_display_flush_ready(disp);
