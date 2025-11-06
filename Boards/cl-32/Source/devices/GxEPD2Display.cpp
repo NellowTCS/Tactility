@@ -384,193 +384,121 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     }
 
     QueueItem item;
-    bool processed_since_refresh = false;
-
-    // Keep all written buffers for "writeAgain" after refresh (two-phase for fast partial update panels)
-    struct WrittenRegion {
-        uint8_t* buf;
-        int16_t x;
-        int16_t y;
-        uint16_t w;
-        uint16_t h;
-    };
-    std::vector<WrittenRegion> written_regions;
 
     while (true) {
-        // Wait for at least one item
-        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(150))) {
+        // Collect ALL available items before processing (wait longer for frame completion)
+        std::vector<QueueItem> batch;
+        
+        // Block waiting for first item with longer timeout
+        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(500))) {
             if (item.buf == nullptr) {
-                ESP_LOGI(TAG, "Worker: termination received");
+                ESP_LOGD(TAG, "Worker: termination received");
                 break;
             }
-
-            // Collect this and any immediately available items to merge/union them
-            std::vector<QueueItem> items;
-            items.push_back(item);
-
-            // Pull any other immediate items to merge into one union write (short non-blocking loop)
-            while (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(5)) == pdTRUE) {
+            batch.push_back(item);
+            
+            // Quickly collect any other immediately-available items (same frame)
+            while (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(20)) == pdTRUE) {
                 if (item.buf == nullptr) {
-                    // re-enqueue termination marker for outer logic and stop collection
                     QueueItem term = { nullptr, 0, 0, 0, 0 };
                     xQueueSend(self->_queue, &term, portMAX_DELAY);
                     break;
                 }
-                items.push_back(item);
+                batch.push_back(item);
             }
-
-            // Compute union rectangle of dequeued items
-            int union_x0 = INT32_MAX, union_y0 = INT32_MAX;
-            int union_x1 = INT32_MIN, union_y1 = INT32_MIN;
-            for (const auto &qi : items) {
-                union_x0 = std::min<int>(union_x0, qi.x);
-                union_y0 = std::min<int>(union_y0, qi.y);
-                union_x1 = std::max<int>(union_x1, qi.x + qi.w - 1);
-                union_y1 = std::max<int>(union_y1, qi.y + qi.h - 1);
-            }
-
-            if (union_x0 == INT32_MAX) {
-                // nothing to do
-                for (auto &q : items) if (q.buf) heap_caps_free(q.buf);
-                continue;
-            }
-
-            // Align horizontally to byte boundaries required by EPDs
-            int aligned_union_x0 = (union_x0 / 8) * 8;
-            int aligned_union_x1 = ((union_x1 + 8) / 8) * 8 - 1;
-            if (aligned_union_x0 < 0) aligned_union_x0 = 0;
-            if (aligned_union_x1 >= (int)self->_config.width) aligned_union_x1 = (int)self->_config.width - 1;
-            int union_w = aligned_union_x1 - aligned_union_x0 + 1;
-
-            // Vertical bounds (no special alignment)
-            int aligned_union_y0 = std::max(0, union_y0);
-            int aligned_union_y1 = std::min<int>(union_y1, self->_config.height - 1);
-            int union_h = aligned_union_y0 <= aligned_union_y1 ? (aligned_union_y1 - aligned_union_y0 + 1) : 0;
-            if (union_h <= 0 || union_w <= 0) {
-                // free items and continue
-                for (auto &q : items) if (q.buf) heap_caps_free(q.buf);
-                continue;
-            }
-
-            int union_row_bytes = (union_w + 7) / 8;
-            size_t union_size = (size_t)union_row_bytes * (size_t)union_h;
-            uint8_t* union_buf = (uint8_t*)heap_caps_malloc(union_size, MALLOC_CAP_DMA);
-            if (!union_buf) {
-                ESP_LOGE(TAG, "Worker: failed to alloc union buffer %zu bytes", union_size);
-                // free item buffers
-                for (auto &q : items) if (q.buf) heap_caps_free(q.buf);
-                continue;
-            }
-            // Initialize union buffer to the "white" state (0xFF)
-            memset(union_buf, 0xFF, union_size);
-
-            // Copy each item's packed data into the union buffer in dequeued order (later items override earlier)
-            for (const auto &qi : items) {
-                int item_row_bytes = (qi.w + 7) / 8;
-                for (int ry = 0; ry < qi.h; ++ry) {
-                    int dst_row = (qi.y + ry) - aligned_union_y0;
-                    if (dst_row < 0 || dst_row >= union_h) continue;
-                    uint8_t* dst = union_buf + (size_t)dst_row * union_row_bytes;
-                    int dst_byte_offset = (qi.x - aligned_union_x0) / 8;
-                    uint8_t* dst_ptr = dst + dst_byte_offset;
-                    uint8_t* src_ptr = qi.buf + (size_t)ry * item_row_bytes;
-                    memcpy(dst_ptr, src_ptr, item_row_bytes);
-                }
-            }
-
-            // Free original per-item buffers
-            for (auto &q : items) {
-                if (q.buf) {
-                    heap_caps_free(q.buf);
-                    q.buf = nullptr;
-                }
-            }
-
-            // Perform SPI write once for the union rect
-            if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-
-            ESP_LOGI(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items)",
-                     aligned_union_x0, aligned_union_y0, union_w, union_h, (int)items.size());
-
-            self->_display->writeImage(union_buf, (int16_t)aligned_union_x0, (int16_t)aligned_union_y0,
-                                       (int16_t)union_w, (int16_t)union_h, false, false, false);
-
-            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-
-            // Save this written region so we can replay it with writeImageAgain after the refresh
-            WrittenRegion wr;
-            wr.buf = union_buf;
-            wr.x = (int16_t)aligned_union_x0;
-            wr.y = (int16_t)aligned_union_y0;
-            wr.w = (uint16_t)union_w;
-            wr.h = (uint16_t)union_h;
-            written_regions.push_back(wr);
-
-            processed_since_refresh = true;
-            continue;
         } else {
-            // No item received within timeout: if we did writes since last refresh, perform refresh and post-step.
-            if (processed_since_refresh) {
-                if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-                ESP_LOGI(TAG, "Worker: refresh(true)");
-                self->_display->refresh(true);
+            // Timeout with no items, continue waiting
+            continue;
+        }
 
-                // If the driver supports fast partial update, replay all written regions with writeImageAgain
-                // to synchronize the controller's "previous" buffer with "current" buffer.
-                if (self->_display && self->_display->hasFastPartialUpdate) {
-                    for (const auto &wr : written_regions) {
-                        ESP_LOGI(TAG, "Worker: writeImageAgain for region x=%d y=%d w=%d h=%d",
-                                 wr.x, wr.y, wr.w, wr.h);
-                        self->_display->writeImageAgain(wr.buf, wr.x, wr.y, wr.w, wr.h, false, false, false);
-                    }
-                }
+        if (batch.empty()) continue;
 
-                if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+        // Compute union of all items in this batch
+        int union_x0 = INT32_MAX, union_y0 = INT32_MAX;
+        int union_x1 = INT32_MIN, union_y1 = INT32_MIN;
+        for (const auto &qi : batch) {
+            union_x0 = std::min<int>(union_x0, qi.x);
+            union_y0 = std::min<int>(union_y0, qi.y);
+            union_x1 = std::max<int>(union_x1, qi.x + qi.w - 1);
+            union_y1 = std::max<int>(union_y1, qi.y + qi.h - 1);
+        }
 
-                // Free all written region buffers now that we've completed the second phase
-                for (auto &wr : written_regions) {
-                    if (wr.buf) {
-                        heap_caps_free(wr.buf);
-                        wr.buf = nullptr;
-                    }
-                }
-                written_regions.clear();
+        if (union_x0 == INT32_MAX) {
+            for (auto &q : batch) if (q.buf) heap_caps_free(q.buf);
+            continue;
+        }
 
-                processed_since_refresh = false;
+        // Align to byte boundaries
+        int aligned_union_x0 = (union_x0 / 8) * 8;
+        int aligned_union_x1 = ((union_x1 + 8) / 8) * 8 - 1;
+        if (aligned_union_x0 < 0) aligned_union_x0 = 0;
+        if (aligned_union_x1 >= (int)self->_config.width) aligned_union_x1 = (int)self->_config.width - 1;
+        int union_w = aligned_union_x1 - aligned_union_x0 + 1;
+
+        int aligned_union_y0 = std::max(0, union_y0);
+        int aligned_union_y1 = std::min<int>(union_y1, self->_config.height - 1);
+        int union_h = aligned_union_y0 <= aligned_union_y1 ? (aligned_union_y1 - aligned_union_y0 + 1) : 0;
+        
+        if (union_h <= 0 || union_w <= 0) {
+            for (auto &q : batch) if (q.buf) heap_caps_free(q.buf);
+            continue;
+        }
+
+        int union_row_bytes = (union_w + 7) / 8;
+        size_t union_size = (size_t)union_row_bytes * (size_t)union_h;
+        uint8_t* union_buf = (uint8_t*)heap_caps_malloc(union_size, MALLOC_CAP_DMA);
+        if (!union_buf) {
+            ESP_LOGE(TAG, "Worker: failed to alloc union buffer %zu bytes", union_size);
+            for (auto &q : batch) if (q.buf) heap_caps_free(q.buf);
+            continue;
+        }
+        memset(union_buf, 0xFF, union_size);
+
+        // Merge all items into union buffer
+        for (const auto &qi : batch) {
+            int item_row_bytes = (qi.w + 7) / 8;
+            for (int ry = 0; ry < qi.h; ++ry) {
+                int dst_row = (qi.y + ry) - aligned_union_y0;
+                if (dst_row < 0 || dst_row >= union_h) continue;
+                uint8_t* dst = union_buf + (size_t)dst_row * union_row_bytes;
+                int dst_byte_offset = (qi.x - aligned_union_x0) / 8;
+                uint8_t* dst_ptr = dst + dst_byte_offset;
+                uint8_t* src_ptr = qi.buf + (size_t)ry * item_row_bytes;
+                memcpy(dst_ptr, src_ptr, item_row_bytes);
             }
         }
-    }
 
-    // Termination: drain remaining items and free memory, then final refresh if necessary
-    while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
-        if (item.buf) {
-            if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-            ESP_LOGI(TAG, "Worker: draining and writeImage x=%u y=%u w=%u h=%u", item.x, item.y, item.w, item.h);
-            self->_display->writeImage(item.buf, item.x, item.y, item.w, item.h, false, false, false);
-            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-            heap_caps_free(item.buf);
+        // Free individual buffers
+        for (auto &q : batch) {
+            if (q.buf) {
+                heap_caps_free(q.buf);
+                q.buf = nullptr;
+            }
         }
-    }
-    if (processed_since_refresh) {
+
+        // Write union buffer once
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-        ESP_LOGI(TAG, "Worker: final refresh(true)");
-        self->_display->refresh(true);
-        if (self->_display && self->_display->hasFastPartialUpdate) {
-            for (const auto &wr : written_regions) {
-                ESP_LOGI(TAG, "Worker: final writeImageAgain for region x=%d y=%d w=%d h=%d",
-                         wr.x, wr.y, wr.w, wr.h);
-                self->_display->writeImageAgain(wr.buf, wr.x, wr.y, wr.w, wr.h, false, false, false);
-            }
-        }
+
+        ESP_LOGD(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items)",
+                 aligned_union_x0, aligned_union_y0, union_w, union_h, (int)batch.size());
+
+        self->_display->writeImage(union_buf, (int16_t)aligned_union_x0, (int16_t)aligned_union_y0,
+                                   (int16_t)union_w, (int16_t)union_h, false, false, false);
+
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+
+        // Immediately refresh after each merged write
+        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+        ESP_LOGD(TAG, "Worker: refresh(true)");
+        self->_display->refresh(true);
+        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+
+        heap_caps_free(union_buf);
     }
 
-    // Free any remaining written region buffers
-    for (auto &wr : written_regions) {
-        if (wr.buf) {
-            heap_caps_free(wr.buf);
-            wr.buf = nullptr;
-        }
+    // Drain on termination
+    while (xQueueReceive(self->_queue, &item, 0) == pdTRUE) {
+        if (item.buf) heap_caps_free(item.buf);
     }
 
     self->_workerRunning = false;
