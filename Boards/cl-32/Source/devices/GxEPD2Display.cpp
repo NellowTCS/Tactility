@@ -412,22 +412,19 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         physical_area = *area;
     }
 
-    const int epd_x = physical_area.x1;
     const int epd_y = physical_area.y1;
-    const int epd_w = physical_area.x2 - epd_x + 1;
     const int epd_h = physical_area.y2 - epd_y + 1;
 
-    if (epd_w <= 0 || epd_h <= 0) {
+    if (epd_h <= 0) {
         lv_display_flush_ready(disp);
         return;
     }
 
-    // Align X to byte boundary that the driver expects
-    const int start_bit_offset = epd_x & 7; // epd_x % 8
-    const int aligned_x = epd_x - start_bit_offset; // floor to byte boundary
-    const int padded_w = epd_w + start_bit_offset; // include left padding in width
-    const int padded_w_bytes = (padded_w + 7) / 8; // bytes per row for the driver
-    const size_t packed_size = (size_t)padded_w_bytes * (size_t)epd_h;
+    // Always use full panel width for e-paper driver
+    // The driver seems to expect full-width rows, not partial updates
+    const int panel_width = self->_config.width;  // 168 for your panel
+    const int bytes_per_row = (panel_width + 7) / 8;  // 21 bytes
+    const size_t packed_size = (size_t)bytes_per_row * (size_t)epd_h;
 
     uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
     if (!packed) {
@@ -435,24 +432,17 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         lv_display_flush_ready(disp);
         return;
     }
-    // default to white
+    // Initialize to white (all bits set)
     memset(packed, 0xFF, packed_size);
 
     const int logical_w = area->x2 - area->x1 + 1;
+    const int logical_h = area->y2 - area->y1 + 1;
     lv_color_format_t cf = lv_display_get_color_format(disp);
     uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(logical_w, cf);
     uint8_t* src_bytes = (uint8_t*)px_map;
 
-    static int s_flush_debug_count = 0;
-    if (s_flush_debug_count < 8) {
-        ESP_LOGI(TAG, "lvglFlush: logical=[%d,%d %dx%d] physical=[%d,%d %dx%d] aligned_x=%d start_bit=%d padded_w=%d bytes=%d rot=%d",
-                 area->x1, area->y1, logical_w, area->y2 - area->y1 + 1,
-                 epd_x, epd_y, epd_w, epd_h, aligned_x, start_bit_offset, padded_w, padded_w_bytes, (int)rotation);
-        ESP_LOGI(TAG, " lvgl src_row_stride_bytes=%u", src_row_stride_bytes);
-    }
-
-    // For each logical pixel, compute destination physical coords and pack into the aligned buffer.
-    for (int ly = 0; ly < (area->y2 - area->y1 + 1); ++ly) {
+    // For each logical pixel, compute destination physical coords and pack
+    for (int ly = 0; ly < logical_h; ++ly) {
         lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
         for (int lx = 0; lx < logical_w; ++lx) {
             int logical_x_abs = area->x1 + lx;
@@ -476,21 +466,22 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 physical_y_abs = logical_x_abs;
             }
 
-            // Convert to buffer-relative coords using ALIGNED origin
-            int px_rel = physical_x_abs - aligned_x; // note aligned_x used here
+            // Buffer-relative coords (full width, so x is absolute physical x)
             int py_rel = physical_y_abs - epd_y;
 
-            if (px_rel < 0 || px_rel >= padded_w || py_rel < 0 || py_rel >= epd_h) {
+            // Bounds check
+            if (physical_x_abs < 0 || physical_x_abs >= panel_width || 
+                py_rel < 0 || py_rel >= epd_h) {
                 continue;
             }
 
-            // Read LVGL pixel from source row
+            // Read LVGL pixel
             lv_color_t pixel = src_row[lx];
             bool is_white = rgb565ToMono(pixel);
 
-            // Pack into buffer that starts at aligned_x. byte index uses padded_w_bytes (driver wb)
-            const int byte_idx = py_rel * padded_w_bytes + (px_rel / 8);
-            const int bit_pos = 7 - (px_rel & 7);
+            // Pack into full-width buffer
+            const int byte_idx = py_rel * bytes_per_row + (physical_x_abs / 8);
+            const int bit_pos = 7 - (physical_x_abs & 7);
 
             if (is_white) {
                 packed[byte_idx] |= (1 << bit_pos);
@@ -500,28 +491,15 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         }
     }
 
-    if (s_flush_debug_count < 8) {
-        const int dump_bytes = std::min<int>((int)packed_size, 16);
-        char buf_hex[16 * 3 + 1];
-        char *p = buf_hex;
-        for (int i = 0; i < dump_bytes; ++i) {
-            int n = sprintf(p, "%02X ", packed[i]);
-            p += n;
-        }
-        *p = '\0';
-        ESP_LOGI(TAG, "packed[%d]= %s (aligned_x=%d padded_w=%d bytes=%d) packed_size=%d", dump_bytes, buf_hex, aligned_x, padded_w, padded_w_bytes, (int)packed_size);
-        ++s_flush_debug_count;
-    }
-
-    // Enqueue using aligned coords and padded width (in pixels = padded_w_bytes*8)
+    // Enqueue using full panel width and x=0
     if (self->_queue) {
         QueueItem qi;
         qi.buf = packed;
-        qi.x = (uint16_t)aligned_x;                 // aligned to byte boundary
+        qi.x = 0;  // Always start at x=0 for full-width rows
         qi.y = (uint16_t)epd_y;
-        qi.w = (uint16_t)(padded_w_bytes * 8);      // width rounded to bytes, in pixels
+        qi.w = (uint16_t)panel_width;  // Full panel width
         qi.h = (uint16_t)epd_h;
-        ESP_LOGI(TAG, "Enqueue: qi.x=%d qi.y=%d qi.w=%d qi.h=%d buf=%p packed_size=%d", qi.x, qi.y, qi.w, qi.h, (void*)qi.buf, (int)packed_size);
+        
         if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
             ESP_LOGW(TAG, "Display queue full; frame dropped.");
             heap_caps_free(packed);
