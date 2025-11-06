@@ -7,7 +7,6 @@
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
-#include <vector>
 
 static const char* TAG = "GxEPD2Display";
 
@@ -240,7 +239,6 @@ bool GxEPD2Display::startLvgl() {
         return false;
     }
 
-    // Allocate full-screen buffer (hor_res × ver_res pixels)
     const size_t bufSize = (size_t)hor_res * (size_t)ver_res;
     _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
     if (!_drawBuf1) {
@@ -298,7 +296,6 @@ bool GxEPD2Display::stopLvgl() {
     }
 
     destroyWorker();
-
     return true;
 }
 
@@ -372,38 +369,74 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     QueueItem item;
     QueueItem pending_item = {nullptr, 0, 0, 0, 0};
     bool has_pending = false;
+    bool first_frame = true;  // Track first LVGL frame after boot
 
     while (true) {
-        // Try to receive an item with a short timeout to allow debouncing
         if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(100))) {
             if (item.buf == nullptr) {
                 ESP_LOGI(TAG, "Worker: termination received");
                 break;
             }
 
-            // If we already have a pending item, free it (we'll use the newer one)
             if (has_pending && pending_item.buf) {
-                ESP_LOGI(TAG, "Worker: discarding stale frame x=%d y=%d w=%d h=%d (superseded by newer frame)",
-                         pending_item.x, pending_item.y, pending_item.w, pending_item.h);
+                ESP_LOGI(TAG, "Worker: discarding stale frame (superseded)");
                 heap_caps_free(pending_item.buf);
             }
 
-            // Store this item as pending
             pending_item = item;
             has_pending = true;
 
         } else {
-            // Timeout: if we have a pending item, process it now
             if (has_pending && pending_item.buf) {
                 if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-                ESP_LOGI(TAG, "Worker: writeImage x=%d y=%d w=%d h=%d", 
-                         pending_item.x, pending_item.y, pending_item.w, pending_item.h);
-                self->_display->writeImage(pending_item.buf, pending_item.x, pending_item.y, 
-                                          pending_item.w, pending_item.h, false, false, false);
+                if (first_frame) {
+                    // First frame after boot must follow official basemap pattern:
+                    // 1. Write to 0x24 (current)
+                    // 2. Write zeros to 0x26 (previous)
+                    // 3. Full update
+                    // 4. Write to 0x26 (sync for next partial)
+                    ESP_LOGI(TAG, "Worker: First frame detected. Using basemap pattern");
+                    
+                    ESP_LOGI(TAG, "Worker: writeImage to 0x24 (current) x=%d y=%d w=%d h=%d", 
+                             pending_item.x, pending_item.y, pending_item.w, pending_item.h);
+                    self->_display->writeImage(pending_item.buf, pending_item.x, pending_item.y, 
+                                              pending_item.w, pending_item.h, false, false, false);
+                    
+                    // Write ZEROS to 0x26 to establish baseline
+                    ESP_LOGI(TAG, "Worker: writeImagePrevious zeros to 0x26 for basemap");
+                    const size_t zero_size = ((size_t)pending_item.w * (size_t)pending_item.h + 7) / 8;
+                    uint8_t* zeros = (uint8_t*)heap_caps_calloc(zero_size, 1, MALLOC_CAP_DMA);
+                    if (zeros) {
+                        self->_display->writeImagePrevious(zeros, pending_item.x, pending_item.y, 
+                                                          pending_item.w, pending_item.h, false, false, false);
+                        heap_caps_free(zeros);
+                    }
+                    
+                    ESP_LOGI(TAG, "Worker: refresh(false), full refresh for first frame");
+                    self->_display->refresh(false);
+                    
+                    // Now sync 0x26 with actual image data
+                    ESP_LOGI(TAG, "Worker: writeImagePrevious actual data to sync 0x26");
+                    self->_display->writeImagePrevious(pending_item.buf, pending_item.x, pending_item.y, 
+                                                        pending_item.w, pending_item.h, false, false, false);
+                    
+                    first_frame = false;
+                } else {
+                    // Subsequent frames: normal partial update with sync
+                    ESP_LOGI(TAG, "Worker: writeImage to 0x24 x=%d y=%d w=%d h=%d", 
+                             pending_item.x, pending_item.y, pending_item.w, pending_item.h);
+                    self->_display->writeImage(pending_item.buf, pending_item.x, pending_item.y, 
+                                              pending_item.w, pending_item.h, false, false, false);
 
-                ESP_LOGI(TAG, "Worker: refresh(true)");
-                self->_display->refresh(true);
+                    ESP_LOGI(TAG, "Worker: refresh(true) - partial refresh");
+                    self->_display->refresh(true);
+
+                    // Sync 0x26 after partial refresh
+                    ESP_LOGI(TAG, "Worker: writeImagePrevious (sync 0x26)");
+                    self->_display->writeImagePrevious(pending_item.buf, pending_item.x, pending_item.y, 
+                                                        pending_item.w, pending_item.h, false, false, false);
+                }
 
                 if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
@@ -414,7 +447,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
         }
     }
 
-    // Clean up any remaining pending item
     if (has_pending && pending_item.buf) {
         heap_caps_free(pending_item.buf);
     }
@@ -430,12 +462,10 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    const int logical_w = area->x2 - area->x1 + 1;
-    const int logical_h = area->y2 - area->y1 + 1;
-    
     int32_t hor_res = lv_display_get_horizontal_resolution(disp);
     int32_t ver_res = lv_display_get_vertical_resolution(disp);
     
+    // In full render mode, stride is based on full display width, not area width
     lv_color_format_t cf = lv_display_get_color_format(disp);
     uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(hor_res, cf);
     uint8_t* src_bytes = (uint8_t*)px_map;
@@ -443,8 +473,6 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     const int panel_width = self->_config.width;
     const int panel_height = self->_config.height;
     const int panel_bytes_per_row = (panel_width + 7) / 8;
-
-    int min_px = panel_width, min_py = panel_height, max_px = -1, max_py = -1;
 
     if (xSemaphoreTake(self->_framebufferMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
         ESP_LOGW(TAG, "Framebuffer mutex busy; dropping LVGL flush");
@@ -460,44 +488,40 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         case LV_DISPLAY_ROTATION_270: rotation = 3; break;
         default: rotation = 0; break;
     }
-    
-    ESP_LOGI(TAG, "lvglFlushCallback: LVGL rotation=%d config.rotation=%d hor_res=%d ver_res=%d area=(%d,%d)-(%d,%d) stride_bytes=%u",
-             rotation, (int)self->_config.rotation, (int)hor_res, (int)ver_res, 
-             area->x1, area->y1, area->x2, area->y2, src_row_stride_bytes);
 
-    auto map_logical_to_physical = [&](int logical_x_abs, int logical_y_abs, int& physical_x_abs, int& physical_y_abs) {
-        switch (rotation) {
-            case 1:
-                physical_x_abs = logical_y_abs;
-                physical_y_abs = (hor_res - 1) - logical_x_abs;
-                break;
-            case 2:
-                physical_x_abs = (hor_res - 1) - logical_x_abs;
-                physical_y_abs = (ver_res - 1) - logical_y_abs;
-                break;
-            case 3:
-                physical_x_abs = (ver_res - 1) - logical_y_abs;
-                physical_y_abs = logical_x_abs;
-                break;
-            case 0:
-            default:
-                physical_x_abs = logical_x_abs;
-                physical_y_abs = logical_y_abs;
-                break;
-        }
-        physical_x_abs += self->_gapX;
-        physical_y_abs += self->_gapY;
-    };
-
-    for (int ly = 0; ly < logical_h; ++ly) {
+    // Process full screen (full render mode means area = entire display)
+    for (int ly = 0; ly < ver_res; ++ly) {
         lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
 
-        for (int lx = 0; lx < logical_w; ++lx) {
-            int logical_x_abs = area->x1 + lx;
-            int logical_y_abs = area->y1 + ly;
+        for (int lx = 0; lx < hor_res; ++lx) {
+            int logical_x_abs = lx;
+            int logical_y_abs = ly;
 
-            int physical_x_abs = 0, physical_y_abs = 0;
-            map_logical_to_physical(logical_x_abs, logical_y_abs, physical_x_abs, physical_y_abs);
+            int physical_x_abs, physical_y_abs;
+
+            // Use panel_height/width, not hor_res/ver_res for rotation bounds
+            switch (rotation) {
+                case 1:  // 90° CW
+                    physical_x_abs = logical_y_abs;
+                    physical_y_abs = (panel_height - 1) - logical_x_abs;
+                    break;
+                case 2:  // 180°
+                    physical_x_abs = (panel_width - 1) - logical_x_abs;
+                    physical_y_abs = (panel_height - 1) - logical_y_abs;
+                    break;
+                case 3:  // 270° CW
+                    physical_x_abs = (panel_width - 1) - logical_y_abs;
+                    physical_y_abs = logical_x_abs;
+                    break;
+                case 0:  // No rotation
+                default:
+                    physical_x_abs = logical_x_abs;
+                    physical_y_abs = logical_y_abs;
+                    break;
+            }
+
+            physical_x_abs += self->_gapX;
+            physical_y_abs += self->_gapY;
 
             if (physical_x_abs < 0 || physical_x_abs >= panel_width ||
                 physical_y_abs < 0 || physical_y_abs >= panel_height) {
@@ -515,86 +539,37 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
             } else {
                 self->_frameBuffer[byte_idx] &= ~(1 << bit_pos);
             }
-
-            min_px = std::min(min_px, physical_x_abs);
-            max_px = std::max(max_px, physical_x_abs);
-            min_py = std::min(min_py, physical_y_abs);
-            max_py = std::max(max_py, physical_y_abs);
         }
     }
 
-    if (max_px < 0 || max_py < 0) {
-        xSemaphoreGive(self->_framebufferMutex);
-        lv_display_flush_ready(disp);
-        return;
-    }
-
-    int aligned_x0 = (min_px / 8) * 8;
-    int aligned_x1 = ((max_px + 8) / 8) * 8 - 1;
-    if (aligned_x0 < 0) aligned_x0 = 0;
-    if (aligned_x1 >= panel_width) aligned_x1 = panel_width - 1;
-    int aligned_w = aligned_x1 - aligned_x0 + 1;
-    int packed_row_bytes = (aligned_w + 7) / 8;
-
-    int y0 = min_py;
-    int y1 = max_py;
-    if (y0 < 0) y0 = 0;
-    if (y1 >= panel_height) y1 = panel_height - 1;
-    int packed_h = y1 - y0 + 1;
-
-    size_t packed_size = (size_t)packed_row_bytes * (size_t)packed_h;
-    uint8_t* packed = (uint8_t*)heap_caps_malloc(packed_size, MALLOC_CAP_DMA);
+    // Copy entire framebuffer to DMA buffer for e-paper
+    const size_t fb_size = (size_t)panel_bytes_per_row * (size_t)panel_height;
+    uint8_t* packed = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_DMA);
     if (!packed) {
         xSemaphoreGive(self->_framebufferMutex);
-        ESP_LOGE(TAG, "Failed to allocate packed buffer of %zu bytes", packed_size);
+        ESP_LOGE(TAG, "Failed to allocate DMA buffer of %zu bytes", fb_size);
         lv_display_flush_ready(disp);
         return;
     }
 
-    for (int ry = 0; ry < packed_h; ++ry) {
-        int src_y = y0 + ry;
-        uint8_t* dst_row = packed + (size_t)ry * packed_row_bytes;
-        for (int bx = 0; bx < packed_row_bytes; ++bx) {
-            uint8_t out = 0;
-            int base_x = aligned_x0 + bx * 8;
-            for (int bit = 0; bit < 8; ++bit) {
-                int sx = base_x + bit;
-                out <<= 1;
-                if (sx >= panel_width) {
-                } else {
-                    int src_byte_idx = src_y * panel_bytes_per_row + (sx / 8);
-                    int src_bit_pos = 7 - (sx & 7);
-                    bool white = (self->_frameBuffer[src_byte_idx] & (1 << src_bit_pos)) != 0;
-                    if (white) out |= 1;
-                }
-            }
-            dst_row[bx] = out;
-        }
-    }
-
+    memcpy(packed, self->_frameBuffer, fb_size);
     xSemaphoreGive(self->_framebufferMutex);
-
-    ESP_LOGI(TAG, "Mapped physical bbox (pre-align) = x[%d..%d] y[%d..%d] aligned_x0=%d y0=%d w=%d h=%d packed_bytes=%zu",
-             min_px, max_px, min_py, max_py, aligned_x0, y0, aligned_w, packed_h, packed_size);
 
     if (self->_queue) {
         QueueItem qi;
         qi.buf = packed;
-        qi.x = (uint16_t)aligned_x0;
-        qi.y = (uint16_t)y0;
-        qi.w = (uint16_t)aligned_w;
-        qi.h = (uint16_t)packed_h;
+        qi.x = 0;
+        qi.y = 0;
+        qi.w = (uint16_t)panel_width;
+        qi.h = (uint16_t)panel_height;
 
         if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
-            ESP_LOGW(TAG, "Display queue full; frame dropped. x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
+            ESP_LOGW(TAG, "Display queue full; frame dropped");
             heap_caps_free(packed);
-        } else {
-            ESP_LOGI(TAG, "Enqueued frame x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
         }
     } else {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-        ESP_LOGI(TAG, "Direct write (no queue) x=%d y=%d w=%d h=%d", aligned_x0, y0, aligned_w, packed_h);
-        self->_display->writeImage(packed, aligned_x0, y0, aligned_w, packed_h, false, false, false);
+        self->_display->writeImage(packed, 0, 0, panel_width, panel_height, false, false, false);
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
         heap_caps_free(packed);
     }
