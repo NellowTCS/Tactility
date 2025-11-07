@@ -13,8 +13,7 @@ static const char* TAG = "DisplayTester";
 
 namespace display_tester {
 
-static void test_fullscreen_fill(GxEPD2Display* disp, uint8_t fill)
-{
+static void test_fullscreen_fill(GxEPD2Display* disp, uint8_t fill) {
     if (!disp) return;
     const int w = disp->getWidth();
     const int h = disp->getHeight();
@@ -32,8 +31,7 @@ static void test_fullscreen_fill(GxEPD2Display* disp, uint8_t fill)
     heap_caps_free(buf);
 }
 
-static void test_three_stripes(GxEPD2Display* disp)
-{
+static void test_three_stripes(GxEPD2Display* disp) {
     if (!disp) return;
     const int w = disp->getWidth();
     const int h = disp->getHeight();
@@ -68,11 +66,7 @@ static void test_three_stripes(GxEPD2Display* disp)
     heap_caps_free(right);
 }
 
-// Write each scanline with a unique byte value so repeated/shifted regions
-// are easy to spot. For row r we fill every byte in that row with the value (uint8_t)r.
-// This is a low-cost test (one buffer) that highlights stride/rotation/source-shift bugs.
-static void test_scanline_pattern(GxEPD2Display* disp)
-{
+static void test_scanline_pattern(GxEPD2Display* disp) {
     if (!disp) return;
     const int w = disp->getWidth();
     const int h = disp->getHeight();
@@ -106,10 +100,78 @@ static void test_scanline_pattern(GxEPD2Display* disp)
     heap_caps_free(buf);
 }
 
-// LVGL test: create a simple LVGL screen with three horizontal bands and a centered label.
-// This test requires LVGL to be running and the display to have an LVGL display object.
-static void test_lvgl(GxEPD2Display* disp)
-{
+static void test_scanline_alternates(GxEPD2Display* disp) {
+    if (!disp) return;
+    const int phys_w = disp->getWidth();   // 168
+    const int phys_h = disp->getHeight();  // 384
+
+    // 1) Horizontal rows (expected result: horizontal bands)
+    {
+        const int row_bytes = (phys_w + 7) / 8;
+        size_t total = (size_t)row_bytes * (size_t)phys_h;
+        uint8_t* buf = (uint8_t*)heap_caps_malloc(total, MALLOC_CAP_DMA);
+        if (!buf) { ESP_LOGE(TAG, "alloc failed horiz"); return; }
+        for (int r = 0; r < phys_h; ++r) {
+            uint8_t v = (uint8_t)(r & 0xFF);
+            memset(buf + (size_t)r * row_bytes, v, row_bytes);
+        }
+        ESP_LOGI(TAG, "Alternate test 1: horizontal scanlines (should show horizontal bands)");
+        disp->writeRawImage(buf, 0, 0, phys_w, phys_h, false, false);
+        disp->refreshDisplay(false);
+        heap_caps_free(buf);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+
+    // 2) Vertical columns (one value per column) - helps detect transpose
+    {
+        const int col_bytes = (phys_w + 7) / 8; // still using bytes-per-row for panel format
+        // Build buffer so every byte in a column contains the column index (low 8bits).
+        // This is a bit coarse because panel stores bits in bytes, but repeating per-byte will show vertical structure.
+        size_t total = (size_t)col_bytes * (size_t)phys_h;
+        uint8_t* buf = (uint8_t*)heap_caps_malloc(total, MALLOC_CAP_DMA);
+        if (!buf) { ESP_LOGE(TAG, "alloc failed vert"); return; }
+        // For each column c we set bytes in each row to (c & 0xFF) in the corresponding byte column.
+        // Simpler: fill each row with a repeating sequence of column-byte-values so columns look different.
+        for (int r = 0; r < phys_h; ++r) {
+            uint8_t* row = buf + (size_t)r * col_bytes;
+            for (int b = 0; b < col_bytes; ++b) {
+                row[b] = (uint8_t)(b & 0xFF);
+            }
+        }
+        ESP_LOGI(TAG, "Alternate test 2: vertical-ish pattern (should show vertical variation if interpreted normally)");
+        disp->writeRawImage(buf, 0, 0, phys_w, phys_h, false, false);
+        disp->refreshDisplay(false);
+        heap_caps_free(buf);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+
+    // 3) Swapped buffer test: build buffer like LVGL logical (384x168) then write with swapped dims.
+    //    If the driver expects panel-native layout but receives LVGL buffer, this will reveal transpose.
+    {
+        const int lv_w = phys_h; // 384 (LVGL logical width after rotation)
+        const int lv_h = phys_w; // 168
+        const int lv_row_bytes = (lv_w + 7) / 8;
+        size_t total = (size_t)lv_row_bytes * (size_t)lv_h;
+        uint8_t* buf = (uint8_t*)heap_caps_malloc(total, MALLOC_CAP_DMA);
+        if (!buf) { ESP_LOGE(TAG, "alloc failed swapped"); return; }
+        // Fill each LVGL row with its row index so if the driver reads LVGL stride instead of panel stride,
+        // you'll see horizontal bands but possibly transposed.
+        for (int r = 0; r < lv_h; ++r) {
+            memset(buf + (size_t)r * lv_row_bytes, (uint8_t)(r & 0xFF), lv_row_bytes);
+        }
+        ESP_LOGI(TAG, "Alternate test 3: swapped buffer (LVGL-style) written as-is - check for transpose/duplication)");
+        // Write using the LVGL buffer size but to the physical window — this simulates the caller passing LVGL dims.
+        // Try both calls if you can: (a) write as (phys_w, phys_h) and (b) try writing as (lv_w, lv_h) if API allowed.
+        disp->writeRawImage(buf, 0, 0, lv_w, lv_h, false, false); // likely wrong but diagnostic
+        disp->refreshDisplay(false);
+        heap_caps_free(buf);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+
+    ESP_LOGI(TAG, "Alternate scanline diagnostics complete");
+}
+
+static void test_lvgl(GxEPD2Display* disp) {
     if (!disp) return;
     lv_display_t* lvdisp = disp->getLvglDisplay();
     if (!lvdisp) {
@@ -190,6 +252,13 @@ void runTests(GxEPD2Display* display)
     vTaskDelay(pdMS_TO_TICKS(2000));
 
     // 4. Clear screen to White (0xFF)
+    test_fullscreen_fill(display, 0xFF);
+    vTaskDelay(pdMS_TO_TICKS(300));
+
+    test_scanline_alternates(display);
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    // 6. Clear screen to White (0xFF)
     test_fullscreen_fill(display, 0xFF);
     vTaskDelay(pdMS_TO_TICKS(300));
 
