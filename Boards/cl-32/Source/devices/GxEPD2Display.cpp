@@ -533,11 +533,17 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
                 continue;
             }
 
+            // Apply SOURCE_SHIFT so the packed framebuffer aligns with controller column addressing.
+            // The controller's _setPartialRamArea adds SOURCE_SHIFT to the column address, so the
+            // bytes we pack here must be shifted the same way.
+            int shifted_x = physical_x_abs + (int)GxEPD2_290_GDEY029T71H::SOURCE_SHIFT;
+            if (shifted_x >= panel_width) shifted_x -= panel_width; // wrap within panel width
+
             lv_color_t pixel = src_row[lx];
             bool is_white = bayer4x4Dither(pixel, physical_x_abs, physical_y_abs);
 
-            const int byte_idx = physical_y_abs * panel_bytes_per_row + (physical_x_abs / 8);
-            const int bit_pos = 7 - (physical_x_abs & 7);
+            const int byte_idx = physical_y_abs * panel_bytes_per_row + (shifted_x / 8);
+            const int bit_pos = 7 - (shifted_x & 7);
 
             if (is_white) {
                 self->_frameBuffer[byte_idx] |= (1 << bit_pos);
