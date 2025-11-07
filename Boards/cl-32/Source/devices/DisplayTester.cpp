@@ -1,4 +1,3 @@
- url=https://github.com/NellowTCS/Tactility/blob/395ff83aef3679c3adb51ce6f3bd598adbd6f8f3/Boards/cl-32/Source/devices/DisplayTester.cpp
 #include "DisplayTester.h"
 #include "GxEPD2Display.h"
 
