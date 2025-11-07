@@ -272,7 +272,7 @@ bool GxEPD2Display::startLvgl() {
 
     
     // Run tests
-    void display_tester::runTests(this);
+    void display_tester::runTests(_display);
 
     return true;
 }
