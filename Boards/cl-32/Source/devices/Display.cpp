@@ -1,7 +1,8 @@
 #include "Display.h"
-#include <Ssd1685Display.h>
+#include "Ssd1685Display.h"
+#include <memory>
 
-std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {[]
+std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     auto config = std::make_unique<Ssd1685Display::Configuration>(
         EPD_SPI_HOST,   // spiHost
         EPD_PIN_CS,     // csPin
