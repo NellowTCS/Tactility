@@ -10,7 +10,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         .rstPin = EPD_PIN_RST,
         .busyPin = EPD_PIN_BUSY,
         .spiHost = EPD_SPI_HOST,
-        .rotation = 1  // 0=portrait, 1=landscape 90°CW, 2=portrait 180°, 3=landscape 270°CW
+        .rotation = 0  // 0=portrait, 1=landscape 90°CW, 2=portrait 180°, 3=landscape 270°CW
     };
 
     return std::make_shared<GxEPD2Display>(config);
