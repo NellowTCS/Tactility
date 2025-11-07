@@ -78,19 +78,9 @@ void GxEPD2_290_GDEY029T71H::writeImagePrevious(const uint8_t bitmap[], int16_t 
 void GxEPD2_290_GDEY029T71H::_writeImage(uint8_t command, const uint8_t bitmap[], int16_t x, int16_t y, int16_t w, int16_t h, bool invert, bool mirror_y, bool pgm)
 {
   vTaskDelay(pdMS_TO_TICKS(1)); // yield() to avoid WDT on ESP32
-
-  // Preserve original bitmap width/height before we adjust for byte boundaries or cropping.
-  // Callers may pass a bitmap whose logical width/height differ
-  // from the destination region. We must index the source bitmap using its own stride!
-  int16_t bmp_w = w;
-  int16_t bmp_h = h;
-  int16_t wb_bitmap = (bmp_w + 7) / 8; // stride (bytes) of the source bitmap
-
-  // Now perform destination/transfer related adjustments (align to byte boundaries)
-  int16_t wb = (w + 7) / 8; // bytes for requested width (used only for byte-alignment calculation)
+  int16_t wb = (w + 7) / 8; // width bytes, bitmaps are padded
   x -= x % 8; // byte boundary
   w = wb * 8; // byte boundary
-
   int16_t x1 = x < 0 ? 0 : x; // limit
   int16_t y1 = y < 0 ? 0 : y; // limit
   int16_t w1 = x + w < int16_t(WIDTH) ? w : int16_t(WIDTH) - x; // limit
@@ -100,39 +90,18 @@ void GxEPD2_290_GDEY029T71H::_writeImage(uint8_t command, const uint8_t bitmap[]
   w1 -= dx;
   h1 -= dy;
   if ((w1 <= 0) || (h1 <= 0)) return;
-
   if (!_init_display_done) _InitDisplay();
   if (_initial_write) writeScreenBuffer(); // initial full screen buffer clean
   _setPartialRamArea(x1, y1, w1, h1);
   _writeCommand(command);
   _startTransfer();
-
-  // Use wb_bitmap and bmp_h for indexing into the source bitmap (these are from original params).
-  // Use w1/h1 for transfer extents (destination cropping).
   for (int16_t i = 0; i < h1; i++)
   {
     for (int16_t j = 0; j < w1 / 8; j++)
     {
       uint8_t data;
-      // Compute index into source bitmap using the bitmap's stride (wb_bitmap) and bitmap height (bmp_h)
-      int16_t idx;
-      int16_t src_byte_col = j + dx / 8;
-      int16_t src_row_idx;
-      if (mirror_y) {
-        // mirrored-y index: map destination row i-> source row counting from bottom of bitmap
-        src_row_idx = (bmp_h - 1 - (i + dy));
-      } else {
-        src_row_idx = (i + dy);
-      }
-      idx = src_byte_col + src_row_idx * wb_bitmap;
-
-      // Bounds-safety: avoid out-of-range reads if caller provided unexpected sizes
-      // (this should not normally happen; handled defensively)
-      // If idx exceeds theoretical maximum, clamp to last available byte (safer than UB).
-      int32_t max_idx = (int32_t)wb_bitmap * (int32_t)bmp_h - 1;
-      if (idx < 0) idx = 0;
-      if (idx > max_idx) idx = max_idx;
-
+      // use wb, h of bitmap for index!
+      int16_t idx = mirror_y ? j + dx / 8 + ((h - 1 - (i + dy))) * wb : j + dx / 8 + (i + dy) * wb;
       // In ESP-IDF, const data is accessible directly (no PROGMEM)
       data = bitmap[idx];
       if (invert) data = ~data;
@@ -191,10 +160,6 @@ void GxEPD2_290_GDEY029T71H::_writeImagePart(uint8_t command, const uint8_t bitm
       // use wb_bitmap, h_bitmap of bitmap for index!
       int16_t idx = mirror_y ? x_part / 8 + j + dx / 8 + ((h_bitmap - 1 - (y_part + i + dy))) * wb_bitmap : x_part / 8 + j + dx / 8 + (y_part + i + dy) * wb_bitmap;
       // In ESP-IDF, const data is accessible directly (no PROGMEM)
-      // bounds safety
-      int32_t max_idx = (int32_t)wb_bitmap * (int32_t)h_bitmap - 1;
-      if (idx < 0) idx = 0;
-      if (idx > max_idx) idx = max_idx;
       data = bitmap[idx];
       if (invert) data = ~data;
       _transfer(data);
