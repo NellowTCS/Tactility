@@ -230,7 +230,7 @@ esp_err_t epaper_panel_refresh_screen(esp_lcd_panel_t *panel)
     ESP_RETURN_ON_FALSE(panel, ESP_ERR_INVALID_ARG, TAG, "panel handler is NULL");
     epaper_panel_t *epaper_panel = __containerof(panel, epaper_panel_t, base);
     gpio_intr_enable((gpio_num_t)epaper_panel->busy_gpio_num);
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1685_CMD_SET_DISP_UPDATE_CTRL, (uint8_t[]) {0xF4}, 1), TAG, "SSD1685_CMD_SET_DISP_UPDATE_CTRL err");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1685_CMD_SET_DISP_UPDATE_CTRL, (uint8_t[]) {0xCF}, 1), TAG, "SSD1685_CMD_SET_DISP_UPDATE_CTRL err");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1685_CMD_ACTIVE_DISP_UPDATE_SEQ, NULL, 0), TAG, "SSD1685_CMD_ACTIVE_DISP_UPDATE_SEQ err");
     return ESP_OK;
 }
@@ -383,13 +383,18 @@ static esp_err_t epaper_panel_init(esp_lcd_panel_t *panel)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SWRST, NULL, 0), TAG, "param SSD1685_CMD_SWRST err");
     ESP_RETURN_ON_ERROR(panel_epaper_wait_busy(panel), TAG, "post reset busy wait err");
     
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_BORDER_WAVEFORM, (uint8_t[]) {0x01}, 1), TAG, "SSD1685_CMD_SET_BORDER_WAVEFORM err");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_BORDER_WAVEFORM, (uint8_t[]) {0x05}, 1), TAG, "SSD1685_CMD_SET_BORDER_WAVEFORM err");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_OUTPUT_CTRL, (uint8_t[]) {(uint8_t)((epaper_panel->height - 1) & 0xFF), (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF), 0x00}, 3), TAG, "SSD1685_CMD_OUTPUT_CTRL err");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_DATA_ENTRY_MODE, (uint8_t[]) {0x01}, 1), TAG, "SSD1685_CMD_DATA_ENTRY_MODE err");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_RAMX_START_END_POS, (uint8_t[]) {0x00, (uint8_t)(epaper_panel->width / 8 - 1)}, 2), TAG, "SSD1685_CMD_SET_RAMX_START_END_POS err");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_RAMY_START_END_POS, (uint8_t[]) {(uint8_t)((epaper_panel->height - 1) & 0xFF), (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF), 0x00, 0x00}, 4), TAG, "SSD1685_CMD_SET_RAMY_START_END_POS err");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_BORDER_WAVEFORM, (uint8_t[]) {0x05}, 1), TAG, "SSD1685_CMD_SET_BORDER_WAVEFORM err");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_TEMP_SENSOR, (uint8_t[]) {0x80}, 1), TAG, "SSD1685_CMD_SET_TEMP_SENSOR err");
+    
+    // Add explicit voltage settings
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_GATE_DRIVING_VOLTAGE, (uint8_t[]) {0x17}, 1), TAG, "SSD1685_CMD_SET_GATE_DRIVING_VOLTAGE err");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_SRC_DRIVING_VOLTAGE, (uint8_t[]) {0x41, 0x00, 0x32}, 3), TAG, "SSD1685_CMD_SET_SRC_DRIVING_VOLTAGE err");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_VCOM_REG, (uint8_t[]) {0x20}, 1), TAG, "SSD1685_CMD_SET_VCOM_REG err");
+    
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_INIT_X_ADDR_COUNTER, (uint8_t[]) {0x00}, 1), TAG, "SSD1685_CMD_SET_INIT_X_ADDR_COUNTER err");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_INIT_Y_ADDR_COUNTER, (uint8_t[]) {(uint8_t)((epaper_panel->height - 1) & 0xFF), (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF)}, 2), TAG, "SSD1685_CMD_SET_INIT_Y_ADDR_COUNTER err");
     ESP_RETURN_ON_ERROR(panel_epaper_wait_busy(panel), TAG, "post-init busy wait err");

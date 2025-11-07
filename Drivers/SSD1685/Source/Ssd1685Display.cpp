@@ -101,6 +101,15 @@ bool Ssd1685Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         if (r != ESP_OK) {
             TT_LOG_W(TAG, "Initial draw_bitmap returned %d", r);
         }
+        
+        // Also clear the red VRAM to prevent ghosting
+        memset(white_buffer, 0x00, clear_size); // 0x00 = no red
+        epaper_panel_set_bitmap_color(panelHandle, SSD1685_EPAPER_BITMAP_RED);
+        r = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, configuration->width, configuration->height, white_buffer);
+        if (r != ESP_OK) {
+            TT_LOG_W(TAG, "Initial red VRAM clear returned %d", r);
+        }
+        
         // Force immediate refresh
         r = epaper_panel_refresh_screen(panelHandle);
         if (r != ESP_OK) {
