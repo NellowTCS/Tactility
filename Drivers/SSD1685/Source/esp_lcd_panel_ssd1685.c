@@ -548,13 +548,21 @@ epaper_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int y_start, int x
     // Rate limit to prevent watchdog timeouts (e-paper refresh is slow)
     uint32_t current_time_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     uint32_t time_since_last_refresh = current_time_ms - epaper_panel->_last_refresh_time_ms;
-    const uint32_t MIN_REFRESH_INTERVAL_MS = 3000;  // Minimum 3 seconds between refreshes
+    // For debugging set MIN to 0 so refresh happens immediately. For production, restore to 3000.
+    const uint32_t MIN_REFRESH_INTERVAL_MS = 0;  // Minimum ms between refreshes (0 during debug)
     
+    // debug info
+    ESP_LOGI(TAG, "draw_bitmap called: x=%d y=%d x2=%d y2=%d BUSY=%d last_ref=%lu",
+             x_start, y_start, x_end, y_end,
+             (epaper_panel->busy_gpio_num >= 0) ? gpio_get_level((gpio_num_t)epaper_panel->busy_gpio_num) : -1,
+             time_since_last_refresh);
+
     if (!gpio_get_level((gpio_num_t)epaper_panel->busy_gpio_num)) {
         if (time_since_last_refresh >= MIN_REFRESH_INTERVAL_MS) {
-            ESP_LOGI(TAG, "Triggering e-paper refresh (last refresh was %lu ms ago)", time_since_last_refresh);
+            ESP_LOGI(TAG, "Triggering e-paper refresh (time since last %lu ms)", time_since_last_refresh);
             epaper_panel->_last_refresh_time_ms = current_time_ms;
             ESP_RETURN_ON_ERROR(epaper_panel_refresh_screen(panel), TAG, "epaper_panel_refresh_screen error");
+            ESP_LOGI(TAG, "epaper_panel_refresh_screen called");
         } else {
             ESP_LOGD(TAG, "Skipping refresh, too soon (only %lu ms since last)", time_since_last_refresh);
         }
