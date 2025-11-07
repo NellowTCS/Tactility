@@ -62,6 +62,7 @@ typedef struct {
     uint8_t *_framebuffer;
     bool _invert_color;
     uint32_t _last_refresh_time_ms;  // Track last refresh to rate-limit
+    bool _refresh_in_progress;  // Track if a refresh is currently in progress
 } epaper_panel_t;
 
 // --- Utility functions
@@ -99,6 +100,9 @@ static void epaper_driver_gpio_isr_handler(void *arg)
     epaper_panel_t *epaper_panel = (epaper_panel_t *)arg;
     // --- Disable ISR handling
     gpio_intr_disable((gpio_num_t)epaper_panel->busy_gpio_num);
+
+    // Mark refresh as complete
+    epaper_panel->_refresh_in_progress = false;
 
     // --- Call user callback func
     if (epaper_panel->epaper_refresh_done_isr_callback.callback_ptr) {
@@ -188,8 +192,16 @@ static esp_err_t epaper_set_area(esp_lcd_panel_io_handle_t io, uint32_t start_x,
 static esp_err_t panel_epaper_wait_busy(esp_lcd_panel_t *panel)
 {
     epaper_panel_t *epaper_panel = __containerof(panel, epaper_panel_t, base);
+    int timeout_ms = 5000; // 5 second timeout
+    int start_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    
     while (gpio_get_level((gpio_num_t)epaper_panel->busy_gpio_num)) {
-        vTaskDelay(pdMS_TO_TICKS(15));
+        int current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        if (current_time - start_time > timeout_ms) {
+            ESP_LOGE(TAG, "BUSY timeout after %d ms", timeout_ms);
+            return ESP_ERR_TIMEOUT;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
     return ESP_OK;
 }
@@ -229,9 +241,25 @@ esp_err_t epaper_panel_refresh_screen(esp_lcd_panel_t *panel)
 {
     ESP_RETURN_ON_FALSE(panel, ESP_ERR_INVALID_ARG, TAG, "panel handler is NULL");
     epaper_panel_t *epaper_panel = __containerof(panel, epaper_panel_t, base);
+    
+    // Check if a refresh is already in progress
+    if (epaper_panel->_refresh_in_progress) {
+        ESP_LOGD(TAG, "Refresh already in progress, skipping");
+        return ESP_OK;
+    }
+    
+    // Mark refresh as in progress
+    epaper_panel->_refresh_in_progress = true;
+    
+    // Enable interrupt for BUSY pin
     gpio_intr_enable((gpio_num_t)epaper_panel->busy_gpio_num);
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1685_CMD_SET_DISP_UPDATE_CTRL, (uint8_t[]) {0xCF}, 1), TAG, "SSD1685_CMD_SET_DISP_UPDATE_CTRL err");
+    
+    // Use the correct display update control command
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1685_CMD_SET_DISP_UPDATE_CTRL, (uint8_t[]) {0xC7}, 1), TAG, "SSD1685_CMD_SET_DISP_UPDATE_CTRL err");
+    
+    // Activate display update sequence
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1685_CMD_ACTIVE_DISP_UPDATE_SEQ, NULL, 0), TAG, "SSD1685_CMD_ACTIVE_DISP_UPDATE_SEQ err");
+    
     return ESP_OK;
 }
 
@@ -262,6 +290,7 @@ esp_lcd_new_panel_ssd1685(const esp_lcd_panel_io_handle_t io, const esp_lcd_pane
     epaper_panel->bitmap_color = SSD1685_EPAPER_BITMAP_BLACK;
     epaper_panel->full_refresh = true;
     epaper_panel->_last_refresh_time_ms = 0;
+    epaper_panel->_refresh_in_progress = false;
     // configurations
     epaper_panel->io = io;
     epaper_panel->reset_gpio_num = panel_dev_config->reset_gpio_num;
@@ -301,7 +330,8 @@ esp_lcd_new_panel_ssd1685(const esp_lcd_panel_io_handle_t io, const esp_lcd_pane
     if (epaper_panel->busy_gpio_num >= 0) {
         gpio_config_t io_conf = {
             .mode = GPIO_MODE_INPUT,
-            .pull_down_en = 0x01,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .pull_up_en = GPIO_PULLUP_ENABLE,
             .pin_bit_mask = 1ULL << epaper_panel->busy_gpio_num,
         };
         io_conf.intr_type = GPIO_INTR_NEGEDGE;
@@ -334,7 +364,9 @@ static esp_err_t epaper_panel_del(esp_lcd_panel_t *panel)
     if ((epaper_panel->reset_gpio_num) >= 0) {
         gpio_reset_pin((gpio_num_t)epaper_panel->reset_gpio_num);
     }
-    gpio_reset_pin((gpio_num_t)epaper_panel->busy_gpio_num);
+    if (epaper_panel->busy_gpio_num >= 0) {
+        gpio_reset_pin((gpio_num_t)epaper_panel->busy_gpio_num);
+    }
     // --- Free allocated RAM
     if ((epaper_panel->_framebuffer) && (!(epaper_panel->_non_copy_mode))) {
         // Should not free if buffer is not allocated by driver
@@ -357,12 +389,18 @@ static esp_err_t epaper_panel_reset(esp_lcd_panel_t *panel)
         vTaskDelay(pdMS_TO_TICKS(10));
         ESP_RETURN_ON_ERROR(gpio_set_level((gpio_num_t)epaper_panel->reset_gpio_num, !epaper_panel->reset_level), TAG,
                             "gpio_set_level error");
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(100)); // Longer delay after reset
     } else {
         ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SWRST, NULL, 0), TAG,
                             "param SSD1685_CMD_SWRST err");
     }
-    panel_epaper_wait_busy(panel);
+    
+    // Wait for reset to complete
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    // Mark refresh as not in progress after reset
+    epaper_panel->_refresh_in_progress = false;
+    
     return ESP_OK;
 }
 
@@ -379,9 +417,8 @@ static esp_err_t epaper_panel_init(esp_lcd_panel_t *panel)
     epaper_panel_t *epaper_panel = __containerof(panel, epaper_panel_t, base);
     esp_lcd_panel_io_handle_t io = epaper_panel->io;
     
-    ESP_RETURN_ON_ERROR(panel_epaper_wait_busy(panel), TAG, "pre-init busy wait err");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SWRST, NULL, 0), TAG, "param SSD1685_CMD_SWRST err");
-    ESP_RETURN_ON_ERROR(panel_epaper_wait_busy(panel), TAG, "post reset busy wait err");
+    vTaskDelay(pdMS_TO_TICKS(100)); // Wait for reset to complete
     
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_BORDER_WAVEFORM, (uint8_t[]) {0x05}, 1), TAG, "SSD1685_CMD_SET_BORDER_WAVEFORM err");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_OUTPUT_CTRL, (uint8_t[]) {(uint8_t)((epaper_panel->height - 1) & 0xFF), (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF), 0x00}, 3), TAG, "SSD1685_CMD_OUTPUT_CTRL err");
@@ -397,7 +434,9 @@ static esp_err_t epaper_panel_init(esp_lcd_panel_t *panel)
     
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_INIT_X_ADDR_COUNTER, (uint8_t[]) {0x00}, 1), TAG, "SSD1685_CMD_SET_INIT_X_ADDR_COUNTER err");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_INIT_Y_ADDR_COUNTER, (uint8_t[]) {(uint8_t)((epaper_panel->height - 1) & 0xFF), (uint8_t)(((epaper_panel->height - 1) >> 8) & 0xFF)}, 2), TAG, "SSD1685_CMD_SET_INIT_Y_ADDR_COUNTER err");
-    ESP_RETURN_ON_ERROR(panel_epaper_wait_busy(panel), TAG, "post-init busy wait err");
+    
+    // Wait for initialization to complete
+    vTaskDelay(pdMS_TO_TICKS(100));
     
     return ESP_OK;
 }
@@ -507,17 +546,22 @@ static esp_err_t epaper_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, i
              (epaper_panel->busy_gpio_num >= 0) ? gpio_get_level((gpio_num_t)epaper_panel->busy_gpio_num) : -1,
              time_since_last_refresh);
 
-    if (!gpio_get_level((gpio_num_t)epaper_panel->busy_gpio_num)) {
-        if (time_since_last_refresh >= MIN_REFRESH_INTERVAL_MS) {
-            ESP_LOGI(TAG, "Triggering e-paper refresh (time since last %lu ms)", time_since_last_refresh);
-            epaper_panel->_last_refresh_time_ms = current_time_ms;
-            ESP_RETURN_ON_ERROR(epaper_panel_refresh_screen(panel), TAG, "epaper_panel_refresh_screen error");
-            ESP_LOGI(TAG, "epaper_panel_refresh_screen called");
+    // Only refresh if not busy and enough time has passed
+    if (!gpio_get_level((gpio_num_t)epaper_panel->busy_gpio_num) && 
+        !epaper_panel->_refresh_in_progress && 
+        time_since_last_refresh >= MIN_REFRESH_INTERVAL_MS) {
+        ESP_LOGI(TAG, "Triggering e-paper refresh (time since last %lu ms)", time_since_last_refresh);
+        epaper_panel->_last_refresh_time_ms = current_time_ms;
+        ESP_RETURN_ON_ERROR(epaper_panel_refresh_screen(panel), TAG, "epaper_panel_refresh_screen error");
+        ESP_LOGI(TAG, "epaper_panel_refresh_screen called");
+    } else {
+        if (gpio_get_level((gpio_num_t)epaper_panel->busy_gpio_num)) {
+            ESP_LOGD(TAG, "Display busy, skipping refresh");
+        } else if (epaper_panel->_refresh_in_progress) {
+            ESP_LOGD(TAG, "Refresh in progress, skipping");
         } else {
             ESP_LOGD(TAG, "Skipping refresh, too soon (only %lu ms since last)", time_since_last_refresh);
         }
-    } else {
-        ESP_LOGD(TAG, "Display busy, skipping refresh");
     }
     
     return ESP_OK;
