@@ -283,11 +283,6 @@ void GxEPD2_290_GDEY029T71H::hibernate()
 void GxEPD2_290_GDEY029T71H::_setPartialRamArea(uint16_t x, uint16_t y, uint16_t w, uint16_t h)
 {
   x += SOURCE_SHIFT;
-  
-  // FIX: The original code does modulo 256 which causes wrapping on large Y values
-  // For a 384-pixel tall display (after rotation), Y can be 0-383, which WILL wrap!
-  // Remove the % 256 operations or handle them properly for full 16-bit Y
-  
 #if 1 // normal, top opposite connection
   _writeCommand(0x11); // set ram entry mode
   _writeData(0x03);    // x increase, y increase : normal mode
@@ -295,15 +290,15 @@ void GxEPD2_290_GDEY029T71H::_setPartialRamArea(uint16_t x, uint16_t y, uint16_t
   _writeData(x / 8);
   _writeData((x + w - 1) / 8);
   _writeCommand(0x45);
-  _writeData(y & 0xFF);        // Low byte of Y (bits 0-7)
-  _writeData((y >> 8) & 0xFF); // High byte of Y (bits 8-15) - this handles 384+ properly
-  _writeData((y + h - 1) & 0xFF);        // End Y low byte
-  _writeData(((y + h - 1) >> 8) & 0xFF); // End Y high byte
+  _writeData(y % 256);
+  _writeData(y / 256);
+  _writeData((y + h - 1) % 256);
+  _writeData((y + h - 1) / 256);
   _writeCommand(0x4e);
   _writeData(x / 8);
   _writeCommand(0x4f);
-  _writeData(y & 0xFF);
-  _writeData((y >> 8) & 0xFF);
+  _writeData(y % 256);
+  _writeData(y / 256);
 #else // rotated 180, top near connection
   _writeCommand(0x11); // set ram entry mode
   _writeData(0x00);    // x decrease, y decrease
@@ -311,15 +306,15 @@ void GxEPD2_290_GDEY029T71H::_setPartialRamArea(uint16_t x, uint16_t y, uint16_t
   _writeData((x + w - 1) / 8);
   _writeData(x / 8);
   _writeCommand(0x45);
-  _writeData(((y + h - 1) & 0xFF));
-  _writeData((((y + h - 1) >> 8) & 0xFF));
-  _writeData((y & 0xFF));
-  _writeData(((y >> 8) & 0xFF));
+  _writeData((y + h - 1) % 256);
+  _writeData((y + h - 1) / 256);
+  _writeData(y % 256);
+  _writeData(y / 256);
   _writeCommand(0x4e);
   _writeData((x + w - 1) / 8);
   _writeCommand(0x4f);
-  _writeData(((y + h - 1) & 0xFF));
-  _writeData((((y + h - 1) >> 8) & 0xFF));
+  _writeData((y + h - 1) % 256);
+  _writeData((y + h - 1) / 256);
 #endif
 }
 
