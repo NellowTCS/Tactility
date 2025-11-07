@@ -1,16 +1,16 @@
-#include "Ssd1681Display.h"
+#include "Ssd1685Display.h"
 
 #include <Tactility/Log.h>
 #include <esp_lcd_panel_commands.h>
 #include <esp_lcd_panel_dev.h>
-#include <esp_lcd_panel_ssd1681.h>
+#include <esp_lcd_panel_ssd1685.h>
 #include <esp_lvgl_port.h>
 #include <esp_lcd_panel_ops.h>
 #include <driver/spi_master.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-bool Ssd1681Display::createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) {
+bool Ssd1685Display::createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) {
     const esp_lcd_panel_io_spi_config_t io_config = {
         .cs_gpio_num = configuration->csPin,
         .dc_gpio_num = configuration->dcPin,
@@ -38,7 +38,7 @@ bool Ssd1681Display::createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) {
     return true;
 }
 
-bool Ssd1681Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t& panelHandle) {
+bool Ssd1685Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t& panelHandle) {
     if (configuration->resetPin != GPIO_NUM_NC) {
         gpio_config_t reset_gpio_config = {
             .pin_bit_mask = 1ULL << configuration->resetPin,
@@ -65,8 +65,8 @@ bool Ssd1681Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         .vendor_config = &vendorConfig,
     };
 
-    if (esp_lcd_new_panel_ssd1681(ioHandle, &panel_config, &panelHandle) != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to create SSD1681 panel");
+    if (esp_lcd_new_panel_ssd1685(ioHandle, &panel_config, &panelHandle) != ESP_OK) {
+        TT_LOG_E(TAG, "Failed to create SSD1685 panel");
         return false;
     }
 
@@ -85,12 +85,12 @@ bool Ssd1681Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         return false;
     }
 
-    TT_LOG_I(TAG, "SSD1681 e-paper display initialized successfully");
+    TT_LOG_I(TAG, "SSD1685 e-paper display initialized successfully");
 
     return true;
 }
 
-lvgl_port_display_cfg_t Ssd1681Display::getLvglPortDisplayConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) {
+lvgl_port_display_cfg_t Ssd1685Display::getLvglPortDisplayConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) {
     bool swap_xy = (configuration->rotation == 1 || configuration->rotation == 3);
     bool mirror_x = (configuration->rotation == 2 || configuration->rotation == 3);
     bool mirror_y = (configuration->rotation == 1 || configuration->rotation == 2);

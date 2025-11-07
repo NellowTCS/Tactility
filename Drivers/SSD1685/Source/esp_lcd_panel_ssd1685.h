@@ -15,7 +15,7 @@ extern "C" {
 #endif
 
 /**
-* @brief Prototype of ssd1681 driver event callback
+* @brief Prototype of ssd1685 driver event callback
 *
 * @param[in] handle    esp_lcd_panel_handle_t esp_lcd driver handle
 * @param[in] edata     reserved
@@ -26,14 +26,14 @@ extern "C" {
 typedef bool (*esp_lcd_epaper_panel_cb_t)(const esp_lcd_panel_handle_t handle, const void *edata, void *user_data);
 
 /**
- * @brief Type of ssd1681 e-paper callbacks
+ * @brief Type of ssd1685 e-paper callbacks
  */
 typedef struct {
     esp_lcd_epaper_panel_cb_t on_epaper_refresh_done;  /*!< Callback invoked when e-paper refresh finishes */
 } epaper_panel_callbacks_t;
 
 /**
- * @brief Type of additional configuration needed by ssd1681 e-paper panel
+ * @brief Type of additional configuration needed by ssd1685 e-paper panel
  *        Please set the object of this struct to esp_lcd_panel_dev_config_t->vendor_config
  */
 typedef struct {
@@ -42,22 +42,22 @@ typedef struct {
                                 *   Image rotation and mirror is limited when enabling. */
     int width;                 /*!< Panel width in pixels */
     int height;                /*!< Panel height in pixels */
-} esp_lcd_ssd1681_config_t;
+} esp_lcd_ssd1685_config_t;
 
 /**
- * @brief Enum of colors available of ssd1681 e-paper
- *        Some of the ssd1681 e-paper panels support not only black pixels but also red pixels.
+ * @brief Enum of colors available of ssd1685 e-paper
+ *        Some of the ssd1685 e-paper panels support not only black pixels but also red pixels.
  *        Use this enum to select the color of the bitmap you want to display.
  *        Need be set using `epaper_panel_set_bitmap_color()` before calling `epaper_panel_draw_bitmap()`.
- * @note Default to `SSD1681_EPAPER_BITMAP_BLACK` if not set.
+ * @note Default to `SSD1685_EPAPER_BITMAP_BLACK` if not set.
  */
 typedef enum {
-    SSD1681_EPAPER_BITMAP_BLACK, /*!< Draw the bitmap in black */
-    SSD1681_EPAPER_BITMAP_RED    /*!< Draw the bitmap in red */
-} esp_lcd_ssd1681_bitmap_color_t;
+    SSD1685_EPAPER_BITMAP_BLACK, /*!< Draw the bitmap in black */
+    SSD1685_EPAPER_BITMAP_RED    /*!< Draw the bitmap in red */
+} esp_lcd_ssd1685_bitmap_color_t;
 
 /**
- * @brief Create LCD panel for model ssd1681 e-Paper
+ * @brief Create LCD panel for model ssd1685 e-Paper
  * @attention
  *        Need to call `gpio_install_isr_service()` before calling this function.
  * @param[in] io LCD panel IO handle
@@ -68,7 +68,7 @@ typedef enum {
  *          - ESP_ERR_NO_MEM        if out of memory
  *          - ESP_OK                on success
  */
-esp_err_t esp_lcd_new_panel_ssd1681(const esp_lcd_panel_io_handle_t io, const esp_lcd_panel_dev_config_t *panel_dev_config,
+esp_err_t esp_lcd_new_panel_ssd1685(const esp_lcd_panel_io_handle_t io, const esp_lcd_panel_dev_config_t *panel_dev_config,
                                     esp_lcd_panel_handle_t *ret_panel);
 
 /**
@@ -90,15 +90,15 @@ esp_err_t epaper_panel_refresh_screen(esp_lcd_panel_t *panel);
 /**
  * @brief Set the color of the next bitmap
  *
- * @note The SSD1681 has two separate vrams. One for black and the other for red(or maybe some other color).
+ * @note The SSD1685 has two separate vrams. One for black and the other for red(or maybe some other color).
  *       Call this function to set which vram the next bitmap would write into.
  *       If you set `epaper_panel_invert_color()` to false, then 0 means WHITE.
  *
  * @param[in] panel LCD panel handle
- * @param[in] color a enum value, SSD1681_EPAPER_BITMAP_BLACK or SSD1681_EPAPER_BITMAP_RED
+ * @param[in] color a enum value, SSD1685_EPAPER_BITMAP_BLACK or SSD1685_EPAPER_BITMAP_RED
  * @return ESP_OK                on success
  */
-esp_err_t epaper_panel_set_bitmap_color(esp_lcd_panel_t *panel, esp_lcd_ssd1681_bitmap_color_t color);
+esp_err_t epaper_panel_set_bitmap_color(esp_lcd_panel_t *panel, esp_lcd_ssd1685_bitmap_color_t color);
 
 /**
  * @brief Set the callback function
@@ -125,7 +125,7 @@ esp_err_t epaper_panel_register_event_callbacks(esp_lcd_panel_t *panel, epaper_p
  *
  * @param[in] panel LCD panel handle
  * @param[in] lut your custom lut array
- * @param[in] size size of your lut array, make sure it is SSD1681_LUT_SIZE bytes
+ * @param[in] size size of your lut array, make sure it is SSD1685_LUT_SIZE bytes
  * @return  ESP_OK                on success
  *          ESP_ERR_INVALID_ARG   if parameter is invalid
  */

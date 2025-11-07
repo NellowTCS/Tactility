@@ -1,8 +1,8 @@
 #include "Display.h"
-#include <Ssd1681Display.h>
+#include <Ssd1685Display.h>
 
-std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
-    auto config = std::make_unique<Ssd1681Display::Configuration>(
+std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {[]
+    auto config = std::make_unique<Ssd1685Display::Configuration>(
         EPD_SPI_HOST,   // spiHost
         EPD_PIN_CS,     // csPin
         EPD_PIN_DC,     // dcPin
@@ -14,9 +14,9 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         nullptr         // touch device
     );
 
-    // SSD1681 panels route source lines with an 8-pixel offset; compensate via panel gap
+    // SSD1685 panels route source lines with an 8-pixel offset; compensate via panel gap
     config->gapX = 8;
     config->gapY = 0;
 
-    return std::make_shared<Ssd1681Display>(std::move(config));
+    return std::make_shared<Ssd1685Display>(std::move(config));
 }

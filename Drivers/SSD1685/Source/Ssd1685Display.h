@@ -8,11 +8,11 @@
 #include <driver/spi_master.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_types.h>
-#include <esp_lcd_panel_ssd1681.h>
+#include <esp_lcd_panel_ssd1685.h>
 
-#define TAG "ssd1681_display"
+#define TAG "ssd1685_display"
 
-class Ssd1681Display final : public EspLcdDisplay {
+class Ssd1685Display final : public EspLcdDisplay {
 
 public:
 
@@ -62,7 +62,7 @@ public:
 private:
 
     std::unique_ptr<Configuration> configuration;
-    esp_lcd_ssd1681_config_t vendorConfig;
+    esp_lcd_ssd1685_config_t vendorConfig;
 
     bool createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) override;
 
@@ -72,7 +72,7 @@ private:
 
 public:
 
-    explicit Ssd1681Display(std::unique_ptr<Configuration> inConfiguration) :
+    explicit Ssd1685Display(std::unique_ptr<Configuration> inConfiguration) :
         EspLcdDisplay(tt::hal::spi::getLock(inConfiguration->spiHost)),
         configuration(std::move(inConfiguration)),
         vendorConfig{configuration->busyPin, false, static_cast<int>(configuration->width), static_cast<int>(configuration->height)}
@@ -83,9 +83,9 @@ public:
                 configuration->width, configuration->height);
     }
 
-    std::string getName() const override { return "SSD1681"; }
+    std::string getName() const override { return "SSD1685"; }
 
-    std::string getDescription() const override { return "SSD1681/SSD1685 e-paper display"; }
+    std::string getDescription() const override { return "SSD1685 e-paper display"; }
 
     std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable getTouchDevice() override { return configuration->touch; }
 
