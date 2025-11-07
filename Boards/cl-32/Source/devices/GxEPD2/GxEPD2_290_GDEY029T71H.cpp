@@ -396,11 +396,15 @@ void GxEPD2_290_GDEY029T71H::_Update_Full()
 
 void GxEPD2_290_GDEY029T71H::_Update_Part()
 {
-  _writeCommand(0x21); // Display Update Controll
+  _writeCommand(0x21); // Display Update Control
   _writeData(0x00);    // RED normal
   _writeData(0x00);    // 200x384
+  
+  _writeCommand(0x3C); // BorderWaveform 
+  _writeData(0xC0);
+  
   _writeCommand(0x22);
-  _writeData(0xdc);
+  _writeData(0xdf);
   _writeCommand(0x20);
   _waitWhileBusy("_Update_Part", partial_refresh_time);
   _power_is_on = true;
