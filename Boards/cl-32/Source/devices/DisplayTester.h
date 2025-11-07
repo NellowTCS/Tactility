@@ -13,4 +13,9 @@ namespace display_tester {
     // and a centered label). The function will check whether LVGL is started for the provided
     // display and do nothing if not.
     void runLvglTest(GxEPD2Display* display);
+
+    // Run a diagnostic scanline test that writes a unique byte pattern per scanline.
+    // This is useful to detect stride/rotation/shift bugs: each physical row is filled
+    // with a distinct byte value so any wrapped/repeated/shifted regions are obvious.
+    void runScanlineTest(GxEPD2Display* display);
 }

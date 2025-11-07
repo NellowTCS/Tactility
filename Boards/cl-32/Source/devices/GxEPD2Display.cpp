@@ -1,5 +1,6 @@
 #include "GxEPD2Display.h"
 #include "GxEPD2/GxEPD2_290_GDEY029T71H.h"
+#include "DisplayTester.h"
 
 #include <esp_log.h>
 #include <esp_heap_caps.h>
@@ -268,6 +269,10 @@ bool GxEPD2Display::startLvgl() {
 
     ESP_LOGI(TAG, "LVGL started successfully (physical=%ux%u logical=%dx%d rotation=%d mode=FULL)",
              _config.width, _config.height, hor_res, ver_res, (int)lv_rotation);
+
+    
+    // Run tests
+    void display_tester::runTests(this);
 
     return true;
 }

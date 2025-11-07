@@ -1,3 +1,4 @@
+ url=https://github.com/NellowTCS/Tactility/blob/395ff83aef3679c3adb51ce6f3bd598adbd6f8f3/Boards/cl-32/Source/devices/DisplayTester.cpp
 #include "DisplayTester.h"
 #include "GxEPD2Display.h"
 
@@ -68,6 +69,44 @@ static void test_three_stripes(GxEPD2Display* disp)
     heap_caps_free(right);
 }
 
+// Write each scanline with a unique byte value so repeated/shifted regions
+// are easy to spot. For row r we fill every byte in that row with the value (uint8_t)r.
+// This is a low-cost test (one buffer) that highlights stride/rotation/source-shift bugs.
+static void test_scanline_pattern(GxEPD2Display* disp)
+{
+    if (!disp) return;
+    const int w = disp->getWidth();
+    const int h = disp->getHeight();
+    const int row_bytes = (w + 7) / 8;
+    size_t total = (size_t)row_bytes * (size_t)h;
+    uint8_t* buf = (uint8_t*)heap_caps_malloc(total, MALLOC_CAP_DMA);
+    if (!buf) {
+        ESP_LOGE(TAG, "alloc failed for scanline pattern");
+        return;
+    }
+
+    ESP_LOGI(TAG, "Scanline pattern test: w=%d h=%d row_bytes=%d total=%u", w, h, row_bytes, (unsigned)total);
+
+    // Fill each row with a unique value. This will create horizontal bands of different
+    // byte patterns; if the driver writes using incorrect stride/orientation the bands
+    // will appear duplicated, wrapped, or shifted.
+    for (int r = 0; r < h; ++r) {
+        uint8_t value = (uint8_t)(r & 0xFF);
+        uint8_t* row_ptr = buf + (size_t)r * row_bytes;
+        memset(row_ptr, value, row_bytes);
+    }
+
+    // Log a small sample of the first few bytes for debugging visibility
+    if (h > 0 && row_bytes > 0) {
+        ESP_LOGI(TAG, "First row sample bytes: 0x%02X 0x%02X 0x%02X", buf[0], buf[1 % row_bytes], buf[2 % row_bytes]);
+    }
+
+    // Write the full buffer to the panel and perform a full refresh
+    disp->writeRawImage(buf, 0, 0, w, h, false, false);
+    disp->refreshDisplay(false); // full refresh so it's easy to observe
+    heap_caps_free(buf);
+}
+
 // LVGL test: create a simple LVGL screen with three horizontal bands and a centered label.
 // This test requires LVGL to be running and the display to have an LVGL display object.
 static void test_lvgl(GxEPD2Display* disp)
@@ -129,6 +168,12 @@ void runLvglTest(GxEPD2Display* display)
     test_lvgl(display);
 }
 
+// Public helper to run the scanline diagnostic
+void runScanlineTest(GxEPD2Display* display)
+{
+    test_scanline_pattern(display);
+}
+
 void runTests(GxEPD2Display* display)
 {
     ESP_LOGI(TAG, "=== perform_display_tests START ===");
@@ -139,6 +184,10 @@ void runTests(GxEPD2Display* display)
     vTaskDelay(pdMS_TO_TICKS(700));
     // 3 stripes (left/mid/right) so you can see mapping in one shot
     test_three_stripes(display);
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    // Scanline diagnostic to reveal stride/rotation/shift issues
+    test_scanline_pattern(display);
     vTaskDelay(pdMS_TO_TICKS(2000));
 
     // 4. Clear screen to White (0xFF)
