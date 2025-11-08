@@ -51,6 +51,10 @@ typedef struct {
 
 typedef struct ssd1680_context_t* ssd1680_handle_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 esp_err_t ssd1680_init(const ssd1680_config_t *config, ssd1680_handle_t* out_handle);
 esp_err_t ssd1680_deinit(ssd1680_handle_t *ctx);
 
@@ -74,3 +78,7 @@ esp_err_t ssd1680_flush(ssd1680_handle_t handle, ssd1680_rect_t rect);
 esp_err_t ssd1680_end_frame(ssd1680_handle_t handle);
 
 esp_err_t ssd1680_wait_until_idle(ssd1680_handle_t handle);
+
+#ifdef __cplusplus
+}
+#endif
