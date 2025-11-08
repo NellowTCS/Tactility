@@ -251,7 +251,7 @@ esp_err_t epaper_panel_refresh_screen(esp_lcd_panel_t *panel)
     
     // Check if a refresh is already in progress
     if (epaper_panel->_refresh_in_progress) {
-        ESP_LOGD(TAG, "Refresh already in progress, skipping");
+        ESP_LOGI(TAG, "Refresh already in progress, skipping");
         return ESP_OK;
     }
     
@@ -349,7 +349,7 @@ esp_lcd_new_panel_ssd1685(const esp_lcd_panel_io_handle_t io, const esp_lcd_pane
         // Enable GPIO intr only before refreshing, to avoid other commands caused intr trigger
         gpio_intr_disable((gpio_num_t)epaper_panel->busy_gpio_num);
     }
-    ESP_LOGD(TAG, "new epaper panel @%p", epaper_panel);
+    ESP_LOGI(TAG, "new epaper panel @%p", epaper_panel);
     return ret;
 err:
     if (epaper_panel) {
@@ -379,7 +379,7 @@ static esp_err_t epaper_panel_del(esp_lcd_panel_t *panel)
         // Should not free if buffer is not allocated by driver
         free(epaper_panel->_framebuffer);
     }
-    ESP_LOGD(TAG, "del ssd1685 epaper panel @%p", epaper_panel);
+    ESP_LOGI(TAG, "del ssd1685 epaper panel @%p", epaper_panel);
     free(epaper_panel);
     return ESP_OK;
 }
@@ -441,7 +441,7 @@ static esp_err_t epaper_panel_init(esp_lcd_panel_t *panel)
         0x00
     }, 3), TAG, "OUTPUT_CTRL err");
     
-    // Data entry mode - OFFICIAL VALUE: 0x01 (NOT 0x03!)
+    // Data entry mode
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_DATA_ENTRY_MODE, 
         (uint8_t[]) {0x01}, 1), TAG, "DATA_ENTRY err");
     
@@ -470,6 +470,9 @@ static esp_err_t epaper_panel_init(esp_lcd_panel_t *panel)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_VCOM_REG, 
         (uint8_t[]) {0x20}, 1), TAG, "VCOM err");
     
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_DISP_UPDATE_CTRL, 
+        (uint8_t[]) {0x00, 0x80}, 2), TAG, "DISP_UPDATE_CTRL err");
+    
     // Set initial cursor to 0,0
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, SSD1685_CMD_SET_INIT_X_ADDR_COUNTER, 
         (uint8_t[]) {SSD1685_SOURCE_SHIFT >> 3}, 1), TAG, "INIT_X err");
@@ -496,8 +499,6 @@ static esp_err_t epaper_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, i
     if (y_end > epaper_panel->height) y_end = epaper_panel->height;
     
     if (x_start >= x_end || y_start >= y_end) {
-        ESP_LOGW(TAG, "draw_bitmap: Invalid/empty region after clamping: x=%d..%d y=%d..%d",
-                 x_start, x_end, y_start, y_end);
         return ESP_OK;
     }
     
@@ -507,42 +508,38 @@ static esp_err_t epaper_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, i
     int len_y = y_end - y_start;
     int buffer_size = len_x * len_y / 8;
     
-    ESP_LOGI(TAG, "draw_bitmap: x=%d..%d y=%d..%d (len %dx%d) swap_xy=%d mirror_x=%d mirror_y=%d",
+    ESP_LOGI(TAG, "draw_bitmap: x=%d..%d y=%d..%d (len %dx%d) swap=%d mirror_x=%d mirror_y=%d non_copy=%d",
              x_start, x_end, y_start, y_end, len_x, len_y,
-             epaper_panel->_swap_xy, epaper_panel->_mirror_x, epaper_panel->_mirror_y);
+             epaper_panel->_swap_xy, epaper_panel->_mirror_x, epaper_panel->_mirror_y, epaper_panel->_non_copy_mode);
     
-    // Process bitmap data
-    if (!epaper_panel->_non_copy_mode) {
-        process_bitmap(panel, len_x, len_y, buffer_size, color_data);
-    } else {
+    // CRITICAL: When LVGL has already rotated the data (swap_xy=1), it comes pre-rotated!
+    // Don't transform it again - just use it directly
+    if (epaper_panel->_non_copy_mode || (epaper_panel->_swap_xy && epaper_panel->_mirror_y)) {
+        // Data is already in correct format (either user provided or LVGL pre-rotated)
         epaper_panel->_framebuffer = (uint8_t *)color_data;
-        if (!esp_ptr_dma_capable(epaper_panel->_framebuffer)) {
-            ESP_LOGW(TAG, "Bitmap not DMA capable");
-        }
+        ESP_LOGI(TAG, "Using data directly (no transform)");
+    } else {
+        // Only transform if we need to
+        ESP_LOGI(TAG, "Transforming data via process_bitmap");
+        process_bitmap(panel, len_x, len_y, buffer_size, color_data);
     }
     
-    // Use official pattern - set area and cursor before writing data
-    // Set RAM area
+    // Calculate addresses
     uint8_t x_start_byte = (uint8_t)((x_start >> 3) & 0xff);
     uint8_t x_end_byte = (uint8_t)(((x_end - 1) >> 3) & 0xff);
-    
     uint8_t y_start_low = (uint8_t)(y_start & 0xff);
     uint8_t y_start_high = (uint8_t)((y_start >> 8) & 0xff);
     uint8_t y_end_low = (uint8_t)((y_end - 1) & 0xff);
     uint8_t y_end_high = (uint8_t)(((y_end - 1) >> 8) & 0xff);
     
-    ESP_LOGI(TAG, "Setting area: RAMX=[%d,%d] RAMY=[%d,%d]", 
-             x_start_byte, x_end_byte, y_start, y_end - 1);
-    
-    // Set RAMX area
+    // Set RAM area
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1685_CMD_SET_RAMX_START_END_POS, 
         (uint8_t[]) {x_start_byte, x_end_byte}, 2), TAG, "RAMX err");
 
-    // Set RAMY area (NO SOURCE_SHIFT here - that's handled in cursor)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1685_CMD_SET_RAMY_START_END_POS, 
         (uint8_t[]) {y_start_low, y_start_high, y_end_low, y_end_high}, 4), TAG, "RAMY err");
 
-    // Set cursor position (with SOURCE_SHIFT)
+    // Set cursor (with SOURCE_SHIFT for X only)
     uint8_t cursor_x = (uint8_t)(((x_start + SSD1685_SOURCE_SHIFT) >> 3) & 0xff);
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1685_CMD_SET_INIT_X_ADDR_COUNTER, 
         (uint8_t[]) {cursor_x}, 1), TAG, "INIT_X err");
@@ -550,28 +547,22 @@ static esp_err_t epaper_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, i
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1685_CMD_SET_INIT_Y_ADDR_COUNTER, 
         (uint8_t[]) {y_start_low, y_start_high}, 2), TAG, "INIT_Y err");
 
-    // Set data entry mode based on swap_xy
-    uint8_t data_entry_mode;
-    if (epaper_panel->_swap_xy) {
-        // When swapped, LVGL is sending rotated data
-        // Use mode that works with the rotation
-        data_entry_mode = 0x01;  // Match official: Y decrement, X increment
-    } else {
-        data_entry_mode = 0x01;  // Official default
-    }
-    
+    // Set data entry mode
+    uint8_t data_entry_mode = 0x01;  // Official default
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(epaper_panel->io, SSD1685_CMD_DATA_ENTRY_MODE, 
         (uint8_t[]) {data_entry_mode}, 1), TAG, "DATA_ENTRY err");
 
     // Write VRAM
     if (epaper_panel->bitmap_color == SSD1685_EPAPER_BITMAP_BLACK) {
+        ESP_LOGI(TAG, "Writing BLACK VRAM: %d bytes", buffer_size);
         ESP_RETURN_ON_ERROR(panel_epaper_set_vram(epaper_panel->io,
                             (uint8_t *)(epaper_panel->_framebuffer), NULL, buffer_size),
-                            TAG, "set_vram err");
+                            TAG, "set_vram BLACK err");
     } else if (epaper_panel->bitmap_color == SSD1685_EPAPER_BITMAP_RED) {
+        ESP_LOGI(TAG, "Writing RED VRAM: %d bytes", buffer_size);
         ESP_RETURN_ON_ERROR(panel_epaper_set_vram(epaper_panel->io, NULL,
                             (uint8_t *)(epaper_panel->_framebuffer), buffer_size),
-                            TAG, "set_vram err");
+                            TAG, "set_vram RED err");
     }
     
     // Rate-limited refresh
@@ -582,9 +573,13 @@ static esp_err_t epaper_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, i
     int busy_state = (epaper_panel->busy_gpio_num >= 0) ? gpio_get_level((gpio_num_t)epaper_panel->busy_gpio_num) : 0;
     
     if (!busy_state && !epaper_panel->_refresh_in_progress && time_since_last_refresh >= MIN_REFRESH_INTERVAL_MS) {
-        ESP_LOGI(TAG, "Triggering refresh (time since last: %lu ms)", time_since_last_refresh);
+        ESP_LOGI(TAG, "Refresh condition met: busy=%d refresh_in_progress=%d time_since_last=%lu",
+                 busy_state, epaper_panel->_refresh_in_progress, time_since_last_refresh);
         epaper_panel->_last_refresh_time_ms = current_time_ms;
         ESP_RETURN_ON_ERROR(epaper_panel_refresh_screen(panel), TAG, "refresh err");
+    } else {
+        ESP_LOGI(TAG, "Refresh skipped: busy=%d in_progress=%d time=%lu", 
+                 busy_state, epaper_panel->_refresh_in_progress, time_since_last_refresh);
     }
     
     return ESP_OK;
