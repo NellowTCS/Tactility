@@ -10,37 +10,37 @@ namespace tt::hal {
 class UiMetrics {
 public:
     // Toolbar metrics
-    int toolbarHeight;           ///< Height of the top toolbar in pixels
-    const _lv_font_t* toolbarFont; ///< Font to use for toolbar text
-    int toolbarTitlePadding;     ///< Left padding for toolbar title text
-    int toolbarButtonInset;      ///< Inset from toolbar edge for buttons
+    int toolbarHeight = 0;           ///< Height of the top toolbar in pixels
+    const _lv_font_t* toolbarFont = nullptr; ///< Font to use for toolbar text
+    int toolbarTitlePadding = 0;     ///< Left padding for toolbar title text
+    int toolbarButtonInset = 0;      ///< Inset from toolbar edge for buttons
     
     // Widget metrics - buttons
-    int buttonPadding;           ///< Internal padding for button widgets
-    int buttonRadius;            ///< Corner radius for button widgets
+    int buttonPadding = 0;           ///< Internal padding for button widgets
+    int buttonRadius = 0;            ///< Corner radius for button widgets
     
     // Widget metrics - objects (containers)
-    int objectPadding;           ///< Internal padding for container objects
-    int objectGap;               ///< Gap between flex items in containers
-    int objectRadius;            ///< Corner radius for container objects
-    int objectBorderWidth;       ///< Border width for container objects
+    int objectPadding = 0;           ///< Internal padding for container objects
+    int objectGap = 0;               ///< Gap between flex items in containers
+    int objectRadius = 0;            ///< Corner radius for container objects
+    int objectBorderWidth = 0;       ///< Border width for container objects
     
     // Widget metrics - lists
-    int listPadding;             ///< Padding for list widgets
-    int listButtonVertPadding;   ///< Vertical padding for list item buttons
+    int listPadding = 0;             ///< Padding for list widgets
+    int listButtonVertPadding = 0;   ///< Vertical padding for list item buttons
     
     // Widget metrics - other
-    int switchWidth;             ///< Width of switch widgets in pixels
-    int switchHeight;            ///< Height of switch widgets in pixels
-    int dropdownHeight;          ///< Maximum height for dropdown lists
-    int textareaPadding;         ///< Internal padding for textarea widgets
+    int switchWidth = 0;             ///< Width of switch widgets in pixels
+    int switchHeight = 0;            ///< Height of switch widgets in pixels
+    int dropdownHeight = 0;          ///< Maximum height for dropdown lists
+    int textareaPadding = 0;         ///< Internal padding for textarea widgets
     
     // Application-specific metrics
-    int launcherButtonSize;      ///< Size of launcher app buttons
-    int generalVerticalPadding;  ///< General vertical padding for settings etc
-    int localeSettingsOffset;    ///< Horizontal offset for timezone label
-    int systemInfoPadding;       ///< Bottom padding for system info labels
-    int wifiManageScrollbarWidth; ///< Vertical padding for wifi manage items
+    int launcherButtonSize = 0;      ///< Size of launcher app buttons
+    int generalVerticalPadding = 0;  ///< General vertical padding for settings etc
+    int localeSettingsOffset = 0;    ///< Horizontal offset for timezone label
+    int systemInfoPadding = 0;       ///< Bottom padding for system info labels
+    int wifiManageScrollbarWidth = 0; ///< Vertical padding for wifi manage items
     
     /**
      * Calculate UI metrics based on screen dimensions.
@@ -65,7 +65,10 @@ public:
      */
     static UiMetrics calculateFromDisplay();
 
-private:
+    /**
+     * Default constructor - initializes all fields to zero.
+     * Use calculate() or calculateFromDisplay() to get proper values.
+     */
     UiMetrics() = default;
 };
 
