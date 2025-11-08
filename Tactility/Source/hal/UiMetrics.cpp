@@ -10,7 +10,8 @@ constexpr auto* TAG = "UiMetrics";
 
 enum class ScreenClass {
     Tiny,      // < 100px min dimension
-    Small,     // < 200px min dimension
+    Small,     // < 150px min dimension  
+    Medium,    // < 200px min dimension
     Large,     // < 400px min dimension
     ExtraLarge // >= 400px min dimension
 };
@@ -18,8 +19,10 @@ enum class ScreenClass {
 static ScreenClass getScreenClass(int minDimension) {
     if (minDimension < 100) {
         return ScreenClass::Tiny;
-    } else if (minDimension < 200) {
+    } else if (minDimension < 150) {
         return ScreenClass::Small;
+    } else if (minDimension < 200) {
+        return ScreenClass::Medium;
     } else if (minDimension < 400) {
         return ScreenClass::Large;
     } else {
@@ -31,6 +34,7 @@ static const char* getScreenClassName(ScreenClass screenClass) {
     switch (screenClass) {
         case ScreenClass::Tiny:       return "Tiny";
         case ScreenClass::Small:      return "Small";
+        case ScreenClass::Medium:     return "Medium";
         case ScreenClass::Large:      return "Large";
         case ScreenClass::ExtraLarge: return "ExtraLarge";
         default:                      return "Unknown";
@@ -77,8 +81,8 @@ UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight) {
             break;
             
         case ScreenClass::Small:
-            // For small displays (Cardputer 240x135, StickC 135x240)
-            // Compact UI - original "Smallest" scale
+            // For small displays (Cardputer 135px, StickC 135px)
+            // Very compact UI - original "Smallest" scale
             metrics.toolbarHeight = 22;
             metrics.toolbarFont = &lv_font_montserrat_14;
             metrics.toolbarTitlePadding = 4;
@@ -105,6 +109,37 @@ UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight) {
             metrics.localeSettingsOffset = -2;
             metrics.systemInfoPadding = 2;
             metrics.wifiManageScrollbarWidth = 2;
+            break;
+            
+        case ScreenClass::Medium:
+            // For medium displays
+            // Balanced between Small and Large
+            metrics.toolbarHeight = 28;
+            metrics.toolbarFont = &lv_font_montserrat_14;
+            metrics.toolbarTitlePadding = 6;
+            metrics.toolbarButtonInset = 7;
+            
+            metrics.buttonPadding = 4;
+            metrics.buttonRadius = 4;
+            
+            metrics.objectPadding = 4;
+            metrics.objectGap = 6;
+            metrics.objectRadius = 4;
+            metrics.objectBorderWidth = 1;
+            
+            metrics.listPadding = 3;
+            metrics.listButtonVertPadding = 3;
+            
+            metrics.switchWidth = 30;
+            metrics.switchHeight = 18;
+            metrics.dropdownHeight = 120;
+            metrics.textareaPadding = 4;
+            
+            metrics.launcherButtonSize = 48;
+            metrics.generalVerticalPadding = 3;
+            metrics.localeSettingsOffset = -6;
+            metrics.systemInfoPadding = 6;
+            metrics.wifiManageScrollbarWidth = 5;
             break;
             
         case ScreenClass::Large:

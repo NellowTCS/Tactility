@@ -44,6 +44,10 @@ void GuiService::softwareKeyboardHide() {
 
     if (isStarted && keyboard != nullptr) {
         lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+        lv_keyboard_set_textarea(keyboard, nullptr);
+        
+        // Deactivate the keyboard group so button navigation returns to normal
+        lvgl::software_keyboard_deactivate();
     }
 
     unlock();
