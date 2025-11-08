@@ -13,7 +13,7 @@ constexpr auto EPD_PIN_RST = GPIO_NUM_12;
 constexpr auto EPD_PIN_BUSY = GPIO_NUM_14;
 
 // Display specifications
-constexpr auto EPD_WIDTH = 168;
+constexpr auto EPD_WIDTH = 384;
 constexpr auto EPD_HEIGHT = 384;
 
 // No backlight for e-paper

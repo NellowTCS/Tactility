@@ -54,9 +54,17 @@ bool Ssd168xDisplay::start()
     memset(fb, 0xFF, fb_size); // White
 
     // Initialize ssd1680 driver
+    ssd1680_rotation_t hw_rotation = SSD1680_ROT_000;
+    switch (configuration.rotation) {
+        case 0: hw_rotation = SSD1680_ROT_000; break;
+        case 1: hw_rotation = SSD1680_ROT_090; break;
+        case 2: hw_rotation = SSD1680_ROT_180; break;
+        case 3: hw_rotation = SSD1680_ROT_270; break;
+    }
+    
     ssd1680_config_t cfg = {
         .controller = configuration.controller,
-        .rotation = SSD1680_ROT_000,
+        .rotation = hw_rotation,
         .cols = configuration.width,
         .rows = configuration.height,
         .framebuffer = fb,
