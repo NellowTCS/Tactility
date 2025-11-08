@@ -39,7 +39,7 @@
 - Make WiFi setup app that starts an access point and hosts a webpage to set up the device.
   This will be useful for devices without a screen, a small screen or a non-touch screen.
 - Unify the way displays are dimmed. Some implementations turn off the display when it's fully dimmed. Make this a separate functionality.
-- Try out ILI9342 https://github.com/jbrilha/esp_lcd_ili9342
+- Try out ILI9342 <https://github.com/jbrilha/esp_lcd_ili9342>
 - All drivers (e.g. display, touch, etc.) should call stop() in their destructor, or at least assert that they should not be running.
 - Bug: Turn on WiFi (when testing it wasn't connected/connecting - just active). Open chat. Observe crash.
 - Bug: Crash handling app cannot be exited with an EncoderDevice. (current work-around is to manually reset the device)
@@ -62,7 +62,7 @@
 - Fix bug in T-Deck/etc: esp_lvgl_port settings has a large stack size (~9kB) to fix an issue where the T-Deck would get a stackoverflow. This sometimes happens when WiFi is auto-enabled and you open the app while it is still connecting.
 - Consider using non_null (either via MS GSL, or custom)
 - Fix system time to not be 1980 (use build year as a minimum). Consider keeping track of the last known time.
-- Use std::span or string_view in StringUtils https://youtu.be/FRkJCvHWdwQ?t=2754 
+- Use std::span or string_view in StringUtils <https://youtu.be/FRkJCvHWdwQ?t=2754>
 - Mutex: Implement give/take from ISR support (works only for non-recursive ones)
 - Extend unPhone power driver: add charging status, usb connection status, etc.
 - Clear screen before turning on blacklight (e.g. T-Deck, CYD 2432S028R, etc.)
@@ -75,7 +75,7 @@
 - Bug: CYD 2432S032C screen rotation fails due to touch driver issue
 - Calculator app should show regular text input field on non-touch devices that have a keyboard (Cardputer, T-Lora Pager)
 
-# Nice-to-haves
+## Nice-to-haves
 
 - Considering the lack of callstack debugging for external apps: allow for some debugging to be exposed during a device crash. Apps could report their state (e.g. an integer value) which can be stored during app operation and retrieve after crash. The same can be done for various OS apps and states. We can keep an array of these numbers to keep track of the last X states, to get an idea of what's going on.
 - Audio player app
@@ -90,22 +90,22 @@
 - On crash, try to save the current log to flash or SD card? (this is risky, though, so ask in Discord first)
 - Support more than 1 hardware keyboard (see lvgl::hardware_keyboard_set_indev()). LVGL init currently calls keyboard init, but that part should probably be done from the KeyboardDevice base class.
 
-# App Ideas
+## App Ideas
 
 - Revisit TinyUSB mouse idea: the bugs related to cleanup seem to be fixed in the library.
 - Map widget:
-  https://github.com/portapack-mayhem/mayhem-firmware/blob/b66d8b1aa178d8a9cd06436fea788d5d58cb4c8d/firmware/application/ui/ui_geomap.cpp
-  https://github.com/portapack-mayhem/mayhem-firmware/blob/b66d8b1aa178d8a9cd06436fea788d5d58cb4c8d/firmware/tools/generate_world_map.bin.py
-  https://github.com/portapack-mayhem/mayhem-firmware/releases
-- Weather app: https://lab.flipper.net/apps/flip_weather
-- wget app: https://lab.flipper.net/apps/web_crawler (add profiles for known public APIs?)
+  <https://github.com/portapack-mayhem/mayhem-firmware/blob/b66d8b1aa178d8a9cd06436fea788d5d58cb4c8d/firmware/application/ui/ui_geomap.cpp>
+  <https://github.com/portapack-mayhem/mayhem-firmware/blob/b66d8b1aa178d8a9cd06436fea788d5d58cb4c8d/firmware/tools/generate_world_map.bin.py>
+  <https://github.com/portapack-mayhem/mayhem-firmware/releases>
+- Weather app: <https://lab.flipper.net/apps/flip_weather>
+- wget app: <https://lab.flipper.net/apps/web_crawler> (add profiles for known public APIs?)
 - BlueTooth keyboard app
 - Chip 8 emulator
 - BadUSB (in December 2024, TinyUSB has a bug where uninstalling and re-installing the driver fails)
 - Discord bot
 - IR transceiver app
 - GPS app
-- Investigate CSI https://stevenmhernandez.github.io/ESP32-CSI-Tool/
+- Investigate CSI <https://stevenmhernandez.github.io/ESP32-CSI-Tool/>
 - Compile unix tools to ELF apps?
 - Todo list
 - Calendar
@@ -113,28 +113,28 @@
 - RSS reader
 - Static file web server (with option to specify path and port)
 - Diceware
-- Port TamaFi https://github.com/cifertech/TamaFi
+- Port TamaFi <https://github.com/cifertech/TamaFi>
 
-# App Store
+## App Store
 
 - Register user
-    - Name
-    - Company
-    - Email
-    - Password
+  - Name
+  - Company
+  - Email
+  - Password
 - Create/destroy session
 - List apps
-    - Install app
-    - App ID
-    - App version
+  - Install app
+  - App ID
+  - App version
 - Add/remove API key
 - Upload app
-    - Category
-    - File
-    - Name
-    - Description
+  - Category
+  - File
+  - Name
+  - Description
 - List apps
 
-# Notes on firmware size
+## Notes on firmware size
 
 - adding esp_http_client (with esp_event) added about 100kB

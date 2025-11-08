@@ -3,18 +3,18 @@
 Copy the relevant `sdkconfig.board.*` file into `sdkconfig`.
 This will apply the relevant settings to build the project for your hardware.
 
-# Useful Parameters
+## Useful Parameters
 
-## Enable FPS
+### Enable FPS
 
-```
+```cpp
 CONFIG_LV_USE_OBSERVER=y
 CONFIG_LV_USE_PERF_MONITOR=y
 ```
 
-## Halt on error
+### Halt on error
 
-```
+```cpp
 CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT=y
 # CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT is not set
 ```

@@ -1,6 +1,7 @@
 #include "Tactility/Tactility.h"
 #include "Tactility/hal/Configuration.h"
 #include "Tactility/hal/Device.h"
+#include "Tactility/hal/UiMetrics.h"
 #include "Tactility/hal/gps/GpsInit.h"
 #include "Tactility/hal/i2c/I2cInit.h"
 #include "Tactility/hal/power/PowerDevice.h"
@@ -88,6 +89,10 @@ void init(const Configuration& configuration) {
     sdcard::mountAll(); // Warning: This needs to happen BEFORE displays are initialized on the SPI bus
 
     startDisplays(); // Warning: SPI displays need to start after SPI SD cards are mounted
+
+    // Calculate UI metrics based on display resolution now that displays are initialized
+    TT_LOG_I(TAG, "Calculating UI metrics from display");
+    configuration.uiMetrics = UiMetrics::calculateFromDisplay();
 
     kernel::publishSystemEvent(kernel::SystemEvent::BootInitHalEnd);
 }

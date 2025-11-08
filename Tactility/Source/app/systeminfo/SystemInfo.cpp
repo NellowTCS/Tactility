@@ -143,11 +143,8 @@ static void addMemoryBar(lv_obj_t* parent, const char* label, uint64_t free, uin
     lv_obj_set_width(bottom_label, LV_PCT(100));
     lv_obj_set_style_text_align(bottom_label, LV_TEXT_ALIGN_RIGHT, 0);
 
-    if (hal::getConfiguration()->uiScale == hal::UiScale::Smallest) {
-        lv_obj_set_style_pad_bottom(bottom_label, 2, LV_STATE_DEFAULT);
-    } else {
-        lv_obj_set_style_pad_bottom(bottom_label, 12, LV_STATE_DEFAULT);
-    }
+    const auto& metrics = hal::getConfiguration()->uiMetrics;
+    lv_obj_set_style_pad_bottom(bottom_label, metrics.systemInfoPadding, LV_STATE_DEFAULT);
 }
 
 #if configUSE_TRACE_FACILITY

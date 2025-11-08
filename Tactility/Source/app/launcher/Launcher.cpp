@@ -14,19 +14,9 @@ namespace tt::app::launcher {
 
 constexpr auto* TAG = "Launcher";
 
-static int getButtonSize(hal::UiScale scale) {
-    if (scale == hal::UiScale::Smallest) {
-        return 40;
-    } else {
-        return 64;
-    }
-}
-
 class LauncherApp final : public App {
 
-    static lv_obj_t* createAppButton(lv_obj_t* parent, hal::UiScale uiScale, const char* imageFile, const char* appId, int32_t itemMargin, bool isLandscape) {
-        auto button_size = getButtonSize(uiScale);
-
+    static lv_obj_t* createAppButton(lv_obj_t* parent, int buttonSize, const char* imageFile, const char* appId, int32_t itemMargin, bool isLandscape) {
         auto* apps_button = lv_button_create(parent);
         lv_obj_set_style_pad_all(apps_button, 0, LV_STATE_DEFAULT);
         if (isLandscape) {
@@ -56,7 +46,7 @@ class LauncherApp final : public App {
 
         // Ensure buttons are still tappable when the asset fails to load
         // Icon images are 40x40, so we get some extra padding too
-        lv_obj_set_size(button_image, button_size, button_size);
+        lv_obj_set_size(button_image, buttonSize, buttonSize);
 
         lv_obj_add_event_cb(apps_button, onAppPressed, LV_EVENT_SHORT_CLICKED, (void*)appId);
 
@@ -101,8 +91,8 @@ public:
     void onShow(TT_UNUSED AppContext& app, lv_obj_t* parent) override {
         auto* buttons_wrapper = lv_obj_create(parent);
 
-        auto ui_scale = hal::getConfiguration()->uiScale;
-        auto button_size = getButtonSize(ui_scale);
+        const auto& metrics = hal::getConfiguration()->uiMetrics;
+        auto button_size = metrics.launcherButtonSize;
 
         lv_obj_align(buttons_wrapper, LV_ALIGN_CENTER, 0, 0);
         // lv_obj_set_style_pad_all(buttons_wrapper, 0, LV_STATE_DEFAULT);
@@ -141,9 +131,9 @@ public:
         const auto files_icon_path = lvgl::PATH_PREFIX + paths->getAssetsPath("icon_files.png");
         const auto settings_icon_path = lvgl::PATH_PREFIX + paths->getAssetsPath("icon_settings.png");
 
-        createAppButton(buttons_wrapper, ui_scale, apps_icon_path.c_str(), "AppList", margin, is_landscape_display);
-        createAppButton(buttons_wrapper, ui_scale, files_icon_path.c_str(), "Files", margin, is_landscape_display);
-        createAppButton(buttons_wrapper, ui_scale, settings_icon_path.c_str(), "Settings", margin, is_landscape_display);
+        createAppButton(buttons_wrapper, button_size, apps_icon_path.c_str(), "AppList", margin, is_landscape_display);
+        createAppButton(buttons_wrapper, button_size, files_icon_path.c_str(), "Files", margin, is_landscape_display);
+        createAppButton(buttons_wrapper, button_size, settings_icon_path.c_str(), "Settings", margin, is_landscape_display);
 
         if (shouldShowPowerButton()) {
             auto* power_button = lv_btn_create(parent);

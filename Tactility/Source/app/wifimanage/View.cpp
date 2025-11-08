@@ -165,11 +165,8 @@ void View::updateNetworkList() {
     lv_obj_add_event_cb(enable_on_boot_switch, onEnableOnBootSwitchChanged, LV_EVENT_VALUE_CHANGED, bindings);
     lv_obj_add_event_cb(enable_on_boot_wrapper, onEnableOnBootParentClicked, LV_EVENT_SHORT_CLICKED, enable_on_boot_switch);
 
-    if (hal::getConfiguration()->uiScale == hal::UiScale::Smallest) {
-        lv_obj_set_style_pad_ver(enable_on_boot_wrapper, 2, LV_STATE_DEFAULT);
-    } else {
-        lv_obj_set_style_pad_ver(enable_on_boot_wrapper, 8, LV_STATE_DEFAULT);
-    }
+    const auto& metrics = hal::getConfiguration()->uiMetrics;
+    lv_obj_set_style_pad_ver(enable_on_boot_wrapper, metrics.wifiManageScrollbarWidth, LV_STATE_DEFAULT);
 
     updateEnableOnBootToggle();
 

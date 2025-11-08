@@ -88,7 +88,7 @@ class LocaleSettingsApp final : public App {
 public:
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
-        auto ui_scale = hal::getConfiguration()->uiScale;
+        const auto& metrics = hal::getConfiguration()->uiMetrics;
 
         textResources.load();
 
@@ -127,8 +127,7 @@ public:
         }
 
         lv_label_set_text(timeZoneLabel, timeZoneName.c_str());
-        const int offset = ui_scale == hal::UiScale::Smallest ? -2 : -10;
-        lv_obj_align_to(timeZoneLabel, region_button, LV_ALIGN_OUT_LEFT_MID, offset, 0);
+        lv_obj_align_to(timeZoneLabel, region_button, LV_ALIGN_OUT_LEFT_MID, metrics.localeSettingsOffset, 0);
 
         // Language
 

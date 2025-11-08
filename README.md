@@ -1,4 +1,4 @@
-## Overview
+# Overview
 
 Tactility is an operating system that focuses on the ESP32 microcontroller family.
 

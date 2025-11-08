@@ -14,8 +14,9 @@ Files are upper camel case.
 
 - Files: `^[0-9a-zA-Z]+$`
 - Directories: `^[0-9a-zA-Z]+$`
- 
+
 Example:
+
 ```c++
 SomeFeature.cpp
 SomeFeature.h
@@ -27,6 +28,7 @@ Like `SomeFeaturePrivate.h`
 ### Folders
 
 Project folders include:
+
 - `Source` for source files and public header files
 - `Private` for private header files
 - `Include` for projects that require separate header files
