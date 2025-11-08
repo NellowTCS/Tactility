@@ -56,7 +56,7 @@ bool Ssd168xDisplay::start()
     // Initialize ssd1680 driver
     ssd1680_config_t cfg = {
         .controller = configuration.controller,
-        .rotation = SSD1680_ROT_000,  // We'll handle rotation in LVGL
+        .rotation = SSD1680_ROT_000,
         .cols = configuration.width,
         .rows = configuration.height,
         .framebuffer = fb,
@@ -220,6 +220,8 @@ static inline bool bayer4x4Dither(lv_color_t pixel, int x, int y)
     return brightness > thresh;
 }
 
+// Update lvglFlushCallback to use PARTIAL refresh instead of FULL
+
 void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map)
 {
     auto* self = static_cast<Ssd168xDisplay*>(lv_display_get_user_data(disp));
@@ -293,7 +295,6 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
 
     xSemaphoreGive(self->framebufferMutex);
 
-    // Send to display
     ssd1680_rect_t rect = {
         .x = 0,
         .y = 0,
@@ -301,7 +302,8 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
         .h = (uint16_t)panel_height
     };
 
-    ssd1680_begin_frame(self->ssd1680_handle, SSD1680_REFRESH_FULL);
+    // Use partial refresh for normal updates (fast, no flashing)
+    ssd1680_begin_frame(self->ssd1680_handle, SSD1680_REFRESH_PARTIAL);
     ssd1680_flush(self->ssd1680_handle, rect);
     ssd1680_end_frame(self->ssd1680_handle);
 
