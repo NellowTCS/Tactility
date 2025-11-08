@@ -66,7 +66,6 @@ lv_obj_t* toolbar_create(lv_obj_t* parent, const std::string& title) {
 
     auto* toolbar = reinterpret_cast<Toolbar*>(obj);
     lv_obj_set_width(obj, LV_PCT(100));
-    lv_obj_set_style_pad_all(obj, 0, LV_STATE_DEFAULT);
 
     lv_obj_center(obj);
     lv_obj_set_flex_flow(obj, LV_FLEX_FLOW_ROW);
@@ -79,7 +78,6 @@ lv_obj_t* toolbar_create(lv_obj_t* parent, const std::string& title) {
 
     toolbar->close_button = lv_button_create(close_button_wrapper);
     lv_obj_set_size(toolbar->close_button, metrics.toolbarHeight - metrics.toolbarButtonInset, metrics.toolbarHeight - metrics.toolbarButtonInset);
-    lv_obj_set_style_pad_all(toolbar->close_button, 0, LV_STATE_DEFAULT);
     lv_obj_align(toolbar->close_button, LV_ALIGN_CENTER, 0, 0);
     toolbar->close_button_image = lv_image_create(toolbar->close_button);
     lv_obj_align(toolbar->close_button_image, LV_ALIGN_CENTER, 0, 0);
@@ -87,7 +85,6 @@ lv_obj_t* toolbar_create(lv_obj_t* parent, const std::string& title) {
     auto* title_wrapper = lv_obj_create(obj);
     lv_obj_set_size(title_wrapper, LV_SIZE_CONTENT, LV_PCT(100));
     lv_obj_set_style_bg_opa(title_wrapper, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_all(title_wrapper, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(title_wrapper, 0, LV_STATE_DEFAULT);
     lv_obj_set_flex_grow(title_wrapper, 1);
     lv_obj_set_style_pad_left(title_wrapper, metrics.toolbarTitlePadding, LV_STATE_DEFAULT);
@@ -103,7 +100,6 @@ lv_obj_t* toolbar_create(lv_obj_t* parent, const std::string& title) {
     toolbar->action_container = lv_obj_create(obj);
     lv_obj_set_width(toolbar->action_container, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(toolbar->action_container, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_all(toolbar->action_container, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(toolbar->action_container, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(toolbar->action_container, 0, LV_STATE_DEFAULT);
 
@@ -138,7 +134,6 @@ lv_obj_t* toolbar_add_button_action(lv_obj_t* obj, const char* imageOrButton, bo
 
     auto* action_button = lv_button_create(wrapper);
     lv_obj_set_size(action_button, metrics.toolbarHeight - metrics.toolbarButtonInset, metrics.toolbarHeight - metrics.toolbarButtonInset);
-    lv_obj_set_style_pad_all(action_button, 0, LV_STATE_DEFAULT);
     lv_obj_align(action_button, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_add_event_cb(action_button, callback, LV_EVENT_SHORT_CLICKED, user_data);

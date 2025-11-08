@@ -119,7 +119,6 @@ public:
         lv_obj_set_size(enable_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
         lvgl::obj_set_style_bg_invisible(enable_wrapper);
         lv_obj_set_style_border_width(enable_wrapper, 0, LV_STATE_DEFAULT);
-        lv_obj_set_style_pad_all(enable_wrapper, 0, LV_STATE_DEFAULT);
 
         lv_obj_t* enable_label = lv_label_create(enable_wrapper);
         lv_label_set_text(enable_label, "Enable on boot");

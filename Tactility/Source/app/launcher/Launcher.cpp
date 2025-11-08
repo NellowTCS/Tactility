@@ -18,7 +18,6 @@ class LauncherApp final : public App {
 
     static lv_obj_t* createAppButton(lv_obj_t* parent, int buttonSize, const char* imageFile, const char* appId, int32_t itemMargin, bool isLandscape) {
         auto* apps_button = lv_button_create(parent);
-        lv_obj_set_style_pad_all(apps_button, 0, LV_STATE_DEFAULT);
         if (isLandscape) {
             lv_obj_set_style_margin_hor(apps_button, itemMargin, LV_STATE_DEFAULT);
         } else {
@@ -95,17 +94,16 @@ public:
         auto button_size = metrics.launcherButtonSize;
 
         lv_obj_align(buttons_wrapper, LV_ALIGN_CENTER, 0, 0);
-        // lv_obj_set_style_pad_all(buttons_wrapper, 0, LV_STATE_DEFAULT);
         lv_obj_set_size(buttons_wrapper, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_style_border_width(buttons_wrapper, 0, LV_STATE_DEFAULT);
         lv_obj_set_flex_grow(buttons_wrapper, 1);
 
-        // Fix for button selection (problem with UiScale::Small on Cardputer)
+        // Note: Padding is now handled by the UiMetrics wrapper for lv_obj_create()
+        // Slight extra padding for non-touch devices to help with button selection
         if (!hal::hasDevice(hal::Device::Type::Touch)) {
             lv_obj_set_style_pad_all(buttons_wrapper, 6, LV_STATE_DEFAULT);
-        } else {
-            lv_obj_set_style_pad_all(buttons_wrapper, 0, LV_STATE_DEFAULT);
         }
+        // For touch devices, let the wrapper's objectPadding handle it
 
         const auto* display = lv_obj_get_display(parent);
         const auto horizontal_px = lv_display_get_horizontal_resolution(display);

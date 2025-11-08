@@ -183,7 +183,6 @@ void View::init(lv_obj_t* parent, Mode mode) {
     auto* wrapper = lv_obj_create(parent);
     lv_obj_set_width(wrapper, LV_PCT(100));
     lv_obj_set_style_border_width(wrapper, 0, 0);
-    lv_obj_set_style_pad_all(wrapper, 0, 0);
     lv_obj_set_flex_grow(wrapper, 1);
     lv_obj_set_flex_flow(wrapper, LV_FLEX_FLOW_ROW);
 
@@ -195,7 +194,6 @@ void View::init(lv_obj_t* parent, Mode mode) {
     lv_obj_set_flex_flow(bottom_wrapper, LV_FLEX_FLOW_ROW);
     lv_obj_set_size(bottom_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_style_border_width(bottom_wrapper, 0, 0);
-    lv_obj_set_style_pad_all(bottom_wrapper, 0, 0);
 
     path_textarea = lv_textarea_create(bottom_wrapper);
     lv_textarea_set_one_line(path_textarea, true);

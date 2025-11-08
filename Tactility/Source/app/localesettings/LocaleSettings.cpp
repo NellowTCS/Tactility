@@ -107,7 +107,6 @@ public:
         auto* region_wrapper = lv_obj_create(main_wrapper);
         lv_obj_set_width(region_wrapper, LV_PCT(100));
         lv_obj_set_height(region_wrapper, LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_all(region_wrapper, 0, 0);
         lv_obj_set_style_border_width(region_wrapper, 0, 0);
 
         regionLabel = lv_label_create(region_wrapper);
@@ -134,7 +133,6 @@ public:
         auto* language_wrapper = lv_obj_create(main_wrapper);
         lv_obj_set_width(language_wrapper, LV_PCT(100));
         lv_obj_set_height(language_wrapper, LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_all(language_wrapper, 0, 0);
         lv_obj_set_style_border_width(language_wrapper, 0, 0);
 
         languageLabel = lv_label_create(language_wrapper);

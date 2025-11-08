@@ -156,7 +156,6 @@ void ScreenshotApp::createModeSettingWidgets(lv_obj_t* parent) {
 
     auto* mode_wrapper = lv_obj_create(parent);
     lv_obj_set_size(mode_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(mode_wrapper, 0, 0);
     lv_obj_set_style_border_width(mode_wrapper, 0, 0);
 
     auto* mode_label = lv_label_create(mode_wrapper);
@@ -184,13 +183,11 @@ void ScreenshotApp::createModeSettingWidgets(lv_obj_t* parent) {
 void ScreenshotApp::createFilePathWidgets(lv_obj_t* parent) {
     auto* path_wrapper = lv_obj_create(parent);
     lv_obj_set_size(path_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(path_wrapper, 0, 0);
     lv_obj_set_style_border_width(path_wrapper, 0, 0);
     lv_obj_set_flex_flow(path_wrapper, LV_FLEX_FLOW_ROW);
 
     auto* label_wrapper = lv_obj_create(path_wrapper);
     lv_obj_set_style_border_width(label_wrapper, 0, 0);
-    lv_obj_set_style_pad_all(label_wrapper, 0, 0);
     lv_obj_set_size(label_wrapper, 44, 36);
     auto* path_label = lv_label_create(label_wrapper);
     lv_label_set_text(path_label, "Path:");
@@ -218,18 +215,15 @@ void ScreenshotApp::createFilePathWidgets(lv_obj_t* parent) {
 void ScreenshotApp::createTimerSettingsWidgets(lv_obj_t* parent) {
     timerWrapper = lv_obj_create(parent);
     lv_obj_set_size(timerWrapper, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(timerWrapper, 0, 0);
     lv_obj_set_style_border_width(timerWrapper, 0, 0);
 
     auto* delay_wrapper = lv_obj_create(timerWrapper);
     lv_obj_set_size(delay_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(delay_wrapper, 0, 0);
     lv_obj_set_style_border_width(delay_wrapper, 0, 0);
     lv_obj_set_flex_flow(delay_wrapper, LV_FLEX_FLOW_ROW);
 
     auto* delay_label_wrapper = lv_obj_create(delay_wrapper);
     lv_obj_set_style_border_width(delay_label_wrapper, 0, 0);
-    lv_obj_set_style_pad_all(delay_label_wrapper, 0, 0);
     lv_obj_set_size(delay_label_wrapper, 44, 36);
     auto* delay_label = lv_label_create(delay_label_wrapper);
     lv_label_set_text(delay_label, "Delay:");
@@ -243,7 +237,6 @@ void ScreenshotApp::createTimerSettingsWidgets(lv_obj_t* parent) {
 
     auto* delay_unit_label_wrapper = lv_obj_create(delay_wrapper);
     lv_obj_set_style_border_width(delay_unit_label_wrapper, 0, 0);
-    lv_obj_set_style_pad_all(delay_unit_label_wrapper, 0, 0);
     lv_obj_set_size(delay_unit_label_wrapper, LV_SIZE_CONTENT, 36);
     auto* delay_unit_label = lv_label_create(delay_unit_label_wrapper);
     lv_obj_align(delay_unit_label, LV_ALIGN_LEFT_MID, 0, 0);

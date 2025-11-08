@@ -111,7 +111,6 @@ public:
         auto* bottom_wrapper = lv_obj_create(parent);
         lv_obj_set_flex_flow(bottom_wrapper, LV_FLEX_FLOW_ROW);
         lv_obj_set_size(bottom_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_all(bottom_wrapper, 0, 0);
         lv_obj_set_style_pad_column(bottom_wrapper, 4, 0);
         lv_obj_set_style_border_opa(bottom_wrapper, 0, LV_STATE_DEFAULT);
 
