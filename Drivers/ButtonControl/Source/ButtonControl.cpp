@@ -63,7 +63,10 @@ void ButtonControl::updatePin(std::vector<PinConfiguration>::const_reference con
             // check time for long press trigger
             auto time_passed = tt::kernel::getMillis() - state.pressStartTime;
             if (time_passed > 500) {
-                // state.triggerLongPress = true;
+                // Trigger a long-press action once and clear the press state so
+                // the subsequent release doesn't also generate a short-press.
+                state.triggerLongPress = true;
+                state.pressState = false;
             }
         } else {
             state.pressStartTime = tt::kernel::getMillis();
