@@ -108,27 +108,28 @@ UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight) {
             break;
             
         case ScreenClass::Large:
-            // For 240x320 up to ~400px displays
+            // For 240x320 up to ~400px displays - matches old Default scale
+            // Use -1 to indicate "use LVGL theme defaults, don't override"
             metrics.toolbarHeight = 40;
             metrics.toolbarFont = &lv_font_montserrat_18;
             metrics.toolbarTitlePadding = 8;
             metrics.toolbarButtonInset = 6;
             
-            metrics.buttonPadding = 6;
-            metrics.buttonRadius = 5;
+            metrics.buttonPadding = -1;  // Use theme default
+            metrics.buttonRadius = -1;   // Use theme default
             
-            metrics.objectPadding = 6;
-            metrics.objectGap = 8;
-            metrics.objectRadius = 5;
-            metrics.objectBorderWidth = 2;
+            metrics.objectPadding = -1;  // Use theme default
+            metrics.objectGap = -1;      // Use theme default
+            metrics.objectRadius = -1;   // Use theme default
+            metrics.objectBorderWidth = -1; // Use theme default
             
-            metrics.listPadding = 4;
-            metrics.listButtonVertPadding = 4;
+            metrics.listPadding = -1;    // Use theme default
+            metrics.listButtonVertPadding = -1; // Use theme default
             
-            metrics.switchWidth = 35;
-            metrics.switchHeight = 20;
-            metrics.dropdownHeight = 200;
-            metrics.textareaPadding = 6;
+            metrics.switchWidth = -1;    // Use theme default
+            metrics.switchHeight = -1;   // Use theme default
+            metrics.dropdownHeight = -1; // Use theme default
+            metrics.textareaPadding = -1; // Use theme default
             
             metrics.launcherButtonSize = 64;
             metrics.generalVerticalPadding = 4;

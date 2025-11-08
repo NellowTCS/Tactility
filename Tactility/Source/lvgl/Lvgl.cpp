@@ -1,3 +1,4 @@
+#include <Tactility/Tactility.h>
 #include <Tactility/hal/Configuration.h>
 #include <Tactility/hal/UiMetrics.h>
 #include <Tactility/hal/encoder/EncoderDevice.h>
@@ -148,9 +149,9 @@ void start() {
 
     // Calculate UI metrics now that LVGL displays are initialized
     TT_LOG_I(TAG, "Calculating UI metrics from LVGL display");
-    auto config = hal::getConfiguration();
-    if (config != nullptr) {
-        config->uiMetrics = hal::UiMetrics::calculateFromDisplay();
+    auto config = tt::getConfiguration();
+    if (config != nullptr && config->hardware != nullptr) {
+        config->hardware->uiMetrics = hal::UiMetrics::calculateFromDisplay();
     }
 
     started = true;

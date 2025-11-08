@@ -12,7 +12,9 @@ lv_obj_t* __wrap_lv_switch_create(lv_obj_t* parent) {
     auto widget = __real_lv_switch_create(parent);
 
     const auto& metrics = tt::hal::getConfiguration()->uiMetrics;
-    lv_obj_set_style_size(widget, metrics.switchWidth, metrics.switchHeight, LV_STATE_DEFAULT);
+    if (metrics.switchWidth >= 0 && metrics.switchHeight >= 0) {
+        lv_obj_set_style_size(widget, metrics.switchWidth, metrics.switchHeight, LV_STATE_DEFAULT);
+    }
 
     return widget;
 }

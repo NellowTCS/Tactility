@@ -12,7 +12,9 @@ lv_obj_t* __wrap_lv_textarea_create(lv_obj_t* parent) {
     auto textarea = __real_lv_textarea_create(parent);
 
     const auto& metrics = tt::hal::getConfiguration()->uiMetrics;
-    lv_obj_set_style_pad_all(textarea, metrics.textareaPadding, LV_STATE_DEFAULT);
+    if (metrics.textareaPadding >= 0) {
+        lv_obj_set_style_pad_all(textarea, metrics.textareaPadding, LV_STATE_DEFAULT);
+    }
 
     auto gui_service = tt::service::gui::findService();
     if (gui_service != nullptr) {
