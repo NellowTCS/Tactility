@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-      - cl-32-only
+      - cl-32-only-ssd1680
     tags:
       - v*
   pull_request:
