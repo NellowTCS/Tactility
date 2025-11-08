@@ -87,51 +87,47 @@ bool Ssd1685Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         return false;
     }
 
-    // Force an initial full-screen white clear and immediate refresh.
-    // GoodDisplay panels require a full clear after init to show anything.
+    // Initial clear - just white fill
     TT_LOG_I(TAG, "Issuing initial full-screen clear (white) for SSD1685 panel");
     const size_t clear_size = configuration->width * configuration->height / 8;
     uint8_t *white_buffer = (uint8_t *)heap_caps_malloc(clear_size, MALLOC_CAP_DMA);
     if (white_buffer) {
-        memset(white_buffer, 0xFF, clear_size); // 0xFF = white in this panel format
-        // ensure next write goes to black VRAM (we write white as "no black")
+        memset(white_buffer, 0xFF, clear_size); // 0xFF = white
+        
+        // Write white to black VRAM
         epaper_panel_set_bitmap_color(panelHandle, SSD1685_EPAPER_BITMAP_BLACK);
-        // write to VRAM (this will not necessarily refresh yet)
         esp_err_t r = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, configuration->width, configuration->height, white_buffer);
         if (r != ESP_OK) {
             TT_LOG_W(TAG, "Initial draw_bitmap returned %d", r);
         }
         
-        // Also clear the red VRAM to prevent ghosting
-        memset(white_buffer, 0x00, clear_size); // 0x00 = no red
+        // Clear red VRAM to prevent ghosting
+        memset(white_buffer, 0x00, clear_size);
         epaper_panel_set_bitmap_color(panelHandle, SSD1685_EPAPER_BITMAP_RED);
         r = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, configuration->width, configuration->height, white_buffer);
         if (r != ESP_OK) {
             TT_LOG_W(TAG, "Initial red VRAM clear returned %d", r);
         }
         
-        // Force immediate refresh
-        r = epaper_panel_refresh_screen(panelHandle);
-        if (r != ESP_OK) {
-            TT_LOG_W(TAG, "epaper_panel_refresh_screen returned %d", r);
-        } else {
-            // wait for BUSY to finish
-            TT_LOG_I(TAG, "Waiting for BUSY to clear after initial refresh...");
-            int busy_pin = configuration->busyPin;
-            if (busy_pin != GPIO_NUM_NC) {
-                // BUSY is high while busy, wait until it goes low
-                while (gpio_get_level((gpio_num_t)busy_pin)) {
-                    vTaskDelay(pdMS_TO_TICKS(50));
-                }
-            } else {
-                // fallback small delay
-                vTaskDelay(pdMS_TO_TICKS(3000));
+        // Wait for BUSY to finish
+        TT_LOG_I(TAG, "Waiting for BUSY to clear after initial refresh...");
+        int busy_pin = configuration->busyPin;
+        if (busy_pin != GPIO_NUM_NC) {
+            int timeout = 0;
+            while (gpio_get_level((gpio_num_t)busy_pin) && timeout < 60) {
+                vTaskDelay(pdMS_TO_TICKS(50));
+                timeout++;
             }
-            TT_LOG_I(TAG, "Initial refresh finished");
+            if (timeout >= 60) {
+                TT_LOG_W(TAG, "BUSY timeout waiting for initial clear");
+            }
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(3000));
         }
+        TT_LOG_I(TAG, "Initial refresh finished");
         heap_caps_free(white_buffer);
     } else {
-        TT_LOG_W(TAG, "Unable to allocate white buffer for initial clear; skipping initial clear");
+        TT_LOG_W(TAG, "Unable to allocate white buffer for initial clear");
     }
 
     TT_LOG_I(TAG, "SSD1685 e-paper display initialized successfully");
@@ -177,7 +173,7 @@ lvgl_port_display_cfg_t Ssd1685Display::getLvglPortDisplayConfig(esp_lcd_panel_i
             .buff_spiram = true,
             .sw_rotate = false,
             .swap_bytes = false,
-            .full_refresh = false,
+            .full_refresh = true,
             .direct_mode = false
         }
     };
