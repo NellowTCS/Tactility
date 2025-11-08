@@ -130,6 +130,7 @@ public:
 
         auto* orientation_wrapper = lv_obj_create(main_wrapper);
         lv_obj_set_size(orientation_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
+        lv_obj_set_style_pad_all(orientation_wrapper, 0, LV_STATE_DEFAULT);
         lv_obj_set_style_border_width(orientation_wrapper, 0, LV_STATE_DEFAULT);
 
         auto* orientation_label = lv_label_create(orientation_wrapper);
@@ -143,7 +144,7 @@ public:
         lv_obj_set_style_border_color(orientation_dropdown, lv_color_hex(0xFAFAFA), LV_PART_MAIN);
         lv_obj_set_style_border_width(orientation_dropdown, 1, LV_PART_MAIN);
         lv_obj_add_event_cb(orientation_dropdown, onOrientationSet, LV_EVENT_VALUE_CHANGED, this);
-        // Set the dropdown to match current orientation enum
+        // Set the dropdown to match current orientation enum (not LVGL rotation value)
         lv_dropdown_set_selected(orientation_dropdown, static_cast<uint16_t>(displaySettings.orientation));
     }
 

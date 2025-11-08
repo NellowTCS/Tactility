@@ -266,6 +266,7 @@ void View::init(const AppContext& appContext, lv_obj_t* parent) {
     auto* wrapper = lv_obj_create(parent);
     lv_obj_set_width(wrapper, LV_PCT(100));
     lv_obj_set_style_border_width(wrapper, 0, 0);
+    lv_obj_set_style_pad_all(wrapper, 0, 0);
     lv_obj_set_flex_grow(wrapper, 1);
     lv_obj_set_flex_flow(wrapper, LV_FLEX_FLOW_ROW);
 

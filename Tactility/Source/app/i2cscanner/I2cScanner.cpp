@@ -106,6 +106,7 @@ void I2cScannerApp::onShow(AppContext& app, lv_obj_t* parent) {
     auto* wrapper = lv_obj_create(main_wrapper);
     lv_obj_set_width(wrapper, LV_PCT(100));
     lv_obj_set_height(wrapper, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(wrapper, 0, 0);
     lv_obj_set_style_border_width(wrapper, 0, 0);
 
     auto* scan_button = lv_button_create(wrapper);

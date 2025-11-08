@@ -182,6 +182,7 @@ lv_obj_t* statusbar_create(lv_obj_t* parent) {
     for (int i = 0; i < STATUSBAR_ICON_LIMIT; ++i) {
         auto* image = lv_image_create(obj);
         lv_obj_set_size(image, STATUSBAR_ICON_SIZE, STATUSBAR_ICON_SIZE);
+        lv_obj_set_style_pad_all(image, 0, LV_STATE_DEFAULT);
         obj_set_style_bg_blacken(image);
         statusbar->icons[i] = image;
 

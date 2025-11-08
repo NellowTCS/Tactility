@@ -83,6 +83,7 @@ void View::createBottomButtons(lv_obj_t* parent) {
     auto* button_container = lv_obj_create(parent);
     lv_obj_set_width(button_container, LV_PCT(100));
     lv_obj_set_height(button_container, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(button_container, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_pad_gap(button_container, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(button_container, 0, LV_STATE_DEFAULT);
 
@@ -123,6 +124,7 @@ void View::init(AppContext& app, lv_obj_t* parent) {
     auto* ssid_wrapper = lv_obj_create(wrapper);
     lv_obj_set_width(ssid_wrapper, LV_PCT(100));
     lv_obj_set_height(ssid_wrapper, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(ssid_wrapper, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_pad_gap(ssid_wrapper, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(ssid_wrapper, 0, LV_STATE_DEFAULT);
 
@@ -151,6 +153,7 @@ void View::init(AppContext& app, lv_obj_t* parent) {
     auto* password_wrapper = lv_obj_create(wrapper);
     lv_obj_set_width(password_wrapper, LV_PCT(100));
     lv_obj_set_height(password_wrapper, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(password_wrapper, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_pad_gap(password_wrapper, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(password_wrapper, 0, LV_STATE_DEFAULT);
 

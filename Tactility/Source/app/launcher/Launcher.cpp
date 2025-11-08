@@ -94,6 +94,7 @@ public:
         auto button_size = metrics.launcherButtonSize;
 
         lv_obj_align(buttons_wrapper, LV_ALIGN_CENTER, 0, 0);
+        // lv_obj_set_style_pad_all(buttons_wrapper, 0, LV_STATE_DEFAULT);
         lv_obj_set_size(buttons_wrapper, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_style_border_width(buttons_wrapper, 0, LV_STATE_DEFAULT);
         lv_obj_set_flex_grow(buttons_wrapper, 1);

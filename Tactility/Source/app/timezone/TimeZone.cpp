@@ -193,6 +193,7 @@ public:
         lv_obj_set_size(search_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
         lv_obj_set_flex_flow(search_wrapper, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(search_wrapper, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+        lv_obj_set_style_pad_all(search_wrapper, 0, 0);
         lv_obj_set_style_border_width(search_wrapper, 0, 0);
 
         auto* icon = lv_image_create(search_wrapper);

@@ -82,6 +82,7 @@ public:
         lv_obj_set_width(main_wrapper, LV_PCT(100));
         lv_obj_set_flex_grow(main_wrapper, 1);
         lv_obj_set_flex_flow(main_wrapper, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_all(main_wrapper, 0, 0);
         lv_obj_set_style_border_width(main_wrapper, 0, 0);
         lvgl::obj_set_style_bg_invisible(main_wrapper);
 

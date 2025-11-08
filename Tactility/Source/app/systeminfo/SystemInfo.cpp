@@ -106,6 +106,7 @@ static void addMemoryBar(lv_obj_t* parent, const char* label, uint64_t free, uin
     uint64_t used = total - free;
     auto* container = lv_obj_create(parent);
     lv_obj_set_size(container, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(container, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(container, 0, LV_STATE_DEFAULT);
     lv_obj_set_flex_flow(container, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_bg_opa(container, 0, LV_STATE_DEFAULT);
@@ -220,6 +221,7 @@ class SystemInfoApp final : public App {
         lv_obj_set_flex_flow(wrapper, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_width(wrapper, LV_PCT(100));
         lv_obj_set_flex_grow(wrapper, 1);
+        lv_obj_set_style_pad_all(wrapper, 0, LV_STATE_DEFAULT);
 
         auto* tabview = lv_tabview_create(wrapper);
         lv_tabview_set_tab_bar_position(tabview, LV_DIR_LEFT);

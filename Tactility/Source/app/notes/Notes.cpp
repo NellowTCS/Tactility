@@ -151,6 +151,7 @@ class NotesApp final : public App {
         lv_obj_set_flex_grow(wrapper, 1);
         lv_obj_set_width(wrapper, LV_PCT(100));
         lv_obj_set_height(wrapper, LV_PCT(100));
+        lv_obj_set_style_pad_all(wrapper, 0, LV_PART_MAIN);
         lv_obj_set_style_pad_row(wrapper, 0, LV_PART_MAIN);
         lv_obj_set_style_border_width(wrapper, 0, 0);
         lv_obj_remove_flag(wrapper, LV_OBJ_FLAG_SCROLLABLE);
@@ -168,6 +169,7 @@ class NotesApp final : public App {
         lv_obj_set_style_bg_color(footer, lv_color_hex(0x262626), LV_PART_MAIN);
         lv_obj_set_width(footer, LV_PCT(100));
         lv_obj_set_height(footer, LV_PCT(14));
+        lv_obj_set_style_pad_all(footer, 0, LV_PART_MAIN);
         lv_obj_set_style_border_width(footer, 0, 0);
         lv_obj_remove_flag(footer, LV_OBJ_FLAG_SCROLLABLE);
 

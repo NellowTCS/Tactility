@@ -102,6 +102,7 @@ class AppHubApp final : public App {
             });
 
             auto* list = lv_list_create(contentWrapper);
+            lv_obj_set_style_pad_all(list, 0, LV_STATE_DEFAULT);
             lv_obj_set_size(list, LV_PCT(100), LV_SIZE_CONTENT);
             for (int i = 0; i < entries.size(); i++) {
                 auto& entry = entries[i];
@@ -166,6 +167,7 @@ public:
         contentWrapper = lv_obj_create(parent);
         lv_obj_set_width(contentWrapper, LV_PCT(100));
         lv_obj_set_flex_grow(contentWrapper, 1);
+        lv_obj_set_style_pad_all(contentWrapper, 0, LV_STATE_DEFAULT);
         lv_obj_set_style_pad_ver(contentWrapper, 0, LV_STATE_DEFAULT);
 
         refresh();
