@@ -90,9 +90,6 @@ void init(const Configuration& configuration) {
 
     startDisplays(); // Warning: SPI displays need to start after SPI SD cards are mounted
 
-    // Calculate UI metrics based on display resolution now that displays are initialized
-    TT_LOG_I(TAG, "Calculating UI metrics from display");
-    configuration.uiMetrics = UiMetrics::calculateFromDisplay();
 
     kernel::publishSystemEvent(kernel::SystemEvent::BootInitHalEnd);
 }
