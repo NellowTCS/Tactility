@@ -47,7 +47,6 @@ bool Ssd168xDisplay::start()
     memset(fb, 0xFF, fb_size); // White
 
     // Initialize ssd1680 driver
-    // Always use ROT_000 in hardware; LVGL handles rotation in software
     ssd1680_rotation_t hw_rotation = SSD1680_ROT_000;
     
     ssd1680_config_t cfg = {
@@ -187,6 +186,9 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
         return;
     }
 
+    TT_LOG_I(TAG, "Flush callback started - area: x1=%d y1=%d x2=%d y2=%d", 
+             area->x1, area->y1, area->x2, area->y2);
+
     const int panel_width = self->configuration.width;
     const int panel_height = self->configuration.height;
     const int panel_bytes_per_row = (panel_width + 7) / 8;
@@ -195,6 +197,7 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
     const int area_height = (area->y2 - area->y1) + 1;
     const lv_color_t* src_pixels = reinterpret_cast<const lv_color_t*>(px_map);
 
+    // Convert RGB565 pixels to 1-bit framebuffer
     for (int row = 0; row < area_height; ++row) {
         const int fy = area->y1 + row;
         if (fy < 0 || fy >= panel_height) {
@@ -223,28 +226,30 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
         }
     }
 
-    const int clamped_x = std::max(area->x1, static_cast<int32_t>(0));
-    const int clamped_y = std::max(area->y1, static_cast<int32_t>(0));
-    const int max_w = std::max(0, panel_width - clamped_x);
-    const int max_h = std::max(0, panel_height - clamped_y);
-    const uint16_t rect_w = max_w > 0 ? static_cast<uint16_t>(std::min(area_width, max_w)) : 0;
-    const uint16_t rect_h = max_h > 0 ? static_cast<uint16_t>(std::min(area_height, max_h)) : 0;
+    TT_LOG_I(TAG, "Framebuffer updated, starting e-paper refresh");
 
-    if (rect_w == 0 || rect_h == 0) {
-        lv_display_flush_ready(disp);
-        return;
-    }
-
+    // Full screen refresh
     ssd1680_rect_t rect = {
-        .x = static_cast<uint16_t>(clamped_x),
-        .y = static_cast<uint16_t>(clamped_y),
-        .w = rect_w,
-        .h = rect_h
+        .x = 0,
+        .y = 0, 
+        .w = static_cast<uint16_t>(panel_width),
+        .h = static_cast<uint16_t>(panel_height)
     };
 
+    // Start the refresh
     ssd1680_begin_frame(self->ssd1680_handle, SSD1680_REFRESH_FULL);
     ssd1680_flush(self->ssd1680_handle, rect);
     ssd1680_end_frame(self->ssd1680_handle);
 
+    // Wait for e-paper to actually finish before telling LVGL we're ready
+    TT_LOG_I(TAG, "Waiting for e-paper BUSY to clear...");
+    esp_err_t wait_result = ssd1680_wait_until_idle(self->ssd1680_handle);
+    if (wait_result != ESP_OK) {
+        TT_LOG_E(TAG, "Error waiting for e-paper: %d", wait_result);
+    }
+    
+    TT_LOG_I(TAG, "E-paper refresh complete, notifying LVGL");
+
+    // NOW tell LVGL we're done - this blocks the next render
     lv_display_flush_ready(disp);
 }
