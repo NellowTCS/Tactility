@@ -224,7 +224,7 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
     }
 
     const int clamped_x = std::max(area->x1, 0);
-    const int clamped_y = std::max(area->y1, 0);
+    const int clamped_y = std::max(area->y1, static_cast<int32_t>(0));
     const int max_w = std::max(0, panel_width - clamped_x);
     const int max_h = std::max(0, panel_height - clamped_y);
     const uint16_t rect_w = max_w > 0 ? static_cast<uint16_t>(std::min(area_width, max_w)) : 0;
