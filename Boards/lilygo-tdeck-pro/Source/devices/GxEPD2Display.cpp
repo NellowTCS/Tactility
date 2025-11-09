@@ -217,8 +217,14 @@ bool GxEPD2Display::startLvgl() {
 
     int32_t hor_res = lv_display_get_horizontal_resolution(_lvglDisplay);
     int32_t ver_res = lv_display_get_vertical_resolution(_lvglDisplay);
+    
+    // For buffer allocation, we must use the original (physical) width, not the logical width
+    // LVGL computes stride based on original horizontal resolution, regardless of rotation
+    int32_t original_hor_res = lv_display_get_original_horizontal_resolution(_lvglDisplay);
+    int32_t original_ver_res = lv_display_get_original_vertical_resolution(_lvglDisplay);
 
-    ESP_LOGI(TAG, "LVGL reports logical resolution: %dx%d (after rotation)", hor_res, ver_res);
+    ESP_LOGI(TAG, "LVGL resolution: logical=%dx%d original=%dx%d rotation=%d",
+             hor_res, ver_res, original_hor_res, original_ver_res, (int)lv_rotation);
 
     // Allocate persistent framebuffer for e-paper (stores complete display state)
     const size_t fb_size = ((size_t)_config.width * (size_t)_config.height + 7) / 8;
@@ -243,8 +249,9 @@ bool GxEPD2Display::startLvgl() {
         return false;
     }
 
-    // Allocate draw buffers using LVGL's reported horizontal resolution
-    const size_t bufSize = (size_t)hor_res * DRAW_BUF_LINES;
+    // Allocate draw buffers using original horizontal resolution
+    // LVGL uses: h = buf_size / stride, where stride = lv_draw_buf_width_to_stride(original_width, cf)
+    const size_t bufSize = (size_t)original_hor_res * DRAW_BUF_LINES;
     // LVGL draw buffers should be in internal RAM (fast, stable allocator)
     _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_INTERNAL);
     _drawBuf2 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_INTERNAL);
@@ -262,7 +269,7 @@ bool GxEPD2Display::startLvgl() {
         return false;
     }
 
-    ESP_LOGI(TAG, "Allocated %zu bytes per buffer (hor_res=%d, draw_lines=%zu)", bufSize * sizeof(lv_color_t), (int)hor_res, DRAW_BUF_LINES);
+    ESP_LOGI(TAG, "Allocated %zu bytes per buffer (original_hor_res=%d, draw_lines=%zu)", bufSize * sizeof(lv_color_t), (int)original_hor_res, DRAW_BUF_LINES);
 
     lv_display_set_color_format(_lvglDisplay, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(_lvglDisplay, _drawBuf1, _drawBuf2,
