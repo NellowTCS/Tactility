@@ -40,7 +40,7 @@ typedef struct {
     ssd1680_rotation_t rotation;
     uint16_t cols;
     uint16_t rows;
-    uint8_t *framebuffer;
+    const uint8_t *framebuffer;
 
     spi_host_device_t host; ///< The SPI host used, set before calling `spi_ssd1680_init()`
     gpio_num_t cs_pin;       ///< CS gpio number, set before calling `spi_ssd1680_init()`
