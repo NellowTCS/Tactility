@@ -49,7 +49,6 @@ private:
     ssd1680_handle_t ssd1680_handle;
     lv_display_t* lvglDisplay;
     uint8_t* frameBuffer;
-    SemaphoreHandle_t framebufferMutex;
     
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
 };

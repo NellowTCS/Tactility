@@ -2,10 +2,9 @@
 
 #include <Tactility/Log.h>
 #include <esp_heap_caps.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 #include <lvgl.h>
 #include <cstring>
+#include <algorithm>
 
 #define TAG "ssd168x_display"
 
@@ -13,8 +12,7 @@ Ssd168xDisplay::Ssd168xDisplay(std::unique_ptr<Configuration> inConfiguration)
     : configuration(*inConfiguration),
       ssd1680_handle(nullptr),
       lvglDisplay(nullptr),
-      frameBuffer(nullptr),
-      framebufferMutex(nullptr)
+      frameBuffer(nullptr)
 {
     TT_LOG_I(TAG, "Display config: %ux%u", configuration.width, configuration.height);
 }
@@ -23,11 +21,6 @@ Ssd168xDisplay::~Ssd168xDisplay()
 {
     stopLvgl();
     stop();
-    
-    if (framebufferMutex) {
-        vSemaphoreDelete(framebufferMutex);
-        framebufferMutex = nullptr;
-    }
 }
 
 std::string Ssd168xDisplay::getName() const
@@ -85,11 +78,6 @@ bool Ssd168xDisplay::start()
     ssd1680_flush(ssd1680_handle, rect);
     ssd1680_end_frame(ssd1680_handle);
 
-    framebufferMutex = xSemaphoreCreateMutex();
-    if (!framebufferMutex) {
-        TT_LOG_W(TAG, "Failed to create framebuffer mutex");
-    }
-
     TT_LOG_I(TAG, "E-paper display started successfully");
     return true;
 }
@@ -129,37 +117,17 @@ bool Ssd168xDisplay::startLvgl()
         return false;
     }
 
-    // LVGL logical resolution (after rotation)
-    uint32_t logical_width = configuration.width;
-    uint32_t logical_height = configuration.height;
-    
-    if (configuration.rotation == 1 || configuration.rotation == 3) {
-        // Swapped dimensions
-        logical_width = configuration.height;
-        logical_height = configuration.width;
-    }
+    const uint32_t buffer_size = configuration.width * configuration.height;
 
-    uint32_t buffer_size = logical_width * logical_height;
-
-    TT_LOG_I(TAG, "LVGL config: physical=%dx%d logical=%dx%d rotation=%d buffer_size=%lu",
-             configuration.width, configuration.height, logical_width, logical_height,
-             configuration.rotation, buffer_size);
+    TT_LOG_I(TAG, "LVGL config: width=%d height=%d buffer_size=%lu",
+             configuration.width, configuration.height, buffer_size);
 
     // Create LVGL display
-    lvglDisplay = lv_display_create(logical_width, logical_height);
+    lvglDisplay = lv_display_create(configuration.width, configuration.height);
     if (!lvglDisplay) {
         TT_LOG_E(TAG, "Failed to create LVGL display");
         return false;
     }
-
-    // Set rotation
-    lv_display_rotation_t lv_rotation = LV_DISPLAY_ROTATION_0;
-    switch (configuration.rotation) {
-        case 1: lv_rotation = LV_DISPLAY_ROTATION_90; break;
-        case 2: lv_rotation = LV_DISPLAY_ROTATION_180; break;
-        case 3: lv_rotation = LV_DISPLAY_ROTATION_270; break;
-    }
-    lv_display_set_rotation(lvglDisplay, lv_rotation);
 
     // Allocate full-screen buffer
     lv_color_t* drawBuf = (lv_color_t*)heap_caps_malloc(buffer_size * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
@@ -204,26 +172,12 @@ std::shared_ptr<tt::hal::display::DisplayDriver> Ssd168xDisplay::getDisplayDrive
     return nullptr;
 }
 
-// Bayer 4x4 dithering for RGB565 to monochrome
-static inline bool bayer4x4Dither(lv_color_t pixel, int x, int y)
+static inline bool isPixelWhite(lv_color_t pixel)
 {
-    uint8_t r = pixel.red;
-    uint8_t g = pixel.green;
-    uint8_t b = pixel.blue;
-    uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
-
-    static const uint8_t bayer4[4][4] = {
-        {0, 8, 2, 10},
-        {12, 4, 14, 6},
-        {3, 11, 1, 9},
-        {15, 7, 13, 5}
-    };
-
-    uint8_t thresh = (uint8_t)(bayer4[y & 3][x & 3] * 16 + 8);
-    return brightness > thresh;
+    // Simple brightness threshold; RGB565 max sum = 31 + 63 + 31 = 125
+    const uint16_t brightness = pixel.red + pixel.green + pixel.blue;
+    return brightness > 62;
 }
-
-// Update lvglFlushCallback to use PARTIAL refresh instead of FULL
 
 void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map)
 {
@@ -233,65 +187,35 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
         return;
     }
 
-    int32_t hor_res = lv_display_get_horizontal_resolution(disp);
-    int32_t ver_res = lv_display_get_vertical_resolution(disp);
-    
-    lv_color_format_t cf = lv_display_get_color_format(disp);
-    uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(hor_res, cf);
-    uint8_t* src_bytes = (uint8_t*)px_map;
-
     const int panel_width = self->configuration.width;
     const int panel_height = self->configuration.height;
     const int panel_bytes_per_row = (panel_width + 7) / 8;
 
-    if (xSemaphoreTake(self->framebufferMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
-        TT_LOG_W(TAG, "Framebuffer mutex busy; dropping LVGL flush");
-        lv_display_flush_ready(disp);
-        return;
-    }
+    const int area_width = (area->x2 - area->x1) + 1;
+    const int area_height = (area->y2 - area->y1) + 1;
+    const lv_color_t* src_pixels = reinterpret_cast<const lv_color_t*>(px_map);
 
-    // Dither and pack to 1-bit framebuffer
-    for (int ly = 0; ly < ver_res; ++ly) {
-        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
+    for (int row = 0; row < area_height; ++row) {
+        const int fy = area->y1 + row;
+        if (fy < 0 || fy >= panel_height) {
+            src_pixels += area_width;
+            continue;
+        }
 
-        for (int lx = 0; lx < hor_res; ++lx) {
-            // Map logical to physical based on rotation
-            int physical_x = lx;
-            int physical_y = ly;
-
-            lv_display_rotation_t lv_rotation = lv_display_get_rotation(disp);
-            switch (lv_rotation) {
-                case LV_DISPLAY_ROTATION_90:
-                    // 90° rotation: logical (lx, ly) → physical (ly, panel_height-1-lx)
-                    // For 90°: logical width=384, height=168 → physical width=168, height=384
-                    physical_x = ly;
-                    physical_y = (panel_height - 1) - lx;
-                    break;
-                case LV_DISPLAY_ROTATION_180:
-                    physical_x = (panel_width - 1) - lx;
-                    physical_y = (panel_height - 1) - ly;
-                    break;
-                case LV_DISPLAY_ROTATION_270:
-                    // 270° rotation: logical (lx, ly) → physical (panel_width-1-ly, lx)
-                    physical_x = (panel_width - 1) - ly;
-                    physical_y = lx;
-                    break;
-                default:  // 0
-                    physical_x = lx;
-                    physical_y = ly;
-            }
-
-            if (physical_x < 0 || physical_x >= panel_width || physical_y < 0 || physical_y >= panel_height) {
+        for (int col = 0; col < area_width; ++col) {
+            const int fx = area->x1 + col;
+            if (fx < 0 || fx >= panel_width) {
+                ++src_pixels;
                 continue;
             }
 
-            lv_color_t pixel = src_row[lx];
-            bool is_white = bayer4x4Dither(pixel, physical_x, physical_y);
+            const lv_color_t pixel = *src_pixels++;
+            const bool white = isPixelWhite(pixel);
 
-            const int byte_idx = physical_y * panel_bytes_per_row + (physical_x / 8);
-            const int bit_pos = 7 - (physical_x & 7);
+            const int byte_idx = fy * panel_bytes_per_row + (fx / 8);
+            const int bit_pos = 7 - (fx & 7);
 
-            if (is_white) {
+            if (white) {
                 self->frameBuffer[byte_idx] |= (1 << bit_pos);
             } else {
                 self->frameBuffer[byte_idx] &= ~(1 << bit_pos);
@@ -299,17 +223,26 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
         }
     }
 
-    xSemaphoreGive(self->framebufferMutex);
+    const int clamped_x = std::max(area->x1, 0);
+    const int clamped_y = std::max(area->y1, 0);
+    const int max_w = std::max(0, panel_width - clamped_x);
+    const int max_h = std::max(0, panel_height - clamped_y);
+    const uint16_t rect_w = max_w > 0 ? static_cast<uint16_t>(std::min(area_width, max_w)) : 0;
+    const uint16_t rect_h = max_h > 0 ? static_cast<uint16_t>(std::min(area_height, max_h)) : 0;
+
+    if (rect_w == 0 || rect_h == 0) {
+        lv_display_flush_ready(disp);
+        return;
+    }
 
     ssd1680_rect_t rect = {
-        .x = 0,
-        .y = 0,
-        .w = (uint16_t)panel_width,
-        .h = (uint16_t)panel_height
+        .x = static_cast<uint16_t>(clamped_x),
+        .y = static_cast<uint16_t>(clamped_y),
+        .w = rect_w,
+        .h = rect_h
     };
 
-    // Use partial refresh for normal updates (fast, no flashing)
-    ssd1680_begin_frame(self->ssd1680_handle, SSD1680_REFRESH_PARTIAL);
+    ssd1680_begin_frame(self->ssd1680_handle, SSD1680_REFRESH_FULL);
     ssd1680_flush(self->ssd1680_handle, rect);
     ssd1680_end_frame(self->ssd1680_handle);
 
