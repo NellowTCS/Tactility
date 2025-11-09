@@ -72,7 +72,8 @@ private:
     SemaphoreHandle_t _framebufferMutex;
 
     // Number of logical rows per LVGL draw buffer. Adjust based on available RAM.
-    static constexpr size_t DRAW_BUF_LINES = 60;
+    // Reduced to limit memory pressure and fragmentation
+    static constexpr size_t DRAW_BUF_LINES = 10;
 
     // Display worker queue item (enqueued by lvglFlushCallback)
     struct QueueItem {

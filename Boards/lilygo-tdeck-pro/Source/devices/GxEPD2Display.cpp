@@ -269,12 +269,19 @@ bool GxEPD2Display::startLvgl() {
         return false;
     }
 
-    ESP_LOGI(TAG, "Allocated %zu bytes per buffer (original_hor_res=%d, draw_lines=%zu)", bufSize * sizeof(lv_color_t), (int)original_hor_res, DRAW_BUF_LINES);
+    size_t buf_bytes = bufSize * sizeof(lv_color_t);
+    ESP_LOGI(TAG, "Allocated %zu bytes per buffer (original_hor_res=%d, draw_lines=%zu)", buf_bytes, (int)original_hor_res, DRAW_BUF_LINES);
 
-    lv_display_set_color_format(_lvglDisplay, LV_COLOR_FORMAT_RGB565);
-    lv_display_set_buffers(_lvglDisplay, _drawBuf1, _drawBuf2,
-                           bufSize * sizeof(lv_color_t),
-                           LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_color_format_t cf = LV_COLOR_FORMAT_RGB565;
+    lv_display_set_color_format(_lvglDisplay, cf);
+
+    // Diagnostic: compute stride and expected height LVGL will use
+    uint32_t stride = lv_draw_buf_width_to_stride((uint32_t)original_hor_res, cf);
+    uint32_t calc_h = stride ? (uint32_t)(buf_bytes / stride) : 0;
+    ESP_LOGI(TAG, "LVGL buffer diagnostics: original_hor_res=%d stride=%u buf_bytes=%zu calc_h=%u (hor_res=%d ver_res=%d)",
+             (int)original_hor_res, stride, buf_bytes, calc_h, (int)hor_res, (int)ver_res);
+
+    lv_display_set_buffers(_lvglDisplay, _drawBuf1, _drawBuf2, buf_bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
@@ -450,6 +457,10 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             size_t union_size = (size_t)union_row_bytes * (size_t)union_h;
             // Use internal RAM for temporary union buffer
             uint8_t* union_buf = (uint8_t*)heap_caps_malloc(union_size, MALLOC_CAP_INTERNAL);
+            if (union_buf) {
+                // simple guard fill to help detect overruns in dumps
+                memset(union_buf, 0xFF, union_size);
+            }
             if (!union_buf) {
                 ESP_LOGE(TAG, "Worker: failed to alloc union buffer %zu bytes", union_size);
                 for (auto &q : items) if (q.buf) heap_caps_free(q.buf);
@@ -484,8 +495,9 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            ESP_LOGI(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items)",
+            ESP_LOGI(TAG, "Worker: writeImage union x=%d y=%d w=%d h=%d (merged %d items) union_size=%zu free_internal=%zu",
                      aligned_union_x0, aligned_union_y0, union_w, union_h, (int)items.size());
+            ESP_LOGI(TAG, "  heap internal free=%zu", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
             self->_display->writeImage(union_buf, (int16_t)aligned_union_x0, (int16_t)aligned_union_y0,
                                        (int16_t)union_w, (int16_t)union_h, false, false, false);
