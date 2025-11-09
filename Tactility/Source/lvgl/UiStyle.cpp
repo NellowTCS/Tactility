@@ -1,3 +1,4 @@
+#include "Tactility/Tactility.h"
 #include "Tactility/lvgl/UiStyle.h"
 #include "Tactility/hal/UiMetrics.h"
 #include "Tactility/hal/Configuration.h"
@@ -5,7 +6,7 @@
 namespace tt::lvgl {
 
 void setContainerPadding(lv_obj_t* obj, ContainerType type, int customPadding) {
-    const auto& metrics = hal::getConfiguration()->uiMetrics;
+    const auto& metrics = tt::getConfiguration()->uiMetrics;
     
     switch (type) {
         case ContainerType::FullScreen:
@@ -46,7 +47,7 @@ void setContainerPadding(lv_obj_t* obj, ContainerType type, int customPadding) {
 }
 
 void setFlexGap(lv_obj_t* obj, float scale) {
-    const auto& metrics = hal::getConfiguration()->uiMetrics;
+    const auto& metrics = tt::getConfiguration()->uiMetrics;
     
     if (metrics.objectGap >= 0) {
         int gap = static_cast<int>(metrics.objectGap * scale);
@@ -64,7 +65,7 @@ void setPaddingForButtonLayout(lv_obj_t* obj) {
 }
 
 void setPaddingForListLayout(lv_obj_t* obj) {
-    const auto& metrics = hal::getConfiguration()->uiMetrics;
+    const auto& metrics = tt::getConfiguration()->uiMetrics;
     if (metrics.listPadding >= 0) {
         lv_obj_set_style_pad_all(obj, metrics.listPadding, LV_STATE_DEFAULT);
     }

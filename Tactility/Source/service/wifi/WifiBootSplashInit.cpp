@@ -116,62 +116,6 @@ static void importWifiApSettings(std::shared_ptr<hal::sdcard::SdCardDevice> sdca
     }
 }
 
-static void importGlobalWifiProperties() {
-    // Support a single global properties file on the data partition so users without an
-    // SD card can provision Wi-Fi by writing /data/settings/wifi_provision.properties
-    // (we avoid clobbering the service's wifi.properties which stores enableOnBoot)
-    auto file_path = file::getChildPath(file::MOUNT_POINT_DATA, "settings/wifi_provision.properties");
-    if (!file::isFile(file_path)) {
-        return;
-    }
-
-    std::map<std::string, std::string> map;
-    if (!file::loadPropertiesFile(file_path, map)) {
-        TT_LOG_E(TAG, "Failed to load %s", file_path.c_str());
-        return;
-    }
-
-    const auto ssid_iter = map.find("ssid");
-    if (ssid_iter == map.end()) {
-        TT_LOG_W(TAG, "%s missing ssid entry", file_path.c_str());
-        return;
-    }
-
-    const auto ssid = ssid_iter->second;
-    const auto password_iter = map.find("password");
-    const auto auto_connect_iter = map.find("autoConnect");
-    const auto channel_iter = map.find("channel");
-    const auto auto_remove_iter = map.find("autoRemovePropertiesFile");
-
-    std::string password = password_iter == map.end() ? std::string() : password_iter->second;
-    bool autoConnect = auto_connect_iter == map.end() ? true : (auto_connect_iter->second == "true");
-    int32_t channel = channel_iter == map.end() ? 0 : std::stoi(channel_iter->second);
-    bool autoRemove = auto_remove_iter == map.end() ? false : (auto_remove_iter->second == "true");
-
-    if (!settings::contains(ssid)) {
-        settings::WifiApSettings settings(
-            ssid,
-            password,
-            autoConnect,
-            channel
-        );
-
-        if (!settings::save(settings)) {
-            TT_LOG_E(TAG, "Failed to save settings for %s", ssid.c_str());
-        } else {
-            TT_LOG_I(TAG, "Imported %s from %s", ssid.c_str(), file_path.c_str());
-        }
-    }
-
-    if (autoRemove) {
-        if (!file::deleteFile(file_path)) {
-            TT_LOG_E(TAG, "Failed to auto-remove %s", file_path.c_str());
-        } else {
-            TT_LOG_I(TAG, "Auto-removed %s", file_path.c_str());
-        }
-    }
-}
-
 void bootSplashInit() {
     getMainDispatcher().dispatch([] {
         const auto sdcards = hal::findDevices<hal::sdcard::SdCardDevice>(hal::Device::Type::SdCard);
@@ -182,10 +126,6 @@ void bootSplashInit() {
                 TT_LOG_W(TAG, "Skipping unmounted SD card %s", sdcard->getMountPath().c_str());
             }
         }
-    // Also support provisioning via a single properties file on the data partition
-    // so devices without an SD card can be provisioned by dropping
-    // /data/settings/wifi_provision.properties
-    importGlobalWifiProperties();
     });
 }
 
