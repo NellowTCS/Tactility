@@ -331,11 +331,25 @@ esp_err_t ssd1680_init(const ssd1680_config_t *cfg, ssd1680_handle_t* out_handle
     }
 
     {
-        uint8_t val_byte2; // TODO: find a better name
+        uint8_t val_byte2; // Resolution/source selection
         switch (ctx->cfg.controller) {
-        case SSD1680: val_byte2 = SSD1680_SOURCE_S8_TO_S167; break;
-        case SSD1685: val_byte2 = SSD1685_RES_168x384; break; // TODO: select proper resolution
-        case SSD168x_UNKNOWN: return ESP_ERR_INVALID_STATE; // Should have been caught by ssd1680_check_controller_resolution
+        case SSD1680: 
+            val_byte2 = SSD1680_SOURCE_S8_TO_S167; 
+            break;
+        case SSD1685: 
+            // Select resolution based on configured cols
+            if (ctx->cfg.cols <= 168) {
+                val_byte2 = SSD1685_RES_168x384;
+            } else if (ctx->cfg.cols <= 184) {
+                val_byte2 = SSD1685_RES_184x384;
+            } else if (ctx->cfg.cols <= 200) {
+                val_byte2 = SSD1685_RES_200x384;
+            } else {
+                val_byte2 = SSD1685_RES_216x384;
+            }
+            break;
+        case SSD168x_UNKNOWN: 
+            return ESP_ERR_INVALID_STATE; // Should have been caught by ssd1680_check_controller_resolution
         }
 
         err = ssd1680_cmd_write(ctx, CMD_DisplayUpdateControl1,
@@ -516,10 +530,31 @@ esp_err_t ssd1680_begin_frame(ssd1680_handle_t h, ssd1680_refresh_mode_t new_mod
         err = spi_device_acquire_bus(h->spi, portMAX_DELAY);
         if (err != ESP_OK) goto defer;
 
+        uint8_t val_byte2; // Resolution/source selection
+        switch (h->cfg.controller) {
+        case SSD1680: 
+            val_byte2 = SSD1680_SOURCE_S8_TO_S167; 
+            break;
+        case SSD1685: 
+            // Select resolution based on configured cols
+            if (h->cfg.cols <= 168) {
+                val_byte2 = SSD1685_RES_168x384;
+            } else if (h->cfg.cols <= 184) {
+                val_byte2 = SSD1685_RES_184x384;
+            } else if (h->cfg.cols <= 200) {
+                val_byte2 = SSD1685_RES_200x384;
+            } else {
+                val_byte2 = SSD1685_RES_216x384;
+            }
+            break;
+        case SSD168x_UNKNOWN: 
+            return ESP_ERR_INVALID_STATE;
+        }
+
         err = ssd1680_cmd_write(h, CMD_DisplayUpdateControl1,
                 ((new_mode == SSD1680_REFRESH_PARTIAL ? RAM_Normal : RAM_BypassAs0) << 4) // RED RAM
                     | RAM_Normal, // BW RAM
-                SSD1685_RES_168x384,
+                val_byte2
             );
         if (err != ESP_OK) goto defer;
 

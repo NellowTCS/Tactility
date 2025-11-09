@@ -267,15 +267,18 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
             lv_display_rotation_t lv_rotation = lv_display_get_rotation(disp);
             switch (lv_rotation) {
                 case LV_DISPLAY_ROTATION_90:
+                    // 90° rotation: logical (lx, ly) → physical (ly, height-1-lx)
+                    // logical width=384, height=168 → physical width=168, height=384
                     physical_x = ly;
-                    physical_y = (panel_height - 1) - lx;
+                    physical_y = (hor_res - 1) - lx;
                     break;
                 case LV_DISPLAY_ROTATION_180:
-                    physical_x = (panel_width - 1) - lx;
-                    physical_y = (panel_height - 1) - ly;
+                    physical_x = (hor_res - 1) - lx;
+                    physical_y = (ver_res - 1) - ly;
                     break;
                 case LV_DISPLAY_ROTATION_270:
-                    physical_x = (panel_width - 1) - ly;
+                    // 270° rotation: logical (lx, ly) → physical (width-1-ly, lx)
+                    physical_x = (ver_res - 1) - ly;
                     physical_y = lx;
                     break;
                 default:  // 0
