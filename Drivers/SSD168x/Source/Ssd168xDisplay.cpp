@@ -5,6 +5,7 @@
 #include <lvgl.h>
 #include <cstring>
 #include <algorithm>
+#include <mutex>
 
 #define TAG "ssd168x_display"
 
@@ -138,15 +139,11 @@ bool Ssd168xDisplay::startLvgl()
     }
 
     lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
-    
-    // Use direct mode for e-paper!
-    // This makes LVGL only redraw dirty areas, not the entire screen
-    lv_display_set_buffers(lvglDisplay, drawBuf, nullptr, buffer_size * sizeof(lv_color_t), LV_DISPLAY_RENDER_MODE_DIRECT);
-    
+    lv_display_set_buffers(lvglDisplay, drawBuf, nullptr, buffer_size * sizeof(lv_color_t), LV_DISPLAY_RENDER_MODE_FULL);
     lv_display_set_flush_cb(lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(lvglDisplay, this);
 
-    TT_LOG_I(TAG, "LVGL started successfully with DIRECT render mode");
+    TT_LOG_I(TAG, "LVGL started successfully");
     return true;
 }
 
@@ -182,6 +179,8 @@ static inline bool isPixelWhite(lv_color_t pixel)
     return brightness > 62;
 }
 
+std::mutex renderMutex; // Mutex to prevent concurrent renders
+
 void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map)
 {
     auto* self = static_cast<Ssd168xDisplay*>(lv_display_get_user_data(disp));
@@ -189,6 +188,12 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
         lv_display_flush_ready(disp);
         return;
     }
+
+    // Lock the mutex to ensure no concurrent renders
+    std::lock_guard<std::mutex> lock(renderMutex);
+
+    TT_LOG_I(TAG, "Flush callback started - area: x1=%d y1=%d x2=%d y2=%d", 
+             area->x1, area->y1, area->x2, area->y2);
 
     const int panel_width = self->configuration.width;
     const int panel_height = self->configuration.height;
@@ -198,9 +203,7 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
     const int area_height = (area->y2 - area->y1) + 1;
     const lv_color_t* src_pixels = reinterpret_cast<const lv_color_t*>(px_map);
 
-    TT_LOG_I(TAG, "Flush area: x=%d y=%d w=%d h=%d", area->x1, area->y1, area_width, area_height);
-
-    // Convert RGB565 pixels to 1-bit framebuffer (always update framebuffer)
+    // Convert RGB565 pixels to 1-bit framebuffer
     for (int row = 0; row < area_height; ++row) {
         const int fy = area->y1 + row;
         if (fy < 0 || fy >= panel_height) {
@@ -229,30 +232,30 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
         }
     }
 
-    // Tell LVGL we're done updating the framebuffer
-    lv_display_flush_ready(disp);
+    TT_LOG_I(TAG, "Framebuffer updated, starting e-paper refresh");
 
-    // Only refresh e-paper when this is the last flush of the current render cycle
-    // In DIRECT mode, LVGL may call flush multiple times for different dirty areas
-    // We only want ONE physical e-paper refresh per frame
-    if (lv_display_flush_is_last(disp)) {
-        TT_LOG_I(TAG, "Last flush - refreshing e-paper");
+    // Partial refresh for the specified area
+    ssd1680_rect_t rect = {
+        .x = static_cast<uint16_t>(area->x1),
+        .y = static_cast<uint16_t>(area->y1),
+        .w = static_cast<uint16_t>(area_width),
+        .h = static_cast<uint16_t>(area_height)
+    };
 
-        // Full screen refresh
-        ssd1680_rect_t rect = {
-            .x = 0,
-            .y = 0,
-            .w = static_cast<uint16_t>(panel_width),
-            .h = static_cast<uint16_t>(panel_height)
-        };
+    // Start the refresh
+    ssd1680_begin_frame(self->ssd1680_handle, SSD1680_REFRESH_PARTIAL);
+    ssd1680_flush(self->ssd1680_handle, rect);
+    ssd1680_end_frame(self->ssd1680_handle);
 
-        ssd1680_begin_frame(self->ssd1680_handle, SSD1680_REFRESH_FULL);
-        ssd1680_flush(self->ssd1680_handle, rect);
-        ssd1680_end_frame(self->ssd1680_handle);
-
-        // Wait for e-paper to complete
-        ssd1680_wait_until_idle(self->ssd1680_handle);
-
-        TT_LOG_I(TAG, "E-paper refresh complete");
+    // Wait for e-paper to actually finish before telling LVGL we're ready
+    TT_LOG_I(TAG, "Waiting for e-paper BUSY to clear...");
+    esp_err_t wait_result = ssd1680_wait_until_idle(self->ssd1680_handle);
+    if (wait_result != ESP_OK) {
+        TT_LOG_E(TAG, "Error waiting for e-paper: %d", wait_result);
     }
+
+    TT_LOG_I(TAG, "E-paper refresh complete, notifying LVGL");
+
+    // NOW tell LVGL we're done - this blocks the next render
+    lv_display_flush_ready(disp);
 }
