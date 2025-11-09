@@ -331,7 +331,7 @@ esp_err_t ssd1680_init(const ssd1680_config_t *cfg, ssd1680_handle_t* out_handle
     }
 
     {
-        uint8_t val_byte2; // Resolution/source selection
+        uint8_t val_byte2 = 0; // Resolution/source selection
         switch (ctx->cfg.controller) {
         case SSD1680: 
             val_byte2 = SSD1680_SOURCE_S8_TO_S167; 
@@ -530,7 +530,7 @@ esp_err_t ssd1680_begin_frame(ssd1680_handle_t h, ssd1680_refresh_mode_t new_mod
         err = spi_device_acquire_bus(h->spi, portMAX_DELAY);
         if (err != ESP_OK) goto defer;
 
-        uint8_t val_byte2; // Resolution/source selection
+        uint8_t val_byte2 = 0; // Resolution/source selection
         switch (h->cfg.controller) {
         case SSD1680: 
             val_byte2 = SSD1680_SOURCE_S8_TO_S167; 
