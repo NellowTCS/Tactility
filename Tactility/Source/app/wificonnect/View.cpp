@@ -4,6 +4,13 @@
 #include <Tactility/app/wificonnect/WifiConnect.h>
 #include <Tactility/lvgl/Toolbar.h>
 #include <Tactility/lvgl/Spinner.h>
+#include <Tactility/Tactility.h>
+
+#include <Tactility/app/wificonnect/State.h>
+#include <Tactility/app/wificonnect/Bindings.h>
+#include <Tactility/hal/Configuration.h>
+#include <Tactility/lvgl/Keyboard.h>
+#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/service/wifi/WifiApSettings.h>
 #include <Tactility/service/wifi/WifiGlobals.h>
 
@@ -83,7 +90,9 @@ void View::createBottomButtons(lv_obj_t* parent) {
     auto* button_container = lv_obj_create(parent);
     lv_obj_set_width(button_container, LV_PCT(100));
     lv_obj_set_height(button_container, LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(button_container, 0, LV_STATE_DEFAULT);
+    
+    // This is an interactive container holding form controls
+    lvgl::setContainerPadding(button_container, lvgl::ContainerType::Interactive);
     lv_obj_set_style_pad_gap(button_container, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(button_container, 0, LV_STATE_DEFAULT);
 

@@ -13,6 +13,9 @@ void obj_set_style_bg_invisible(lv_obj_t* obj) {
 }
 
 void obj_set_style_no_padding(lv_obj_t* obj) {
+    // Legacy helper: explicitly sets zero padding
+    // Consider using UiStyle::setContainerPadding() or UiStyle::setZeroPadding() 
+    // for new code to ensure proper scaling behavior
     lv_obj_set_style_pad_all(obj, 0, 0);
     lv_obj_set_style_pad_gap(obj, 0, 0);
 }

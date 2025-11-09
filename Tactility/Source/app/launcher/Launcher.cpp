@@ -5,6 +5,7 @@
 #include <Tactility/app/AppRegistration.h>
 #include <Tactility/hal/power/PowerDevice.h>
 #include <Tactility/lvgl/Lvgl.h>
+#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/service/loader/Loader.h>
 #include <Tactility/settings/BootSettings.h>
 
@@ -94,17 +95,18 @@ public:
         auto button_size = metrics.launcherButtonSize;
 
         lv_obj_align(buttons_wrapper, LV_ALIGN_CENTER, 0, 0);
-        // lv_obj_set_style_pad_all(buttons_wrapper, 0, LV_STATE_DEFAULT);
         lv_obj_set_size(buttons_wrapper, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_style_border_width(buttons_wrapper, 0, LV_STATE_DEFAULT);
         lv_obj_set_flex_grow(buttons_wrapper, 1);
 
-        // Note: Padding is now handled by the UiMetrics wrapper for lv_obj_create()
-        // Slight extra padding for non-touch devices to help with button selection
+        // Set appropriate padding based on device capabilities and layout needs
         if (!hal::hasDevice(hal::Device::Type::Touch)) {
-            lv_obj_set_style_pad_all(buttons_wrapper, 6, LV_STATE_DEFAULT);
+            // Non-touch devices need extra padding to help with navigation selection
+            lvgl::setContainerPadding(buttons_wrapper, lvgl::ContainerType::Custom, 6);
+        } else {
+            // Touch devices use layout padding (minimal for layout, more for content based on metrics)
+            lvgl::setContainerPadding(buttons_wrapper, lvgl::ContainerType::Layout);
         }
-        // For touch devices, let the wrapper's objectPadding handle it
 
         const auto* display = lv_obj_get_display(parent);
         const auto horizontal_px = lv_display_get_horizontal_resolution(display);
@@ -136,7 +138,7 @@ public:
 
         if (shouldShowPowerButton()) {
             auto* power_button = lv_btn_create(parent);
-            lv_obj_set_style_pad_all(power_button, 8, 0);
+            lvgl::setContainerPadding(power_button, lvgl::ContainerType::Interactive);
             lv_obj_align(power_button, LV_ALIGN_BOTTOM_MID, 0, -10);
             lv_obj_add_event_cb(power_button, onPowerOffPressed, LV_EVENT_SHORT_CLICKED, nullptr);
             lv_obj_set_style_shadow_width(power_button, 0, LV_STATE_DEFAULT);
