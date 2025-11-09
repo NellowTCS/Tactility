@@ -32,6 +32,7 @@ private:
         long pressStartTime = 0;
         long pressReleaseTime = 0;
         bool pressState = false;
+        bool longPressHandled = false;
         bool triggerShortPress = false;
         bool triggerLongPress = false;
     };

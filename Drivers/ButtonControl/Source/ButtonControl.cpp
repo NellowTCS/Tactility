@@ -59,28 +59,33 @@ void ButtonControl::readCallback(lv_indev_t* indev, lv_indev_data_t* data) {
 
 void ButtonControl::updatePin(std::vector<PinConfiguration>::const_reference configuration, std::vector<PinState>::reference state) {
     if (tt::hal::gpio::getLevel(configuration.pin)) { // if pressed
-        if (state.pressState) {
+        if (state.pressState && !state.longPressHandled) {
             // check time for long press trigger
             auto time_passed = tt::kernel::getMillis() - state.pressStartTime;
             if (time_passed > 500) {
-                // Trigger a long-press action once and clear the press state so
-                // the subsequent release doesn't also generate a short-press.
+                // Trigger a long-press action once and mark it as handled
                 state.triggerLongPress = true;
-                state.pressState = false;
+                state.longPressHandled = true;
             }
-        } else {
+        } else if (!state.pressState) {
+            // Starting a new press
             state.pressStartTime = tt::kernel::getMillis();
             state.pressState = true;
+            state.longPressHandled = false;
         }
+        // If longPressHandled is true, we do nothing until button is released
     } else { // released
-        if (state.pressState) {
+        if (state.pressState && !state.longPressHandled) {
+            // Released before long press threshold - trigger short press
             auto time_passed = tt::kernel::getMillis() - state.pressStartTime;
             if (time_passed < 500) {
                 TT_LOG_D(TAG, "Trigger short press");
                 state.triggerShortPress = true;
             }
-            state.pressState = false;
         }
+        // Reset state on release
+        state.pressState = false;
+        state.longPressHandled = false;
     }
 }
 
