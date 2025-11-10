@@ -325,13 +325,16 @@ class GxEPD2_BW : public GxEPD2_GFX_BASE_CLASS
       setFullWindow();
     }
 
-    // init method with additional parameters:
-    // SPIClass& spi: either SPI or alternate HW SPI channel
-    // SPISettings spi_settings: e.g. for higher SPI speed selection
-    void init(uint32_t serial_diag_bitrate, bool initial, uint16_t reset_duration, bool pulldown_rst_mode, SPIClass& spi, SPISettings spi_settings)
+    // init method with additional parameters adapted for ESP-IDF
+    void init(uint32_t serial_diag_bitrate, bool initial, uint16_t reset_duration, bool pulldown_rst_mode, spi_device_handle_t spi_device) 
     {
-      epd2.selectSPI(spi, spi_settings);
+      // Save the SPI device handle for later use
+      epd2.selectSPI(spi_device);
+
+      // Initialize the e-paper display
       epd2.init(serial_diag_bitrate, initial, reset_duration, pulldown_rst_mode);
+
+    // Default behavior for partial mode and display configuration
       _using_partial_mode = false;
       _current_page = 0;
       setFullWindow();

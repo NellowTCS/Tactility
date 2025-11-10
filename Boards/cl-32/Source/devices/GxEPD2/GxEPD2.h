@@ -1,5 +1,5 @@
 // Display Library for SPI e-paper panels from Dalian Good Display and boards from Waveshare.
-// Caution: the e-paper panels require 3.3V supply AND data lines!
+// Requires HW SPI and Adafruit_GFX. Caution: the e-paper panels require 3.3V supply AND data lines!
 //
 // Display Library based on Demo Example from Good Display: https://www.good-display.com/companyfile/32/
 //
@@ -40,7 +40,7 @@ class GxEPD2
       GDEW0154M09,
       GDEW0154M10,
       GDEY0154D67,
-      GDEW0213B1,  Waveshare_2_13_bw = GDEW0213B1,
+      GDE0213B1,  Waveshare_2_13_bw = GDE0213B1,
       GDEH0213B72,  Waveshare_2_13_bw_B72 = GDEH0213B72,
       GDEH0213B73,  Waveshare_2_13_bw_B73 = GDEH0213B73,
       GDEM0213B74,
