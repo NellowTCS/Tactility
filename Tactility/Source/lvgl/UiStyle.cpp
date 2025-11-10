@@ -81,8 +81,3 @@ void setZeroPadding(lv_obj_t* obj) {
 }
 
 } // namespace
-
-// C API accessor for TactilityC
-extern "C" const UiMetrics* tt_get_ui_metrics() {
-    return &tt::hal::getConfiguration()->uiMetrics;
-}
