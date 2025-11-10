@@ -6,6 +6,7 @@
 #include <cstring>
 #include <algorithm>
 #include <mutex>
+#include <freertos/semphr.h>
 
 #define TAG "ssd168x_display"
 
@@ -34,9 +35,24 @@ std::string Ssd168xDisplay::getDescription() const
     return "SSD168x e-paper display";
 }
 
+static SemaphoreHandle_t renderSemaphore = nullptr; // Semaphore to synchronize rendering
+
 bool Ssd168xDisplay::start()
 {
     TT_LOG_I(TAG, "Starting e-paper display...");
+
+    // Create the render semaphore
+    if (renderSemaphore == nullptr) {
+        renderSemaphore = xSemaphoreCreateBinary();
+        xSemaphoreGive(renderSemaphore); // Initialize the semaphore
+    }
+
+    // Validate dimensions against SSD1685 limits
+    if (configuration.width > SSD1685_MAX_COLS || configuration.height > SSD1685_MAX_ROWS) {
+        TT_LOG_E(TAG, "Invalid dimensions: %ux%u exceed SSD1685 limits (%ux%u)",
+                 configuration.width, configuration.height, SSD1685_MAX_COLS, SSD1685_MAX_ROWS);
+        return false;
+    }
 
     // Allocate framebuffer
     size_t fb_size = configuration.width * configuration.height / 8;
@@ -49,7 +65,7 @@ bool Ssd168xDisplay::start()
 
     // Initialize ssd1680 driver
     ssd1680_rotation_t hw_rotation = SSD1680_ROT_000;
-    
+
     ssd1680_config_t cfg = {
         .controller = configuration.controller,
         .rotation = hw_rotation,
@@ -117,7 +133,12 @@ bool Ssd168xDisplay::startLvgl()
         return false;
     }
 
+    // Validate buffer size
     const uint32_t buffer_size = configuration.width * configuration.height;
+    if (buffer_size > SSD1685_MAX_COLS * SSD1685_MAX_ROWS) {
+        TT_LOG_E(TAG, "Buffer size exceeds maximum allowed dimensions for SSD1685");
+        return false;
+    }
 
     TT_LOG_I(TAG, "LVGL config: width=%d height=%d buffer_size=%lu",
              configuration.width, configuration.height, buffer_size);
@@ -189,8 +210,12 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
         return;
     }
 
-    // Lock the mutex to ensure no concurrent renders
-    std::lock_guard<std::mutex> lock(renderMutex);
+    // Take the semaphore to ensure no concurrent renders
+    if (xSemaphoreTake(renderSemaphore, portMAX_DELAY) != pdTRUE) {
+        TT_LOG_E(TAG, "Failed to take render semaphore");
+        lv_display_flush_ready(disp);
+        return;
+    }
 
     TT_LOG_I(TAG, "Flush callback started - area: x1=%d y1=%d x2=%d y2=%d", 
              area->x1, area->y1, area->x2, area->y2);
@@ -199,8 +224,8 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
     const int panel_height = self->configuration.height;
     const int panel_bytes_per_row = (panel_width + 7) / 8;
 
-    const int area_width = (area->x2 - area->x1) + 1;
-    const int area_height = (area->y2 - area->y1) + 1;
+    const int area_width = std::min(area->x2 + 1, panel_width) - std::max(area->x1, 0);
+    const int area_height = std::min(area->y2 + 1, panel_height) - std::max(area->y1, 0);
     const lv_color_t* src_pixels = reinterpret_cast<const lv_color_t*>(px_map);
 
     // Convert RGB565 pixels to 1-bit framebuffer
@@ -236,8 +261,8 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
 
     // Partial refresh for the specified area
     ssd1680_rect_t rect = {
-        .x = static_cast<uint16_t>(area->x1),
-        .y = static_cast<uint16_t>(area->y1),
+        .x = static_cast<uint16_t>(std::max(area->x1, 0)),
+        .y = static_cast<uint16_t>(std::max(area->y1, 0)),
         .w = static_cast<uint16_t>(area_width),
         .h = static_cast<uint16_t>(area_height)
     };
@@ -255,6 +280,9 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
     }
 
     TT_LOG_I(TAG, "E-paper refresh complete, notifying LVGL");
+
+    // Release the semaphore after rendering is complete
+    xSemaphoreGive(renderSemaphore);
 
     // NOW tell LVGL we're done - this blocks the next render
     lv_display_flush_ready(disp);
