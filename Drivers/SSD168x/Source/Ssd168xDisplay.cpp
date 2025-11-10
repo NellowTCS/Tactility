@@ -224,8 +224,9 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
     const int panel_height = self->configuration.height;
     const int panel_bytes_per_row = (panel_width + 7) / 8;
 
-    const int area_width = std::min(area->x2 + 1, panel_width) - std::max(area->x1, 0);
-    const int area_height = std::min(area->y2 + 1, panel_height) - std::max(area->y1, 0);
+    // Replace std::min and std::max with explicit type casting to resolve ambiguity
+    const int area_width = std::min(static_cast<int>(area->x2 + 1), panel_width) - std::max(static_cast<int>(area->x1), 0);
+    const int area_height = std::min(static_cast<int>(area->y2 + 1), panel_height) - std::max(static_cast<int>(area->y1), 0);
     const lv_color_t* src_pixels = reinterpret_cast<const lv_color_t*>(px_map);
 
     // Convert RGB565 pixels to 1-bit framebuffer
@@ -261,8 +262,8 @@ void Ssd168xDisplay::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
 
     // Partial refresh for the specified area
     ssd1680_rect_t rect = {
-        .x = static_cast<uint16_t>(std::max(area->x1, 0)),
-        .y = static_cast<uint16_t>(std::max(area->y1, 0)),
+        .x = static_cast<uint16_t>(std::max(static_cast<int>(area->x1), 0)),
+        .y = static_cast<uint16_t>(std::max(static_cast<int>(area->y1), 0)),
         .w = static_cast<uint16_t>(area_width),
         .h = static_cast<uint16_t>(area_height)
     };
