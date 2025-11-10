@@ -61,8 +61,15 @@ bool GxEPD2Display::start() {
         .quadhd_io_num = -1,            // Not used
         .max_transfer_sz = _config.width * _config.height / 8,  // Max transfer size
     };
-    
-    ESP_ERROR_CHECK(spi_bus_initialize(_config.spiHost, &bus_cfg, SPI_DMA_CH_AUTO)); // Initialize SPI bus
+
+    // Check if the SPI bus is already initialized
+    esp_err_t ret = spi_bus_initialize(_config.spiHost, &bus_cfg, SPI_DMA_CH_AUTO);
+    if (ret == ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "SPI bus already initialized, skipping initialization.");
+    } else if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize SPI bus: %s", esp_err_to_name(ret));
+        return false;
+    }
 
     // SPI device configuration for the e-paper display
     spi_device_interface_config_t dev_cfg = {
@@ -76,28 +83,15 @@ bool GxEPD2Display::start() {
     };
 
     spi_device_handle_t spi_device;
-    ESP_ERROR_CHECK(spi_bus_add_device(_config.spiHost, &dev_cfg, &spi_device)); // Configure the SPI device
-
-    // Instantiate and initialize the e-paper display
-    _epd2_native = std::make_unique<GxEPD2_290_GDEY029T71H>(
-        _config.csPin, _config.dcPin, _config.rstPin, _config.busyPin);
-
-    _epd2_native->selectSPI(_config.spiHost, dev_cfg); // Pass the SPI device to the display
-    _epd2_native->init(115200);         // Initialize the e-paper display
-
-    // Adafruit GFX and GxEPD2_BW bridge
-    _epd2_bw = std::make_unique<GxEPD2_BW<GxEPD2_290_GDEY029T71H, 8>>(*_epd2_native);
-    _epd2_bw->setRotation(_config.rotation);
-    _epd2_bw->fillScreen(GxEPD_WHITE);
-    _epd2_bw->display();
-
-    // SPI Mutex for thread-safety
-    if (!_spiMutex) {
-        _spiMutex = xSemaphoreCreateMutex();
-        if (!_spiMutex) {
-            ESP_LOGW(TAG, "Failed to create SPI mutex");
-        }
+    ret = spi_bus_add_device(_config.spiHost, &dev_cfg, &spi_device);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add SPI device: %s", esp_err_to_name(ret));
+        return false;
     }
+
+    _epd2_native = std::make_unique<GxEPD2_290_GDEY029T71H>(_config.csPin, _config.dcPin, _config.rstPin, _config.busyPin);
+    _epd2_native->selectSPI(_config.spiHost, dev_cfg); // Pass the SPI device to the display
+    _epd2_native->init(115200);
 
     ESP_LOGI(TAG, "E-paper display started successfully");
     return true;
