@@ -60,6 +60,7 @@ public:
         uint32_t bufferSize = 0; // Size in pixel count. 0 means default, which is 1/10 of the screen size
         std::shared_ptr<tt::hal::touch::TouchDevice> touch;
         std::function<void(uint8_t)> _Nullable backlightDutyFunction = nullptr;
+        float physicalDiagonalInches = 0.0f; // Physical diagonal size (e.g., 2.4, 2.8, 3.5 inches)
     };
 
 private:
@@ -84,6 +85,8 @@ public:
     std::string getName() const override { return "ILI9488"; }
 
     std::string getDescription() const override { return "ILI9488 display"; }
+
+    float getPhysicalDiagonalInches() const override { return configuration->physicalDiagonalInches; }
 
     std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable getTouchDevice() override { return configuration->touch; }
 

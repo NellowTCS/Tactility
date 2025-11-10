@@ -28,6 +28,7 @@ struct EspLcdConfiguration {
     bool lvglSwapBytes;
     lcd_rgb_element_order_t rgbElementOrder;
     uint32_t bitsPerPixel;
+    float physicalDiagonalInches = 0.0f; // Physical diagonal size in inches (e.g., 1.47, 2.4, 3.5)
 };
 
 class EspLcdDisplayV2 : public tt::hal::display::DisplayDevice {
@@ -89,6 +90,12 @@ public:
     // endregion
 
     std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable getTouchDevice() override { return configuration->touch; }
+
+    // region Physical Size
+    
+    float getPhysicalDiagonalInches() const override { return configuration->physicalDiagonalInches; }
+    
+    // endregion
 
     // region Backlight
 

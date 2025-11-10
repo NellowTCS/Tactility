@@ -35,4 +35,6 @@ public:
 
     // TODO: Find out why it crashes
     bool supportsDisplayDriver() const override { return false; }
+    
+    float getPhysicalDiagonalInches() const override { return 4.0f; }
 };

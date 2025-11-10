@@ -42,6 +42,9 @@ bool Hx8357Display::startLvgl() {
     lvglDisplay = lv_display_create(UNPHONE_LCD_HORIZONTAL_RESOLUTION, UNPHONE_LCD_VERTICAL_RESOLUTION);
     lv_display_set_physical_resolution(lvglDisplay, UNPHONE_LCD_HORIZONTAL_RESOLUTION, UNPHONE_LCD_VERTICAL_RESOLUTION);
     lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_NATIVE);
+    
+    /* Set driver data to this DisplayDevice so UiMetrics can query physical size */
+    lv_display_set_driver_data(lvglDisplay, this);
 
     // TODO malloc to use SPIRAM
     buffer = static_cast<uint8_t*>(heap_caps_malloc(BUFFER_SIZE, MALLOC_CAP_DMA));

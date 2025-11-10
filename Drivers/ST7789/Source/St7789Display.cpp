@@ -21,6 +21,7 @@ std::shared_ptr<EspLcdConfiguration> St7789Display::createEspLcdConfiguration(co
         .lvglSwapBytes = configuration.lvglSwapBytes,
         .rgbElementOrder = configuration.rgbElementOrder,
         .bitsPerPixel = 16,
+        .physicalDiagonalInches = configuration.physicalDiagonalInches,
     });
 }
 

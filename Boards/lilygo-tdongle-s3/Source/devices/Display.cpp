@@ -26,7 +26,8 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         true,
         0,
         26,
-        1
+        1,
+        0.96f // 0.96" display
     );
 
     configuration->backlightDutyFunction = driver::pwmbacklight::setBacklightDuty;

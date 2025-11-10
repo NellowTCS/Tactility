@@ -28,6 +28,7 @@ public:
         std::function<void(uint8_t)> _Nullable backlightDutyFunction;
         gpio_num_t resetPin;
         lcd_rgb_element_order_t rgbElementOrder;
+        float physicalDiagonalInches = 0.0f; // Physical diagonal size (e.g., 2.4, 2.8, 3.2 inches)
     };
 
 private:

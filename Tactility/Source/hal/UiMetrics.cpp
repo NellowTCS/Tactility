@@ -1,22 +1,51 @@
 #include <Tactility/hal/UiMetrics.h>
+#include <Tactility/hal/display/DisplayDevice.h>
 
 #include <Tactility/Log.h>
 #include <lvgl.h>
 #include <algorithm>
+#include <cmath>
 
 namespace tt::hal {
 
 constexpr auto* TAG = "UiMetrics";
 
 enum class ScreenClass {
-    Tiny,      // < 100px min dimension
-    Small,     // < 150px min dimension  
-    Medium,    // < 200px min dimension
-    Large,     // < 400px min dimension
-    ExtraLarge // >= 400px min dimension
+    Tiny,      // Very small physical displays or < 100px
+    Small,     // Small displays or < 150px  
+    Medium,    // Medium displays or < 200px
+    Large,     // Standard displays or < 400px
+    ExtraLarge // Large displays or >= 400px
 };
 
-static ScreenClass getScreenClass(int minDimension) {
+static ScreenClass getScreenClass(int minDimension, int maxDimension, float diagonalInches) {
+    // If diagonal size is provided, calculate DPI and use that for classification
+    if (diagonalInches > 0.0f) {
+        // Calculate diagonal resolution in pixels using Pythagorean theorem
+        float diagonalPixels = std::sqrt(minDimension * minDimension + maxDimension * maxDimension);
+        float dpi = diagonalPixels / diagonalInches;
+        
+        // Classify based on physical size, not just resolution
+        // High DPI tiny screens need smaller UI despite higher resolution
+        if (diagonalInches < 2.0f) {
+            // Very small physical displays (T-Dongle, Heltec, Waveshare 1.47")
+            return ScreenClass::Tiny;
+        } else if (diagonalInches < 3.0f) {
+            // Small displays (2-3")
+            return ScreenClass::Small;
+        } else if (diagonalInches < 4.0f) {
+            // Medium displays (3-4")
+            return ScreenClass::Medium;
+        } else if (diagonalInches < 6.5f) {
+            // Standard displays (4-6.5")
+            return ScreenClass::Large;
+        } else {
+            // Large displays (> 6.5")
+            return ScreenClass::ExtraLarge;
+        }
+    }
+    
+    // Fallback to resolution-based classification if no diagonal info
     if (minDimension < 100) {
         return ScreenClass::Tiny;
     } else if (minDimension < 150) {
@@ -41,12 +70,23 @@ static const char* getScreenClassName(ScreenClass screenClass) {
     }
 }
 
-UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight) {
+UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight, float diagonalInches) {
     UiMetrics metrics;
     
     int minDim = std::min(screenWidth, screenHeight);
     int maxDim = std::max(screenWidth, screenHeight);
-    auto screenClass = getScreenClass(minDim);
+    auto screenClass = getScreenClass(minDim, maxDim, diagonalInches);
+    
+    // Calculate DPI info for logging
+    if (diagonalInches > 0.0f) {
+        float diagonalPixels = std::sqrt(minDim * minDim + maxDim * maxDim);
+        float dpi = diagonalPixels / diagonalInches;
+        TT_LOG_I(TAG, "Screen: %dx%d, %.2f\" diagonal, %.0f DPI -> %s",
+            screenWidth, screenHeight, diagonalInches, dpi, getScreenClassName(screenClass));
+    } else {
+        TT_LOG_I(TAG, "Screen: %dx%d (min=%d, max=%d) -> %s",
+            screenWidth, screenHeight, minDim, maxDim, getScreenClassName(screenClass));
+    }
     
     switch (screenClass) {
         case ScreenClass::Tiny:
@@ -205,10 +245,9 @@ UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight) {
             break;
     }
     
-    TT_LOG_I(TAG, "Screen: %dx%d (min=%d, max=%d) -> %s",
-        screenWidth, screenHeight, minDim, maxDim, getScreenClassName(screenClass));
-    TT_LOG_I(TAG, "  Toolbar: h=%d, font=%s, btn=%d",
+    TT_LOG_I(TAG, "  Toolbar: h=%d, font=%s, launcher=%d",
         metrics.toolbarHeight,
+        // todo: use lv_font_montserrat_12 for tiny displays 
         metrics.toolbarFont == &lv_font_montserrat_14 ? "14" : "18",
         metrics.launcherButtonSize);
     
@@ -227,7 +266,18 @@ UiMetrics UiMetrics::calculateFromDisplay() {
     int width = static_cast<int>(lv_display_get_physical_horizontal_resolution(display));
     int height = static_cast<int>(lv_display_get_physical_vertical_resolution(display));
     
-    return calculate(width, height);
+    // Try to get physical size from display driver if available
+    float diagonalInches = 0.0f;
+    auto* driver_data = lv_display_get_driver_data(display);
+    if (driver_data != nullptr) {
+        // Attempt to cast to DisplayDevice and get physical size
+        auto* display_device = static_cast<tt::hal::display::DisplayDevice*>(driver_data);
+        if (display_device != nullptr) {
+            diagonalInches = display_device->getPhysicalDiagonalInches();
+        }
+    }
+    
+    return calculate(width, height, diagonalInches);
 }
 
 } // namespace tt::hal

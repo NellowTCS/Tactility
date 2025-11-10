@@ -95,7 +95,8 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         false,
         false,
         false,
-        false
+        false,
+        4.3f // physicalDiagonalInches
     );
 
     return std::make_shared<RgbDisplay>(std::move(configuration));

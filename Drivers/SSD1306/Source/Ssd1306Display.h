@@ -22,14 +22,16 @@ public:
             unsigned int horizontalResolution,  // Typically 128
             unsigned int verticalResolution,    // 32 or 64
             std::shared_ptr<tt::hal::touch::TouchDevice> touch = nullptr,
-            bool invertColor = false
+            bool invertColor = false,
+            float physicalDiagonalInches = 0.0f
         ) : port(port),
             deviceAddress(deviceAddress),
             resetPin(resetPin),
             horizontalResolution(horizontalResolution),
             verticalResolution(verticalResolution),
             invertColor(invertColor),
-            touch(std::move(touch))
+            touch(std::move(touch)),
+            physicalDiagonalInches(physicalDiagonalInches)
         {}
 
         i2c_port_t port;
@@ -42,6 +44,7 @@ public:
         uint32_t bufferSize = 0; // Size in pixel count. 0 means default (full screen / 8)
         int gapX = 0; // Column offset
         int gapY = 0; // Not used for SSD1306
+        float physicalDiagonalInches = 0.0f; // Physical diagonal size in inches
     };
 
 private:
@@ -73,6 +76,8 @@ public:
     std::string getDescription() const override { return "SSD1306 monochrome OLED display with ESP-LVGL-PORT monochrome support"; }
 
     std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable getTouchDevice() override { return configuration->touch; }
+
+    float getPhysicalDiagonalInches() const override { return configuration->physicalDiagonalInches; }
 
     void setBacklightDuty(uint8_t backlightDuty) override {
         // SSD1306 does not have backlight control

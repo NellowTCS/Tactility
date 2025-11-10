@@ -28,6 +28,7 @@ public:
         gpio_num_t resetPin;
         bool lvglSwapBytes;
         lcd_rgb_element_order_t rgbElementOrder = LCD_RGB_ELEMENT_ORDER_RGB;
+        float physicalDiagonalInches = 0.0f; // Physical diagonal size (e.g., 1.3, 2.4, 3.5 inches)
     };
 
 private:

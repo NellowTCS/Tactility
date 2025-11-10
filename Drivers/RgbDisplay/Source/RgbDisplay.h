@@ -31,6 +31,7 @@ public:
         bool mirrorY;
         bool invertColor;
         std::function<void(uint8_t)> _Nullable backlightDutyFunction;
+        float physicalDiagonalInches = 0.0f; // Physical diagonal size in inches
 
         Configuration(
             esp_lcd_rgb_panel_config_t panelConfig,
@@ -41,7 +42,8 @@ public:
             bool mirrorX = false,
             bool mirrorY = false,
             bool invertColor = false,
-            std::function<void(uint8_t)> _Nullable backlightDutyFunction = nullptr
+            std::function<void(uint8_t)> _Nullable backlightDutyFunction = nullptr,
+            float physicalDiagonalInches = 0.0f
         ) : panelConfig(panelConfig),
             bufferConfiguration(bufferConfiguration),
             touch(std::move(touch)),
@@ -50,7 +52,8 @@ public:
             mirrorX(mirrorX),
             mirrorY(mirrorY),
             invertColor(invertColor),
-            backlightDutyFunction(std::move(backlightDutyFunction)) {
+            backlightDutyFunction(std::move(backlightDutyFunction)),
+            physicalDiagonalInches(physicalDiagonalInches) {
             if (this->bufferConfiguration.size == 0) {
                 auto horizontal_resolution = panelConfig.timings.h_res;
                 auto vertical_resolution = panelConfig.timings.v_res;
@@ -90,6 +93,8 @@ public:
     bool stopLvgl() override;
 
     std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable getTouchDevice() override { return configuration->touch; }
+
+    float getPhysicalDiagonalInches() const override { return configuration->physicalDiagonalInches; }
 
     void setBacklightDuty(uint8_t backlightDuty) override {
         if (configuration->backlightDutyFunction != nullptr) {

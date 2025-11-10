@@ -63,6 +63,7 @@ public:
         // Additional features
         std::shared_ptr<tt::hal::touch::TouchDevice> touch = nullptr;
         std::function<void(uint8_t)> backlightDutyFunction = nullptr;
+        float physicalDiagonalInches = 0.0f; // Physical diagonal size (e.g., 1.9 inches)
 
         // Basic constructor - requires resolution to be set separately
         Configuration(gpio_num_t cs, gpio_num_t dc, gpio_num_t wr, gpio_num_t rd,
@@ -104,6 +105,8 @@ public:
     lv_display_t* getLvglDisplay() const override { return lvglDisplay; }
     std::string getName() const override { return "I8080 ST7789"; }
     std::string getDescription() const override { return "I8080-based ST7789 display"; }
+    
+    float getPhysicalDiagonalInches() const override { return configuration.physicalDiagonalInches; }
     
     // Lifecycle
     bool start() override;

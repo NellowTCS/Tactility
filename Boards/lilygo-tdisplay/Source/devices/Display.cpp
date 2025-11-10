@@ -17,7 +17,8 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         .touch = nullptr,
         .backlightDutyFunction = driver::pwmbacklight::setBacklightDuty,
         .resetPin = LCD_PIN_RESET,
-        .lvglSwapBytes = true
+        .lvglSwapBytes = true,
+        .physicalDiagonalInches = 1.14f
     };
 
     auto spi_configuration = std::make_shared<St7789Display::SpiConfiguration>(St7789Display::SpiConfiguration {

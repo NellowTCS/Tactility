@@ -21,7 +21,8 @@ std::shared_ptr<EspLcdConfiguration> Ili934xDisplay::createEspLcdConfiguration(c
         .lvglColorFormat = LV_COLOR_FORMAT_RGB565,
         .lvglSwapBytes = configuration.swapBytes,
         .rgbElementOrder = configuration.rgbElementOrder,
-        .bitsPerPixel = 16
+        .bitsPerPixel = 16,
+        .physicalDiagonalInches = configuration.physicalDiagonalInches,
     });
 }
 

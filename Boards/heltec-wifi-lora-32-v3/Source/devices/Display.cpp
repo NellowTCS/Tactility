@@ -11,7 +11,8 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         DISPLAY_HORIZONTAL_RESOLUTION,
         DISPLAY_VERTICAL_RESOLUTION,
         nullptr, // no touch
-        false // invert
+        false, // invert
+        0.96f // 0.96" display
     );
 
     configuration->gapX = -4;

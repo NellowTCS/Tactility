@@ -20,6 +20,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     config.horizontalResolution = DISPLAY_HORIZONTAL_RESOLUTION;
     config.verticalResolution = DISPLAY_VERTICAL_RESOLUTION;
     config.backlightDutyFunction = driver::pwmbacklight::setBacklightDuty;
+    config.physicalDiagonalInches = 1.9f;
 
     // Adjust other settings as needed
     config.gapX = 35;  // ST7789 has a 35 pixel gap on X axis

@@ -98,7 +98,8 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         false,
         false,
         false,
-        driver::pwmbacklight::setBacklightDuty
+        driver::pwmbacklight::setBacklightDuty,
+        4.3f // 4.3" display
     );
 
     return std::make_shared<RgbDisplay>(std::move(configuration));

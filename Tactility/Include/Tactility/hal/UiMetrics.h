@@ -43,18 +43,21 @@ public:
     int wifiManageScrollbarWidth = 0; ///< Vertical padding for wifi manage items
     
     /**
-     * Calculate UI metrics based on screen dimensions.
-     * Uses the minimum of width/height to determine scaling class:
-     * - Tiny: < 100px (T-Dongle, Heltec)
-     * - Small: < 200px (Cardputer, StickC) - matches old "Smallest"
-     * - Large: < 400px (240x320, 320x240, etc) - matches old "Default"
-     * - ExtraLarge: >= 400px (800x480, large panels) - larger UI elements
+     * Calculate UI metrics based on screen dimensions and physical size.
+     * Uses both resolution and physical DPI to determine appropriate scaling:
+     * - Tiny: Very small physical displays (< 2" or high DPI tiny screens)
+     * - Small: Small displays (2-3" with low res, or < 150px min dimension)
+     * - Medium: Medium displays (3-4" or 150-200px)
+     * - Large: Standard displays (4-6" or 200-400px) - matches old "Default"
+     * - ExtraLarge: Large displays (> 6" or >= 400px)
      * 
      * @param screenWidth Physical horizontal resolution in pixels
      * @param screenHeight Physical vertical resolution in pixels
+     * @param diagonalInches Optional: Physical diagonal screen size in inches (e.g., 1.47, 2.4, 3.5)
+     *                       If provided, will use DPI to better classify screen size
      * @return Calculated metrics instance optimized for this screen size
      */
-    static UiMetrics calculate(int screenWidth, int screenHeight);
+    static UiMetrics calculate(int screenWidth, int screenHeight, float diagonalInches = 0.0f);
     
     /**
      * Calculate metrics from the default LVGL display.

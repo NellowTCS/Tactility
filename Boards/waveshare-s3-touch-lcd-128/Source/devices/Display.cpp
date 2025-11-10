@@ -34,7 +34,8 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         true,
         true,
         0,
-        LCD_RGB_ELEMENT_ORDER_BGR
+        LCD_RGB_ELEMENT_ORDER_BGR,
+        1.28f // 1.28" display
     );
 
     configuration->resetPin = GPIO_NUM_14;

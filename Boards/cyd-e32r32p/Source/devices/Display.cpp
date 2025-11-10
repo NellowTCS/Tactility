@@ -36,7 +36,8 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         .backlightDutyFunction = driver::pwmbacklight::setBacklightDuty,
         .resetPin = GPIO_NUM_NC,
         .lvglSwapBytes = false,
-        .rgbElementOrder = LCD_RGB_ELEMENT_ORDER_BGR  // BGR for this display
+        .rgbElementOrder = LCD_RGB_ELEMENT_ORDER_BGR,  // BGR for this display
+        .physicalDiagonalInches = 3.2f
     };
 
     // Create the SPI configuration (from EspLcdSpiDisplay base class)
