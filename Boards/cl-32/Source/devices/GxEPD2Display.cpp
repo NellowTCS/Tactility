@@ -52,46 +52,30 @@ std::string GxEPD2Display::getDescription() const {
 bool GxEPD2Display::start() {
     ESP_LOGI(TAG, "Starting e-paper display...");
 
-    // SPI bus configuration
-    spi_bus_config_t bus_cfg = {
-        .mosi_io_num = _config.csPin,    // MOSI GPIO pin
-        .miso_io_num = -1,              // Not needed for e-paper
-        .sclk_io_num = _config.dcPin,   // SCLK GPIO pin
-        .quadwp_io_num = -1,            // Not used
-        .quadhd_io_num = -1,            // Not used
-        .max_transfer_sz = _config.width * _config.height / 8,  // Max transfer size
-    };
-
-    // Check if the SPI bus is already initialized
-    esp_err_t ret = spi_bus_initialize(_config.spiHost, &bus_cfg, SPI_DMA_CH_AUTO);
-    if (ret == ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(TAG, "SPI bus already initialized, skipping initialization.");
-    } else if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize SPI bus: %s", esp_err_to_name(ret));
-        return false;
-    }
-
     // SPI device configuration for the e-paper display
     spi_device_interface_config_t dev_cfg = {
         .mode = 0,                     // SPI mode 0
         .clock_speed_hz = 10000000,    // SPI clock
         .input_delay_ns = 0,
-        .spics_io_num = _config.rstPin, // Chip Select GPIO (CS pin)
-        .queue_size = 7,               // Transactions queued at once
-        .pre_cb = nullptr,
-        .post_cb = nullptr,
+        .spics_io_num = _config.csPin, // Chip Select GPIO pin
+        .queue_size = 7,               // Max queued transactions
+        .pre_cb = nullptr,             // No pre-transaction callbacks
+        .post_cb = nullptr,            // No post-transaction callbacks
     };
 
     spi_device_handle_t spi_device;
-    ret = spi_bus_add_device(_config.spiHost, &dev_cfg, &spi_device);
+    // Add device to the SPI bus (already initialized in Configuration)
+    esp_err_t ret = spi_bus_add_device(_config.spiHost, &dev_cfg, &spi_device);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to add SPI device: %s", esp_err_to_name(ret));
         return false;
     }
 
-    _epd2_native = std::make_unique<GxEPD2_290_GDEY029T71H>(_config.csPin, _config.dcPin, _config.rstPin, _config.busyPin);
-    _epd2_native->selectSPI(_config.spiHost, dev_cfg); // Pass the SPI device to the display
-    _epd2_native->init(115200);
+    // Instantiate and initialize the e-paper display
+    _epd2_native = std::make_unique<GxEPD2_290_GDEY029T71H>(
+        _config.csPin, _config.dcPin, _config.rstPin, _config.busyPin);
+    _epd2_native->selectSPI(_config.spiHost, dev_cfg); // Pass SPI host and device configuration
+    _epd2_native->init(115200); // Initialize the e-paper display
 
     ESP_LOGI(TAG, "E-paper display started successfully");
     return true;
