@@ -68,6 +68,7 @@ bool GxEPD2Display::start() {
     spi_device_interface_config_t dev_cfg = {
         .clock_speed_hz = 10000000,    // SPI clock
         .mode = 0,                     // SPI mode 0
+        .input_delay_ns = 0,
         .spics_io_num = _config.rstPin, // Chip Select GPIO (CS pin)
         .queue_size = 7,               // Transactions queued at once
         .pre_cb = nullptr,
@@ -81,7 +82,7 @@ bool GxEPD2Display::start() {
     _epd2_native = std::make_unique<GxEPD2_290_GDEY029T71H>(
         _config.csPin, _config.dcPin, _config.rstPin, _config.busyPin);
 
-    _epd2_native->selectSPI(spi_device); // Pass the SPI device to the display
+    _epd2_native->selectSPI(_config.spiHost, dev_cfg); // Pass the SPI device to the display
     _epd2_native->init(115200);         // Initialize the e-paper display
 
     // Adafruit GFX and GxEPD2_BW bridge

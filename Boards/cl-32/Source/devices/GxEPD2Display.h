@@ -13,6 +13,7 @@
 #include <cstdint>
 
 #include <Adafruit_GFX.h>
+#include "GxEPD2/GxEPD2_EPD.h"
 #include "GxEPD2/GxEPD2_BW.h"
 
 class GxEPD2_290_GDEY029T71H; // Forward declaration
