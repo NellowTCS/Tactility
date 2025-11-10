@@ -74,7 +74,8 @@ public:
 
     void onShow(AppContext& app, lv_obj_t* parent) final {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
+        lvgl::setFlexGap(parent, 0.0f);
 
         lvgl::toolbar_create(parent, app);
 
@@ -82,7 +83,7 @@ public:
         lv_obj_set_width(main_wrapper, LV_PCT(100));
         lv_obj_set_flex_grow(main_wrapper, 1);
         lv_obj_set_flex_flow(main_wrapper, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_all(main_wrapper, 0, 0);
+        lvgl::setContainerPadding(main_wrapper, lvgl::ContainerType::Layout);
         lv_obj_set_style_border_width(main_wrapper, 0, 0);
         lvgl::obj_set_style_bg_invisible(main_wrapper);
 

@@ -96,6 +96,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         false,
         false,
         false,
+        nullptr, // backlightDutyFunction
         4.3f // physicalDiagonalInches
     );
 

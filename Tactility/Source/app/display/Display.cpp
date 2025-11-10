@@ -4,6 +4,7 @@
 #include <Tactility/Assets.h>
 #include <Tactility/hal/display/DisplayDevice.h>
 #include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/lvgl/UiStyle.h>
 
 #include <lvgl.h>
 
@@ -68,7 +69,8 @@ public:
         const auto& metrics = hal::getConfiguration()->uiMetrics;
 
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
+        lvgl::setFlexGap(parent, 0.0f);
 
         auto hal_display = getHalDisplay();
         assert(hal_display != nullptr);
@@ -130,7 +132,7 @@ public:
 
         auto* orientation_wrapper = lv_obj_create(main_wrapper);
         lv_obj_set_size(orientation_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_all(orientation_wrapper, 0, LV_STATE_DEFAULT);
+        lvgl::setContainerPadding(orientation_wrapper, lvgl::ContainerType::Layout);
         lv_obj_set_style_border_width(orientation_wrapper, 0, LV_STATE_DEFAULT);
 
         auto* orientation_label = lv_label_create(orientation_wrapper);

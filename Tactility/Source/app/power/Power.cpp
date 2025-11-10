@@ -142,7 +142,8 @@ public:
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
+        lvgl::setFlexGap(parent, 0.0f);
 
         lvgl::toolbar_create(parent, app);
 
@@ -160,8 +161,8 @@ public:
         lv_obj_t* switch_container = lv_obj_create(wrapper);
         lv_obj_set_width(switch_container, LV_PCT(100));
         lv_obj_set_height(switch_container, LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_all(switch_container, 0, 0);
-        lv_obj_set_style_pad_gap(switch_container, 0, 0);
+        lvgl::setContainerPadding(switch_container, lvgl::ContainerType::Layout);
+        lvgl::setFlexGap(switch_container, 0.0f);
         lvgl::obj_set_style_bg_invisible(switch_container);
 
         enableLabel = lv_label_create(switch_container);

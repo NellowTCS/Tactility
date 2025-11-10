@@ -5,6 +5,7 @@
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/lvgl/Spinner.h>
 #include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/network/Http.h>
 #include <Tactility/Paths.h>
 #include <Tactility/service/loader/Loader.h>
@@ -102,7 +103,7 @@ class AppHubApp final : public App {
             });
 
             auto* list = lv_list_create(contentWrapper);
-            lv_obj_set_style_pad_all(list, 0, LV_STATE_DEFAULT);
+            lvgl::setContainerPadding(list, lvgl::ContainerType::Layout);
             lv_obj_set_size(list, LV_PCT(100), LV_SIZE_CONTENT);
             for (int i = 0; i < entries.size(); i++) {
                 auto& entry = entries[i];
@@ -158,7 +159,8 @@ public:
 
     void onShow(TT_UNUSED AppContext& app, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
+        lvgl::setFlexGap(parent, 0.0f);
 
         auto* toolbar = lvgl::toolbar_create(parent, app);
         refreshButton = lvgl::toolbar_add_image_button_action(toolbar, LV_SYMBOL_REFRESH, onRefreshPressed, this);
@@ -167,7 +169,7 @@ public:
         contentWrapper = lv_obj_create(parent);
         lv_obj_set_width(contentWrapper, LV_PCT(100));
         lv_obj_set_flex_grow(contentWrapper, 1);
-        lv_obj_set_style_pad_all(contentWrapper, 0, LV_STATE_DEFAULT);
+        lvgl::setContainerPadding(contentWrapper, lvgl::ContainerType::Layout);
         lv_obj_set_style_pad_ver(contentWrapper, 0, LV_STATE_DEFAULT);
 
         refresh();

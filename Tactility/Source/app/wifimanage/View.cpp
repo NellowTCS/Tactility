@@ -7,6 +7,7 @@
 
 #include <Tactility/lvgl/Style.h>
 #include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/lvgl/UiStyle.h>
 
 #include <Tactility/Log.h>
 #include <Tactility/service/wifi/Wifi.h>
@@ -153,7 +154,7 @@ void View::updateNetworkList() {
 
     auto* enable_on_boot_wrapper = lv_obj_create(networks_list);
     lv_obj_set_size(enable_on_boot_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(enable_on_boot_wrapper, 0, LV_STATE_DEFAULT);
+    lvgl::setContainerPadding(enable_on_boot_wrapper, lvgl::ContainerType::Layout);
     lv_obj_set_style_border_width(enable_on_boot_wrapper, 0, LV_STATE_DEFAULT);
 
     auto* enable_label = lv_label_create(enable_on_boot_wrapper);
@@ -289,7 +290,8 @@ void View::updateEnableOnBootToggle() {
 void View::init(const AppContext& app, lv_obj_t* parent) {
 
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+    lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
+    lvgl::setFlexGap(parent, 0.0f);
 
     root = parent;
 

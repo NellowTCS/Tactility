@@ -2,6 +2,7 @@
 
 #include <Tactility/app/AppManifest.h>
 #include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/Assets.h>
 #include <Tactility/service/espnow/EspNow.h>
 
@@ -29,7 +30,7 @@ class ChatApp : public App {
         lv_obj_set_width(msg_label, lv_pct(100));
         lv_label_set_long_mode(msg_label, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_align(msg_label, LV_TEXT_ALIGN_LEFT, 0);
-        lv_obj_set_style_pad_all(msg_label, 2, 0);
+        lvgl::setContainerPadding(msg_label, lvgl::ContainerType::Custom, 2);
         lv_obj_scroll_to_y(msg_list, lv_obj_get_scroll_y(msg_list) + 20, LV_ANIM_ON);
     }
 
@@ -93,7 +94,8 @@ public:
 
     void onShow(AppContext& context, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
+        lvgl::setFlexGap(parent, 0.0f);
 
         lvgl::toolbar_create(parent, context);
 
@@ -111,7 +113,7 @@ public:
         auto* bottom_wrapper = lv_obj_create(parent);
         lv_obj_set_flex_flow(bottom_wrapper, LV_FLEX_FLOW_ROW);
         lv_obj_set_size(bottom_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_all(bottom_wrapper, 0, 0);
+        lvgl::setContainerPadding(bottom_wrapper, lvgl::ContainerType::Layout);
         lv_obj_set_style_pad_column(bottom_wrapper, 4, 0);
         lv_obj_set_style_border_opa(bottom_wrapper, 0, LV_STATE_DEFAULT);
 

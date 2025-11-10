@@ -2,6 +2,7 @@
 #include <Tactility/app/timezone/TimeZone.h>
 #include <Tactility/app/localesettings/TextResources.h>
 #include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/service/loader/Loader.h>
 #include <Tactility/settings/Time.h>
@@ -93,7 +94,8 @@ public:
         textResources.load();
 
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
+        lvgl::setFlexGap(parent, 0.0f);
 
         lvgl::toolbar_create(parent, app);
 
@@ -107,7 +109,7 @@ public:
         auto* region_wrapper = lv_obj_create(main_wrapper);
         lv_obj_set_width(region_wrapper, LV_PCT(100));
         lv_obj_set_height(region_wrapper, LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_all(region_wrapper, 0, 0);
+        lvgl::setContainerPadding(region_wrapper, lvgl::ContainerType::Layout);
         lv_obj_set_style_border_width(region_wrapper, 0, 0);
 
         regionLabel = lv_label_create(region_wrapper);
@@ -134,7 +136,7 @@ public:
         auto* language_wrapper = lv_obj_create(main_wrapper);
         lv_obj_set_width(language_wrapper, LV_PCT(100));
         lv_obj_set_height(language_wrapper, LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_all(language_wrapper, 0, 0);
+        lvgl::setContainerPadding(language_wrapper, lvgl::ContainerType::Layout);
         lv_obj_set_style_border_width(language_wrapper, 0, 0);
 
         languageLabel = lv_label_create(language_wrapper);

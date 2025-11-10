@@ -8,6 +8,7 @@
 #include <Tactility/app/alertdialog/AlertDialog.h>
 #include <Tactility/lvgl/Style.h>
 #include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/TactilityCore.h>
 
 #include <lvgl.h>
@@ -133,7 +134,8 @@ public:
         });
 
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
+        lvgl::setFlexGap(parent, 0.0f);
 
         auto* toolbar = lvgl::toolbar_create(parent, ssid);
         busySpinner = lvgl::toolbar_add_spinner_action(toolbar);
@@ -173,7 +175,7 @@ public:
         auto* auto_connect_wrapper = lv_obj_create(wrapper);
         lv_obj_set_size(auto_connect_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
         lvgl::obj_set_style_bg_invisible(auto_connect_wrapper);
-        lv_obj_set_style_pad_all(auto_connect_wrapper, 0, LV_STATE_DEFAULT);
+        lvgl::setContainerPadding(auto_connect_wrapper, lvgl::ContainerType::Layout);
         lv_obj_set_style_border_width(auto_connect_wrapper, 0, LV_STATE_DEFAULT);
 
         auto* auto_connect_label = lv_label_create(auto_connect_wrapper);

@@ -2,6 +2,7 @@
 #include <Tactility/app/fileselection/FileSelection.h>
 #include <Tactility/file/FileLock.h>
 #include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/service/loader/Loader.h>
 #include <Tactility/Assets.h>
@@ -123,7 +124,8 @@ class NotesApp final : public App {
     void onShow(AppContext& context, lv_obj_t* parent) override {
         lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
+        lvgl::setFlexGap(parent, 0.0f);
 
         lv_obj_t* toolbar = lvgl::toolbar_create(parent, context);
         lv_obj_align(toolbar, LV_ALIGN_TOP_MID, 0, 0);
@@ -151,8 +153,8 @@ class NotesApp final : public App {
         lv_obj_set_flex_grow(wrapper, 1);
         lv_obj_set_width(wrapper, LV_PCT(100));
         lv_obj_set_height(wrapper, LV_PCT(100));
-        lv_obj_set_style_pad_all(wrapper, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_row(wrapper, 0, LV_PART_MAIN);
+        lvgl::setContainerPadding(wrapper, lvgl::ContainerType::FullScreen);
+        lvgl::setFlexGap(wrapper, 0.0f);
         lv_obj_set_style_border_width(wrapper, 0, 0);
         lv_obj_remove_flag(wrapper, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -169,7 +171,7 @@ class NotesApp final : public App {
         lv_obj_set_style_bg_color(footer, lv_color_hex(0x262626), LV_PART_MAIN);
         lv_obj_set_width(footer, LV_PCT(100));
         lv_obj_set_height(footer, LV_PCT(14));
-        lv_obj_set_style_pad_all(footer, 0, LV_PART_MAIN);
+        lvgl::setContainerPadding(footer, lvgl::ContainerType::FullScreen);
         lv_obj_set_style_border_width(footer, 0, 0);
         lv_obj_remove_flag(footer, LV_OBJ_FLAG_SCROLLABLE);
 

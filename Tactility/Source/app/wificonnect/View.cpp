@@ -93,7 +93,7 @@ void View::createBottomButtons(lv_obj_t* parent) {
     
     // This is an interactive container holding form controls
     lvgl::setContainerPadding(button_container, lvgl::ContainerType::Interactive);
-    lv_obj_set_style_pad_gap(button_container, 0, LV_STATE_DEFAULT);
+    lvgl::setFlexGap(button_container, 0.0f);
     lv_obj_set_style_border_width(button_container, 0, LV_STATE_DEFAULT);
 
     remember_switch = lv_switch_create(button_container);
@@ -119,7 +119,8 @@ void View::createBottomButtons(lv_obj_t* parent) {
 // TODO: Standardize dialogs
 void View::init(AppContext& app, lv_obj_t* parent) {
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+    lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
+    lvgl::setFlexGap(parent, 0.0f);
 
     lvgl::toolbar_create(parent, app);
 
@@ -133,8 +134,8 @@ void View::init(AppContext& app, lv_obj_t* parent) {
     auto* ssid_wrapper = lv_obj_create(wrapper);
     lv_obj_set_width(ssid_wrapper, LV_PCT(100));
     lv_obj_set_height(ssid_wrapper, LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(ssid_wrapper, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_gap(ssid_wrapper, 0, LV_STATE_DEFAULT);
+    lvgl::setContainerPadding(ssid_wrapper, lvgl::ContainerType::Layout);
+    lvgl::setFlexGap(ssid_wrapper, 0.0f);
     lv_obj_set_style_border_width(ssid_wrapper, 0, LV_STATE_DEFAULT);
 
     auto* ssid_label_wrapper = lv_obj_create(ssid_wrapper);
@@ -162,8 +163,8 @@ void View::init(AppContext& app, lv_obj_t* parent) {
     auto* password_wrapper = lv_obj_create(wrapper);
     lv_obj_set_width(password_wrapper, LV_PCT(100));
     lv_obj_set_height(password_wrapper, LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(password_wrapper, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_gap(password_wrapper, 0, LV_STATE_DEFAULT);
+    lvgl::setContainerPadding(password_wrapper, lvgl::ContainerType::Layout);
+    lvgl::setFlexGap(password_wrapper, 0.0f);
     lv_obj_set_style_border_width(password_wrapper, 0, LV_STATE_DEFAULT);
 
     auto* password_label_wrapper = lv_obj_create(password_wrapper);

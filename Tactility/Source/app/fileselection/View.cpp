@@ -175,7 +175,8 @@ void View::update() {
 
 void View::init(lv_obj_t* parent, Mode mode) {
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+    lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
+    lvgl::setFlexGap(parent, 0.0f);
 
     auto* toolbar = lvgl::toolbar_create(parent, "Select File");
     navigate_up_button = lvgl::toolbar_add_image_button_action(toolbar, LV_SYMBOL_UP, &onNavigateUpPressedCallback, this);
@@ -183,7 +184,7 @@ void View::init(lv_obj_t* parent, Mode mode) {
     auto* wrapper = lv_obj_create(parent);
     lv_obj_set_width(wrapper, LV_PCT(100));
     lv_obj_set_style_border_width(wrapper, 0, 0);
-    lv_obj_set_style_pad_all(wrapper, 0, 0);
+    lvgl::setContainerPadding(wrapper, lvgl::ContainerType::Layout);
     lv_obj_set_flex_grow(wrapper, 1);
     lv_obj_set_flex_flow(wrapper, LV_FLEX_FLOW_ROW);
 
@@ -195,7 +196,7 @@ void View::init(lv_obj_t* parent, Mode mode) {
     lv_obj_set_flex_flow(bottom_wrapper, LV_FLEX_FLOW_ROW);
     lv_obj_set_size(bottom_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_style_border_width(bottom_wrapper, 0, 0);
-    lv_obj_set_style_pad_all(bottom_wrapper, 0, 0);
+    lvgl::setContainerPadding(bottom_wrapper, lvgl::ContainerType::Layout);
 
     path_textarea = lv_textarea_create(bottom_wrapper);
     lv_textarea_set_one_line(path_textarea, true);

@@ -115,7 +115,7 @@ public:
         lv_obj_t* button_wrapper = lv_obj_create(parent);
         lv_obj_set_flex_flow(button_wrapper, LV_FLEX_FLOW_ROW);
         lv_obj_set_size(button_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_all(button_wrapper, 0, 0);
+        lvgl::setContainerPadding(button_wrapper, lvgl::ContainerType::Layout);
         lv_obj_set_flex_align(button_wrapper, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_border_width(button_wrapper, 0, 0);
         lv_obj_align(button_wrapper, LV_ALIGN_BOTTOM_MID, 0, -4);
