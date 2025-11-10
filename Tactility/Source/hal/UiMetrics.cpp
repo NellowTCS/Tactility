@@ -5,6 +5,7 @@
 #include <lvgl.h>
 #include <algorithm>
 #include <cmath>
+#include <climits>
 
 namespace tt::hal {
 
@@ -70,6 +71,35 @@ static const char* getScreenClassName(ScreenClass screenClass) {
     }
 }
 
+static const lv_font_t* selectBestFont(int idealSize) {
+    // Available compressed fonts
+    static const struct {
+        int size;
+        const lv_font_t* font;
+    } availableFonts[] = {
+        {10, &lv_font_montserrat_10},
+        {12, &lv_font_montserrat_12},
+        {14, &lv_font_montserrat_14},
+        {16, &lv_font_montserrat_16},
+        {18, &lv_font_montserrat_18},
+        {20, &lv_font_montserrat_20},
+    };
+    
+    // Find the closest font size (prefer larger fonts for better quality)
+    const lv_font_t* bestFont = &lv_font_montserrat_14; // fallback
+    int bestDiff = INT_MAX;
+    
+    for (const auto& fontInfo : availableFonts) {
+        int diff = std::abs(fontInfo.size - idealSize);
+        if (diff < bestDiff || (diff == bestDiff && fontInfo.size >= idealSize)) {
+            bestDiff = diff;
+            bestFont = fontInfo.font;
+        }
+    }
+    
+    return bestFont;
+}
+
 UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight, float diagonalInches) {
     UiMetrics metrics;
     
@@ -93,8 +123,8 @@ UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight, float diagonal
             // For extremely small displays (T-Dongle 80x160, Heltec 64x128)
             // Very compact UI to fit basic functionality
             metrics.toolbarHeight = 18;
-            // Use a smaller font for very tiny displays to keep UI readable
-            metrics.toolbarFont = &lv_font_montserrat_12;
+            // Calculate ideal font size based on screen and use best available
+            metrics.toolbarFont = selectBestFont(10); // Ideal: 10px, gets: 10px
             metrics.toolbarTitlePadding = 2;
             metrics.toolbarButtonInset = 10;
             
@@ -125,7 +155,7 @@ UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight, float diagonal
             // For small displays (Cardputer 135px, StickC 135px)
             // Very compact UI - original "Smallest" scale
             metrics.toolbarHeight = 22;
-            metrics.toolbarFont = &lv_font_montserrat_14;
+            metrics.toolbarFont = selectBestFont(13); // Ideal: 13px, gets: 12px or 14px
             metrics.toolbarTitlePadding = 4;
             metrics.toolbarButtonInset = 8;
             
@@ -156,7 +186,7 @@ UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight, float diagonal
             // For medium displays
             // Balanced between Small and Large
             metrics.toolbarHeight = 28;
-            metrics.toolbarFont = &lv_font_montserrat_14;
+            metrics.toolbarFont = selectBestFont(15); // Ideal: 15px, gets: 14px or 16px
             metrics.toolbarTitlePadding = 6;
             metrics.toolbarButtonInset = 7;
             
@@ -187,7 +217,7 @@ UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight, float diagonal
             // For 240x320 up to ~400px displays - matches old Default scale
             // Use -1 to indicate "use LVGL theme defaults, don't override"
             metrics.toolbarHeight = 40;
-            metrics.toolbarFont = &lv_font_montserrat_18;
+            metrics.toolbarFont = selectBestFont(17); // Ideal: 17px, gets: 16px or 18px
             metrics.toolbarTitlePadding = 8;
             metrics.toolbarButtonInset = 6;
             
@@ -218,7 +248,7 @@ UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight, float diagonal
             // For very large displays (800x480, large panels)
             // Larger UI with much larger elements
             metrics.toolbarHeight = 48;
-            metrics.toolbarFont = &lv_font_montserrat_18;
+            metrics.toolbarFont = selectBestFont(19); // Ideal: 19px, gets: 18px or 20px
             metrics.toolbarTitlePadding = 10;
             metrics.toolbarButtonInset = 8;
             
@@ -248,8 +278,12 @@ UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight, float diagonal
     
     TT_LOG_I(TAG, "  Toolbar: h=%d, font=%s, launcher=%d",
         metrics.toolbarHeight,
-        (metrics.toolbarFont == &lv_font_montserrat_12) ? "12" :
-        ((metrics.toolbarFont == &lv_font_montserrat_14) ? "14" : "18"),
+        (metrics.toolbarFont == &lv_font_montserrat_10) ? "10" :
+        ((metrics.toolbarFont == &lv_font_montserrat_12) ? "12" :
+        ((metrics.toolbarFont == &lv_font_montserrat_14) ? "14" :
+        ((metrics.toolbarFont == &lv_font_montserrat_16) ? "16" :
+        ((metrics.toolbarFont == &lv_font_montserrat_18) ? "18" :
+        ((metrics.toolbarFont == &lv_font_montserrat_20) ? "20" : "??"))))),
         metrics.launcherButtonSize);
     
     return metrics;

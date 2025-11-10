@@ -31,7 +31,7 @@ class LauncherApp final : public App {
         // create the image first
         auto* button_image = lv_image_create(apps_button);
         lv_image_set_src(button_image, imageFile);
-        lv_image_set_size_mode(button_image, LV_IMAGE_SIZE_MODE_VIRTUAL);
+        lv_image_set_inner_align(button_image, LV_IMAGE_ALIGN_CENTER);
 
         // Recolor handling:
         // For color builds use theme primary color
@@ -46,7 +46,7 @@ class LauncherApp final : public App {
         #endif
 
         // Ensure buttons are still tappable when the asset fails to load
-        // Images scale to fit the button size using VIRTUAL size mode
+        // Images scale to fit the button size
         lv_obj_set_size(button_image, buttonSize, buttonSize);
 
         lv_obj_add_event_cb(apps_button, onAppPressed, LV_EVENT_SHORT_CLICKED, (void*)appId);
