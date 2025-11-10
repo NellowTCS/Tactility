@@ -95,7 +95,7 @@ bool RgbDisplay::startLvgl() {
     lvglDisplay = lvgl_port_add_disp_rgb(&display_config, &rgb_config);
     
     // Set the driver data to point to this DisplayDevice instance for physical size detection
-    lv_display_set_driver_data(lvglDisplay, this);
+    lv_display_set_user_data(lvglDisplay, this);
     
     TT_LOG_I(TAG, "Finished");
 

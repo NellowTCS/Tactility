@@ -330,7 +330,7 @@ bool St7789i8080Display::startLvgl() {
     }
 
     // Set the driver data to point to this DisplayDevice instance for physical size detection
-    lv_display_set_driver_data(lvglDisplay, this);
+    lv_display_set_user_data(lvglDisplay, this);
 
     // Register the callback for color transfer completion
     esp_lcd_panel_io_callbacks_t cbs = {

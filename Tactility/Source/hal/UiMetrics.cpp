@@ -275,10 +275,10 @@ UiMetrics UiMetrics::calculateFromDisplay() {
     
     // Try to get physical size from display driver if available
     float diagonalInches = 0.0f;
-    auto* driver_data = lv_display_get_driver_data(display);
-    if (driver_data != nullptr) {
+    auto* user_data = lv_display_get_user_data(display);
+    if (user_data != nullptr) {
         // Attempt to cast to DisplayDevice and get physical size
-        auto* display_device = static_cast<tt::hal::display::DisplayDevice*>(driver_data);
+        auto* display_device = static_cast<tt::hal::display::DisplayDevice*>(user_data);
         if (display_device != nullptr) {
             diagonalInches = display_device->getPhysicalDiagonalInches();
         }
