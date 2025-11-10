@@ -139,7 +139,7 @@ bool Ssd168xDisplay::startLvgl()
     }
 
     lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_RGB565);
-    lv_display_set_buffers(lvglDisplay, drawBuf, nullptr, buffer_size * sizeof(lv_color_t), LV_DISPLAY_RENDER_MODE_FULL);
+    lv_display_set_buffers(lvglDisplay, drawBuf, nullptr, buffer_size * sizeof(lv_color_t), LV_DISPLAY_RENDER_MODE_DIRECT);
     lv_display_set_flush_cb(lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(lvglDisplay, this);
 
