@@ -31,6 +31,7 @@ class LauncherApp final : public App {
         // create the image first
         auto* button_image = lv_image_create(apps_button);
         lv_image_set_src(button_image, imageFile);
+        lv_image_set_size_mode(button_image, LV_IMAGE_SIZE_MODE_VIRTUAL);
 
         // Recolor handling:
         // For color builds use theme primary color
@@ -45,7 +46,7 @@ class LauncherApp final : public App {
         #endif
 
         // Ensure buttons are still tappable when the asset fails to load
-        // Icon images are 40x40, so we get some extra padding too
+        // Images scale to fit the button size using VIRTUAL size mode
         lv_obj_set_size(button_image, buttonSize, buttonSize);
 
         lv_obj_add_event_cb(apps_button, onAppPressed, LV_EVENT_SHORT_CLICKED, (void*)appId);
@@ -118,14 +119,7 @@ public:
             lv_obj_set_flex_flow(buttons_wrapper, LV_FLEX_FLOW_COLUMN);
         }
 
-        int32_t margin;
-        if (is_landscape_display) {
-            const int32_t available_width = std::max<int32_t>(0, lv_display_get_horizontal_resolution(display) - (3 * button_size));
-            margin = std::min<int32_t>(available_width / 16, button_size);
-        } else {
-            const int32_t available_height = std::max<int32_t>(0, lv_display_get_vertical_resolution(display) - (3 * button_size));
-            margin = std::min<int32_t>(available_height / 16, button_size);
-        }
+        int32_t margin = metrics.objectGap;
 
         const auto paths = app.getPaths();
         const auto apps_icon_path = lvgl::PATH_PREFIX + paths->getAssetsPath("icon_apps.png");

@@ -17,9 +17,8 @@ void setContainerPadding(lv_obj_t* obj, ContainerType type, int customPadding) {
         case ContainerType::Layout:
             // Layout containers use minimal padding or theme default
             if (metrics.objectPadding >= 0) {
-                // For small displays, use minimal padding
-                int layoutPadding = metrics.objectPadding > 0 ? 1 : 0;
-                lv_obj_set_style_pad_all(obj, layoutPadding, LV_STATE_DEFAULT);
+                // Use the actual object padding value for proper scaling
+                lv_obj_set_style_pad_all(obj, metrics.objectPadding, LV_STATE_DEFAULT);
             }
             // For large displays (metrics.objectPadding == -1), let theme decide
             break;
