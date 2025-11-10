@@ -66,10 +66,10 @@ bool GxEPD2Display::start() {
 
     // SPI device configuration for the e-paper display
     spi_device_interface_config_t dev_cfg = {
-        .clock_speed_hz = 10000000,    // SPI clock
         .mode = 0,                     // SPI mode 0
-        .spics_io_num = _config.rstPin, // Chip Select GPIO (CS pin)
+        .clock_speed_hz = 10000000,    // SPI clock
         .input_delay_ns = 0,
+        .spics_io_num = _config.rstPin, // Chip Select GPIO (CS pin)
         .queue_size = 7,               // Transactions queued at once
         .pre_cb = nullptr,
         .post_cb = nullptr,
