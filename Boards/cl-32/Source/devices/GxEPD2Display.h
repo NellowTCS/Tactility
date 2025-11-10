@@ -12,6 +12,9 @@
 #include "freertos/task.h"
 #include <cstdint>
 
+#include <Adafruit_GFX.h>
+#include "GxEPD2/GxEPD2_BW.h"
+
 class GxEPD2_290_GDEY029T71H; // Forward declaration
 
 class GxEPD2Display : public tt::hal::display::DisplayDevice {
@@ -62,7 +65,8 @@ public:
 
 private:
     Configuration _config;
-    std::unique_ptr<GxEPD2_290_GDEY029T71H> _display;
+    std::unique_ptr<GxEPD2_290_GDEY029T71H> _epd2_native; // for direct use
+    std::unique_ptr<GxEPD2_BW<GxEPD2_290_GDEY029T71H, 8>> _epd2_bw; // For Adafruit GFX integration
     lv_display_t* _lvglDisplay;
     lv_color_t* _drawBuf1;
     lv_color_t* _drawBuf2;
@@ -98,10 +102,22 @@ private:
     int16_t _gapX;
     int16_t _gapY;
 
+    // 8x8 dither matrix
+    static constexpr uint8_t dither8[8][8] = {
+        {  0, 48, 12, 60,  3, 51, 15, 63},
+        { 32, 16, 44, 28, 35, 19, 47, 31},
+        {  8, 56,  4, 52, 11, 59,  7, 55},
+        { 40, 24, 36, 20, 43, 27, 39, 23},
+        {  2, 50, 14, 62,  1, 49, 13, 61},
+        { 34, 18, 46, 30, 33, 17, 45, 29},
+        { 10, 58,  6, 54,  9, 57,  5, 53},
+        { 42, 26, 38, 22, 41, 25, 37, 21}
+    };
+
+    // LVGL flush callback
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
-    
-    // Convert RGB565 pixel to monochrome (true=white, false=black)
-    static inline bool rgb565ToMono(lv_color_t pixel);
+    // Enhanced dithered grayscale conversion
+    static bool dither8x8ToMono(lv_color_t pixel, int x, int y);
 
     // Worker task entry
     static void displayWorkerTask(void* arg);

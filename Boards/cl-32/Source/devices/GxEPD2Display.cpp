@@ -1,7 +1,6 @@
 #include "GxEPD2Display.h"
 #include "GxEPD2/GxEPD2_290_GDEY029T71H.h"
 #include "DisplayTester.h"
-
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
@@ -13,7 +12,8 @@ static const char* TAG = "GxEPD2Display";
 
 GxEPD2Display::GxEPD2Display(const Configuration& config)
     : _config(config)
-    , _display(nullptr)
+    , _epd2_native(nullptr)
+    , _epd2_bw(nullptr)
     , _lvglDisplay(nullptr)
     , _drawBuf1(nullptr)
     , _drawBuf2(nullptr)
@@ -25,8 +25,7 @@ GxEPD2Display::GxEPD2Display(const Configuration& config)
     , _workerRunning(false)
     , _gapX(0)
     , _gapY(0)
-{
-}
+{}
 
 GxEPD2Display::~GxEPD2Display() {
     stopLvgl();
@@ -47,18 +46,14 @@ std::string GxEPD2Display::getName() const {
 }
 
 std::string GxEPD2Display::getDescription() const {
-    return "E-paper display GDEY029T71H";
+    return "E-paper display GDEY029T71H with Adafruit GFX dithered grayscale";
 }
 
 bool GxEPD2Display::start() {
     ESP_LOGI(TAG, "Starting e-paper display...");
 
-    _display = std::make_unique<GxEPD2_290_GDEY029T71H>(
-        _config.csPin,
-        _config.dcPin,
-        _config.rstPin,
-        _config.busyPin
-    );
+    _epd2_native = std::make_unique<GxEPD2_290_GDEY029T71H>(
+        _config.csPin, _config.dcPin, _config.rstPin, _config.busyPin);
 
     spi_device_interface_config_t devcfg = {
         .command_bits = 0,
@@ -76,11 +71,14 @@ bool GxEPD2Display::start() {
         .pre_cb = nullptr,
         .post_cb = nullptr
     };
+    _epd2_native->selectSPI(_config.spiHost, devcfg);
+    _epd2_native->init(0);
 
-    _display->selectSPI(_config.spiHost, devcfg);
-    _display->init(0);
-    _display->clearScreen(0xFF);
-    _display->refresh(false);
+    // Adafruit GFX and GxEPD2_BW bridge
+    _epd2_bw = std::make_unique<GxEPD2_BW<GxEPD2_290_GDEY029T71H, 8>>(*_epd2_native);
+    _epd2_bw->setRotation(_config.rotation);
+    _epd2_bw->fillScreen(GxEPD_WHITE);
+    _epd2_bw->display();
 
     if (!_spiMutex) {
         _spiMutex = xSemaphoreCreateMutex();
@@ -94,25 +92,13 @@ bool GxEPD2Display::start() {
 }
 
 bool GxEPD2Display::stop() {
-    if (_display) {
-        ESP_LOGI(TAG, "Stopping display...");
-        destroyWorker();
-
-        bool have = false;
-        if (_spiMutex) {
-            if (xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
-                have = true;
-            } else {
-                ESP_LOGW(TAG, "Failed to take SPI mutex while stopping; proceeding anyway");
-            }
-        }
-
-        _display->hibernate();
-        _display.reset();
-
-        if (have && _spiMutex) {
-            xSemaphoreGive(_spiMutex);
-        }
+    if (_epd2_bw) {
+        _epd2_bw->powerOff();
+        _epd2_bw.reset();
+    }
+    if (_epd2_native) {
+        _epd2_native->hibernate();
+        _epd2_native.reset();
     }
     return true;
 }
@@ -185,7 +171,7 @@ bool GxEPD2Display::startLvgl() {
         ESP_LOGW(TAG, "LVGL already started");
         return false;
     }
-    if (!_display) {
+    if (!_epd2_bw) {
         ESP_LOGE(TAG, "Display not started, cannot start LVGL");
         return false;
     }
@@ -200,11 +186,6 @@ bool GxEPD2Display::startLvgl() {
 
     ESP_LOGI(TAG, "Starting LVGL: requested physical=%ux%u rotation=%d (config.rotation=%d)",
              _config.width, _config.height, lv_rotation, _config.rotation);
-
-    ESP_LOGI(TAG, "Driver native panel: WIDTH=%u HEIGHT=%u SOURCE_SHIFT=%u",
-             (unsigned)GxEPD2_290_GDEY029T71H::WIDTH,
-             (unsigned)GxEPD2_290_GDEY029T71H::HEIGHT,
-             (unsigned)GxEPD2_290_GDEY029T71H::SOURCE_SHIFT);
 
     _lvglDisplay = lv_display_create(_config.width, _config.height);
     if (!_lvglDisplay) {
@@ -270,10 +251,6 @@ bool GxEPD2Display::startLvgl() {
     ESP_LOGI(TAG, "LVGL started successfully (physical=%ux%u logical=%dx%d rotation=%d mode=FULL)",
              _config.width, _config.height, hor_res, ver_res, (int)lv_rotation);
 
-    
-    // Run tests
-    // display_tester::runTests(this);
-
     return true;
 }
 
@@ -299,7 +276,6 @@ bool GxEPD2Display::stopLvgl() {
         vSemaphoreDelete(_framebufferMutex);
         _framebufferMutex = nullptr;
     }
-
     destroyWorker();
     return true;
 }
@@ -326,41 +302,33 @@ uint16_t GxEPD2Display::getHeight() const {
 
 void GxEPD2Display::writeRawImage(const uint8_t* bitmap, int16_t x, int16_t y, int16_t w, int16_t h,
                                    bool invert, bool mirror_y) {
-    if (!_display) return;
+    if (!_epd2_bw) return;
     bool took = false;
     if (_spiMutex) {
         if (xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) took = true;
         else ESP_LOGW(TAG, "writeRawImage: failed to take spi mutex");
     }
-    _display->writeImage(bitmap, x, y, w, h, invert, mirror_y, false);
+    _epd2_bw->writeImage(bitmap, x, y, w, h, invert, mirror_y, false);
     if (took && _spiMutex) xSemaphoreGive(_spiMutex);
 }
 
 void GxEPD2Display::refreshDisplay(bool partial) {
-    if (!_display) return;
+    if (!_epd2_bw) return;
     bool took = false;
     if (_spiMutex) {
         if (xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) took = true;
         else ESP_LOGW(TAG, "refreshDisplay: failed to take spi mutex");
     }
-    _display->refresh(partial);
+    _epd2_bw->refresh(partial);
     if (took && _spiMutex) xSemaphoreGive(_spiMutex);
 }
 
-static inline bool bayer4x4Dither(lv_color_t pixel, int x, int y) {
+bool GxEPD2Display::dither8x8ToMono(lv_color_t pixel, int x, int y) {
     uint8_t r = pixel.red;
     uint8_t g = pixel.green;
     uint8_t b = pixel.blue;
     uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
-
-    static const uint8_t bayer4[4][4] = {
-        { 0,  8,  2, 10},
-        {12,  4, 14,  6},
-        { 3, 11,  1,  9},
-        {15,  7, 13,  5}
-    };
-
-    uint8_t thresh = (uint8_t)(bayer4[y & 3][x & 3] * 16 + 8);
+    uint8_t thresh = (dither8[y & 7][x & 7] << 2); // scale 0-63 to 0-252
     return brightness > thresh;
 }
 
@@ -374,7 +342,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     QueueItem item;
     QueueItem pending_item = {nullptr, 0, 0, 0, 0};
     bool has_pending = false;
-    bool first_frame = true;  // Track first LVGL frame after boot
 
     while (true) {
         if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(100))) {
@@ -384,71 +351,33 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             }
 
             if (has_pending && pending_item.buf) {
-                ESP_LOGI(TAG, "Worker: discarding stale frame (superseded)");
+                // Discard stale frame
                 heap_caps_free(pending_item.buf);
             }
 
             pending_item = item;
             has_pending = true;
 
-        } else {
-            if (has_pending && pending_item.buf) {
-                if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+        } else if (has_pending && pending_item.buf) {
+            // Process the pending item
+            if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-                if (first_frame) {
-                    // First frame after boot must follow official basemap pattern:
-                    // 1. Write to 0x24 (current)
-                    // 2. Write zeros to 0x26 (previous)
-                    // 3. Full update
-                    // 4. Write to 0x26 (sync for next partial)
-                    ESP_LOGI(TAG, "Worker: First frame detected. Using basemap pattern");
-                    
-                    ESP_LOGI(TAG, "Worker: writeImage to 0x24 (current) x=%d y=%d w=%d h=%d", 
-                             pending_item.x, pending_item.y, pending_item.w, pending_item.h);
-                    self->_display->writeImage(pending_item.buf, pending_item.x, pending_item.y, 
-                                              pending_item.w, pending_item.h, false, false, false);
-                    
-                    // Write ZEROS to 0x26 to establish baseline
-                    ESP_LOGI(TAG, "Worker: writeImagePrevious zeros to 0x26 for basemap");
-                    const size_t zero_size = ((size_t)pending_item.w * (size_t)pending_item.h + 7) / 8;
-                    uint8_t* zeros = (uint8_t*)heap_caps_calloc(zero_size, 1, MALLOC_CAP_DMA);
-                    if (zeros) {
-                        self->_display->writeImagePrevious(zeros, pending_item.x, pending_item.y, 
-                                                          pending_item.w, pending_item.h, false, false, false);
-                        heap_caps_free(zeros);
-                    }
-                    
-                    ESP_LOGI(TAG, "Worker: refresh(false), full refresh for first frame");
-                    self->_display->refresh(false);
-                    
-                    // Now sync 0x26 with actual image data
-                    ESP_LOGI(TAG, "Worker: writeImagePrevious actual data to sync 0x26");
-                    self->_display->writeImagePrevious(pending_item.buf, pending_item.x, pending_item.y, 
-                                                        pending_item.w, pending_item.h, false, false, false);
-                    
-                    first_frame = false;
-                } else {
-                    // Subsequent frames: normal partial update with sync
-                    ESP_LOGI(TAG, "Worker: writeImage to 0x24 x=%d y=%d w=%d h=%d", 
-                             pending_item.x, pending_item.y, pending_item.w, pending_item.h);
-                    self->_display->writeImage(pending_item.buf, pending_item.x, pending_item.y, 
-                                              pending_item.w, pending_item.h, false, false, false);
+            // Use Adafruit GFX to manage the frame drawing and refresh
+            ESP_LOGI(TAG, "Worker: Drawing pending frame at x=%d, y=%d, w=%d, h=%d",
+                     pending_item.x, pending_item.y, pending_item.w, pending_item.h);
 
-                    ESP_LOGI(TAG, "Worker: refresh(true) - partial refresh");
-                    self->_display->refresh(true);
+            self->_epd2_bw->drawBitmap(
+                pending_item.x, pending_item.y, 
+                pending_item.buf, pending_item.w, pending_item.h, 
+                GxEPD_BLACK);
 
-                    // Sync 0x26 after partial refresh
-                    ESP_LOGI(TAG, "Worker: writeImagePrevious (sync 0x26)");
-                    self->_display->writeImagePrevious(pending_item.buf, pending_item.x, pending_item.y, 
-                                                        pending_item.w, pending_item.h, false, false, false);
-                }
+            self->_epd2_bw->display(true); // Partial refresh
 
-                if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
-                heap_caps_free(pending_item.buf);
-                pending_item.buf = nullptr;
-                has_pending = false;
-            }
+            heap_caps_free(pending_item.buf);
+            pending_item.buf = nullptr;
+            has_pending = false;
         }
     }
 
@@ -462,122 +391,31 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* self = static_cast<GxEPD2Display*>(lv_display_get_user_data(disp));
-    if (!self || !self->_display || !self->_frameBuffer) {
+    if (!self || !self->_epd2_bw) {
         lv_display_flush_ready(disp);
         return;
     }
 
-    int32_t hor_res = lv_display_get_horizontal_resolution(disp);
-    int32_t ver_res = lv_display_get_vertical_resolution(disp);
-    
-    // In full render mode, stride is based on full display width, not area width
-    lv_color_format_t cf = lv_display_get_color_format(disp);
-    uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(hor_res, cf);
-    uint8_t* src_bytes = (uint8_t*)px_map;
+    // Flush the LVGL-rendered frame using Adafruit GFX
+    const int width = area->x2 - area->x1 + 1;
+    const int height = area->y2 - area->y1 + 1;
 
-    const int panel_width = self->_config.width;
-    const int panel_height = self->_config.height;
-    const int panel_bytes_per_row = (panel_width + 7) / 8;
+    // Use Adafruit GFX for rendering directly
+    ESP_LOGI(TAG, "Flush: Drawing LVGL area x1=%d, y1=%d, w=%d, h=%d",
+             area->x1, area->y1, width, height);
 
-    if (xSemaphoreTake(self->_framebufferMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
-        ESP_LOGW(TAG, "Framebuffer mutex busy; dropping LVGL flush");
-        lv_display_flush_ready(disp);
-        return;
-    }
+    // Convert the LVGL buffer and render
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            int index = y * width + x;
+            lv_color_t color = ((lv_color_t*)px_map)[index];
 
-    lv_display_rotation_t lv_rotation = lv_display_get_rotation(disp);
-    int rotation = 0;
-    switch (lv_rotation) {
-        case LV_DISPLAY_ROTATION_90: rotation = 1; break;
-        case LV_DISPLAY_ROTATION_180: rotation = 2; break;
-        case LV_DISPLAY_ROTATION_270: rotation = 3; break;
-        default: rotation = 0; break;
-    }
-
-    // Process full screen (full render mode means area = entire display)
-    for (int ly = 0; ly < ver_res; ++ly) {
-        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
-
-        for (int lx = 0; lx < hor_res; ++lx) {
-            int logical_x_abs = lx;
-            int logical_y_abs = ly;
-
-            int physical_x_abs, physical_y_abs;
-
-            // Use panel_height/width, not hor_res/ver_res for rotation bounds
-            switch (rotation) {
-                case 1:  // 90° CW
-                    physical_x_abs = logical_y_abs;
-                    physical_y_abs = (panel_height - 1) - logical_x_abs;
-                    break;
-                case 2:  // 180°
-                    physical_x_abs = (panel_width - 1) - logical_x_abs;
-                    physical_y_abs = (panel_height - 1) - logical_y_abs;
-                    break;
-                case 3:  // 270° CW
-                    physical_x_abs = (panel_width - 1) - logical_y_abs;
-                    physical_y_abs = logical_x_abs;
-                    break;
-                case 0:  // No rotation
-                default:
-                    physical_x_abs = logical_x_abs;
-                    physical_y_abs = logical_y_abs;
-                    break;
-            }
-
-            physical_x_abs += self->_gapX;
-            physical_y_abs += self->_gapY;
-
-            if (physical_x_abs < 0 || physical_x_abs >= panel_width ||
-                physical_y_abs < 0 || physical_y_abs >= panel_height) {
-                continue;
-            }
-
-            lv_color_t pixel = src_row[lx];
-            bool is_white = bayer4x4Dither(pixel, physical_x_abs, physical_y_abs);
-
-            const int byte_idx = physical_y_abs * panel_bytes_per_row + (physical_x_abs / 8);
-            const int bit_pos = 7 - (physical_x_abs & 7);
-
-            if (is_white) {
-                self->_frameBuffer[byte_idx] |= (1 << bit_pos);
-            } else {
-                self->_frameBuffer[byte_idx] &= ~(1 << bit_pos);
-            }
+            // Map the pixel directly as black or white using dither
+            bool is_white = self->dither8x8ToMono(color, area->x1 + x, area->y1 + y);
+            self->_epd2_bw->drawPixel(area->x1 + x, area->y1 + y, is_white ? GxEPD_WHITE : GxEPD_BLACK);
         }
     }
 
-    // Copy entire framebuffer to DMA buffer for e-paper
-    const size_t fb_size = (size_t)panel_bytes_per_row * (size_t)panel_height;
-    uint8_t* packed = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_DMA);
-    if (!packed) {
-        xSemaphoreGive(self->_framebufferMutex);
-        ESP_LOGE(TAG, "Failed to allocate DMA buffer of %zu bytes", fb_size);
-        lv_display_flush_ready(disp);
-        return;
-    }
-
-    memcpy(packed, self->_frameBuffer, fb_size);
-    xSemaphoreGive(self->_framebufferMutex);
-
-    if (self->_queue) {
-        QueueItem qi;
-        qi.buf = packed;
-        qi.x = 0;
-        qi.y = 0;
-        qi.w = (uint16_t)panel_width;
-        qi.h = (uint16_t)panel_height;
-
-        if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
-            ESP_LOGW(TAG, "Display queue full; frame dropped");
-            heap_caps_free(packed);
-        }
-    } else {
-        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-        self->_display->writeImage(packed, 0, 0, panel_width, panel_height, false, false, false);
-        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-        heap_caps_free(packed);
-    }
-
+    self->_epd2_bw->display(true); // Partial refresh
     lv_display_flush_ready(disp);
 }

@@ -1,4 +1,5 @@
 dependencies:
+  fasani/adafruit_gfx: "1.7.8"
   espressif/esp_lcd_ili9341: "2.0.1"
   atanisoft/esp_lcd_ili9488: "1.0.10"
   teriyakigod/esp_lcd_st7735: "0.0.1"
