@@ -2,6 +2,7 @@
 #include "Tactility/lvgl/LvglSync.h"
 #include "Tactility/lvgl/Style.h"
 #include "Tactility/lvgl/Toolbar.h"
+#include "Tactility/lvgl/UiStyle.h"
 #include "Tactility/service/loader/Loader.h"
 
 #include "Tactility/hal/power/PowerDevice.h"

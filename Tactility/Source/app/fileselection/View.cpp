@@ -2,6 +2,7 @@
 
 #include "Tactility/app/alertdialog/AlertDialog.h"
 #include "Tactility/lvgl/Toolbar.h"
+#include "Tactility/lvgl/UiStyle.h"
 #include "Tactility/lvgl/LvglSync.h"
 
 #include <Tactility/Tactility.h>

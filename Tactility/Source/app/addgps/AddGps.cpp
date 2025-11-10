@@ -5,6 +5,7 @@
 #include "Tactility/hal/uart/Uart.h"
 #include "Tactility/lvgl/Style.h"
 #include "Tactility/lvgl/Toolbar.h"
+#include "Tactility/lvgl/UiStyle.h"
 #include "Tactility/service/gps/GpsService.h"
 
 #include <cstring>

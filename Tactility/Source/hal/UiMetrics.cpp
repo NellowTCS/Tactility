@@ -93,7 +93,8 @@ UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight, float diagonal
             // For extremely small displays (T-Dongle 80x160, Heltec 64x128)
             // Very compact UI to fit basic functionality
             metrics.toolbarHeight = 18;
-            metrics.toolbarFont = &lv_font_montserrat_14;
+            // Use a smaller font for very tiny displays to keep UI readable
+            metrics.toolbarFont = &lv_font_montserrat_12;
             metrics.toolbarTitlePadding = 2;
             metrics.toolbarButtonInset = 10;
             
@@ -247,8 +248,8 @@ UiMetrics UiMetrics::calculate(int screenWidth, int screenHeight, float diagonal
     
     TT_LOG_I(TAG, "  Toolbar: h=%d, font=%s, launcher=%d",
         metrics.toolbarHeight,
-        // todo: use lv_font_montserrat_12 for tiny displays 
-        metrics.toolbarFont == &lv_font_montserrat_14 ? "14" : "18",
+        (metrics.toolbarFont == &lv_font_montserrat_12) ? "12" :
+        ((metrics.toolbarFont == &lv_font_montserrat_14) ? "14" : "18"),
         metrics.launcherButtonSize);
     
     return metrics;

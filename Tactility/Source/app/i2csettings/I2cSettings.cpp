@@ -1,5 +1,6 @@
 #include "Tactility/lvgl/Style.h"
 #include "Tactility/lvgl/Toolbar.h"
+#include "Tactility/lvgl/UiStyle.h"
 
 #include <Tactility/Assets.h>
 #include <Tactility/hal/i2c/I2c.h>
