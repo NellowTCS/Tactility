@@ -267,6 +267,12 @@ UiMetrics UiMetrics::calculateFromDisplay() {
     int width = static_cast<int>(lv_display_get_physical_horizontal_resolution(display));
     int height = static_cast<int>(lv_display_get_physical_vertical_resolution(display));
     
+    // Safety check for valid resolution values
+    if (width <= 0 || height <= 0 || width > 10000 || height > 10000) {
+        TT_LOG_W(TAG, "Invalid display resolution %dx%d, using defaults", width, height);
+        return calculate(240, 320);
+    }
+    
     // Try to get physical size from display driver if available
     float diagonalInches = 0.0f;
     auto* driver_data = lv_display_get_driver_data(display);
