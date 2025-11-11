@@ -319,13 +319,14 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     bool first_frame = true;
 
     while (true) {
-        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(100))) {
+        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(200))) {
             if (item.buf == nullptr) {
                 ESP_LOGI(TAG, "Worker: termination received");
                 break;
             }
 
             if (has_pending && pending_item.buf) {
+                ESP_LOGI(TAG, "Worker: Discarding old frame (batching)");
                 heap_caps_free(pending_item.buf);
             }
 
@@ -335,17 +336,17 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
         } else if (has_pending && pending_item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            ESP_LOGI(TAG, "Worker: Rendering frame (first=%d)", first_frame);
-
-            self->_epd2_bw->setFullWindow();
-            self->_epd2_bw->fillScreen(GxEPD_WHITE);
+            ESP_LOGI(TAG, "Worker: Drawing frame (first=%d)", first_frame);
 
             int32_t hor_res = pending_item.w;
             int32_t ver_res = pending_item.h;
 
+            self->_epd2_bw->fillScreen(GxEPD_WHITE);
+
+            lv_color_t* pixels = (lv_color_t*)pending_item.buf;
             for (int ly = 0; ly < ver_res; ly++) {
                 for (int lx = 0; lx < hor_res; lx++) {
-                    lv_color_t pixel = ((lv_color_t*)pending_item.buf)[ly * hor_res + lx];
+                    lv_color_t pixel = pixels[ly * hor_res + lx];
                     bool is_white = bayer4x4Dither(pixel, lx, ly);
                     self->_epd2_bw->drawPixel(lx, ly, is_white ? GxEPD_WHITE : GxEPD_BLACK);
                 }
@@ -400,14 +401,13 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         qi.w = (uint16_t)hor_res;
         qi.h = (uint16_t)ver_res;
 
-        if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
+        if (xQueueSend(self->_queue, &qi, 0) != pdTRUE) {
             ESP_LOGW(TAG, "Display queue full; frame dropped");
             heap_caps_free(buffer_copy);
         }
     } else {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-        self->_epd2_bw->setFullWindow();
         self->_epd2_bw->fillScreen(GxEPD_WHITE);
 
         for (int ly = 0; ly < ver_res; ly++) {
