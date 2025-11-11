@@ -46,7 +46,7 @@ std::string GxEPD2Display::getName() const {
 }
 
 std::string GxEPD2Display::getDescription() const {
-    return "E-paper display GDEY029T71H with Adafruit GFX dithered grayscale";
+    return "E-paper display GDEY029T71H with GxEPD2_BW";
 }
 
 bool GxEPD2Display::start() {
@@ -192,35 +192,10 @@ bool GxEPD2Display::startLvgl() {
 
     lv_display_set_rotation(_lvglDisplay, LV_DISPLAY_ROTATION_0);
 
-    const size_t fb_size = ((size_t)_config.width * (size_t)_config.height + 7) / 8;
-    _frameBuffer = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_SPIRAM);
-    if (!_frameBuffer) {
-        ESP_LOGE(TAG, "Failed to allocate framebuffer (%zu bytes)", fb_size);
-        lv_display_delete(_lvglDisplay);
-        _lvglDisplay = nullptr;
-        return false;
-    }
-    memset(_frameBuffer, 0xFF, fb_size);
-    ESP_LOGI(TAG, "Allocated framebuffer: %zu bytes", fb_size);
-
-    _framebufferMutex = xSemaphoreCreateMutex();
-    if (!_framebufferMutex) {
-        ESP_LOGE(TAG, "Failed to create framebuffer mutex");
-        heap_caps_free(_frameBuffer);
-        _frameBuffer = nullptr;
-        lv_display_delete(_lvglDisplay);
-        _lvglDisplay = nullptr;
-        return false;
-    }
-
     const size_t bufSize = (size_t)lvgl_width * (size_t)lvgl_height;
     _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
     if (!_drawBuf1) {
         ESP_LOGE(TAG, "Failed to allocate LVGL draw buffer (%zu bytes)", bufSize * sizeof(lv_color_t));
-        heap_caps_free(_frameBuffer);
-        _frameBuffer = nullptr;
-        vSemaphoreDelete(_framebufferMutex);
-        _framebufferMutex = nullptr;
         lv_display_delete(_lvglDisplay);
         _lvglDisplay = nullptr;
         return false;
@@ -237,7 +212,7 @@ bool GxEPD2Display::startLvgl() {
     lv_display_set_user_data(_lvglDisplay, this);
 
     if (!createWorker()) {
-        ESP_LOGW(TAG, "Failed to create display worker - direct rendering will be used");
+        ESP_LOGW(TAG, "Failed to create display worker");
     }
 
     ESP_LOGI(TAG, "LVGL started successfully");
@@ -339,79 +314,52 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     }
 
     QueueItem item;
-    QueueItem pending_item = {nullptr, 0, 0, 0, 0};
-    bool has_pending = false;
     bool first_frame = true;
 
     while (true) {
-        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(100))) {
+        if (xQueueReceive(self->_queue, &item, portMAX_DELAY)) {
             if (item.buf == nullptr) {
                 ESP_LOGI(TAG, "Worker: termination received");
                 break;
             }
 
-            if (has_pending && pending_item.buf) {
-                ESP_LOGI(TAG, "Worker: discarding stale frame (superseded)");
-                heap_caps_free(pending_item.buf);
-            }
+            if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            pending_item = item;
-            has_pending = true;
-
-        } else {
-            if (has_pending && pending_item.buf) {
-                if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-
-                if (first_frame) {
-                    ESP_LOGI(TAG, "Worker: First frame detected. Using basemap pattern");
-                    
-                    ESP_LOGI(TAG, "Worker: writeImage to 0x24 (current) x=%d y=%d w=%d h=%d", 
-                             pending_item.x, pending_item.y, pending_item.w, pending_item.h);
-                    self->_epd2_native->writeImage(pending_item.buf, pending_item.x, pending_item.y, 
-                                              pending_item.w, pending_item.h, false, false, false);
-                    
-                    ESP_LOGI(TAG, "Worker: writeImagePrevious zeros to 0x26 for basemap");
-                    const size_t zero_size = ((size_t)pending_item.w * (size_t)pending_item.h + 7) / 8;
-                    uint8_t* zeros = (uint8_t*)heap_caps_calloc(zero_size, 1, MALLOC_CAP_DMA);
-                    if (zeros) {
-                        self->_epd2_native->writeImagePrevious(zeros, pending_item.x, pending_item.y, 
-                                                          pending_item.w, pending_item.h, false, false, false);
-                        heap_caps_free(zeros);
+            if (first_frame) {
+                ESP_LOGI(TAG, "Worker: First frame - full refresh");
+                self->_epd2_bw->firstPage();
+                do {
+                    for (int y = 0; y < item.h; y++) {
+                        for (int x = 0; x < item.w; x++) {
+                            int byte_idx = y * ((item.w + 7) / 8) + (x / 8);
+                            int bit_pos = 7 - (x & 7);
+                            bool is_white = (item.buf[byte_idx] >> bit_pos) & 1;
+                            self->_epd2_bw->drawPixel(x, y, is_white ? GxEPD_WHITE : GxEPD_BLACK);
+                        }
                     }
-                    
-                    ESP_LOGI(TAG, "Worker: refresh(false), full refresh for first frame");
-                    self->_epd2_native->refresh(false);
-                    
-                    ESP_LOGI(TAG, "Worker: writeImagePrevious actual data to sync 0x26");
-                    self->_epd2_native->writeImagePrevious(pending_item.buf, pending_item.x, pending_item.y, 
-                                                        pending_item.w, pending_item.h, false, false, false);
-                    
-                    first_frame = false;
-                } else {
-                    ESP_LOGI(TAG, "Worker: writeImage to 0x24 x=%d y=%d w=%d h=%d", 
-                             pending_item.x, pending_item.y, pending_item.w, pending_item.h);
-                    self->_epd2_native->writeImage(pending_item.buf, pending_item.x, pending_item.y, 
-                                              pending_item.w, pending_item.h, false, false, false);
-
-                    ESP_LOGI(TAG, "Worker: refresh(true) - partial refresh");
-                    self->_epd2_native->refresh(true);
-
-                    ESP_LOGI(TAG, "Worker: writeImagePrevious (sync 0x26)");
-                    self->_epd2_native->writeImagePrevious(pending_item.buf, pending_item.x, pending_item.y, 
-                                                        pending_item.w, pending_item.h, false, false, false);
-                }
-
-                if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-
-                heap_caps_free(pending_item.buf);
-                pending_item.buf = nullptr;
-                has_pending = false;
+                } while (self->_epd2_bw->nextPage());
+                
+                first_frame = false;
+            } else {
+                ESP_LOGI(TAG, "Worker: Partial refresh");
+                self->_epd2_bw->setPartialWindow(0, 0, item.w, item.h);
+                self->_epd2_bw->firstPage();
+                do {
+                    for (int y = 0; y < item.h; y++) {
+                        for (int x = 0; x < item.w; x++) {
+                            int byte_idx = y * ((item.w + 7) / 8) + (x / 8);
+                            int bit_pos = 7 - (x & 7);
+                            bool is_white = (item.buf[byte_idx] >> bit_pos) & 1;
+                            self->_epd2_bw->drawPixel(x, y, is_white ? GxEPD_WHITE : GxEPD_BLACK);
+                        }
+                    }
+                } while (self->_epd2_bw->nextPage());
             }
-        }
-    }
 
-    if (has_pending && pending_item.buf) {
-        heap_caps_free(pending_item.buf);
+            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+
+            heap_caps_free(item.buf);
+        }
     }
 
     self->_workerRunning = false;
@@ -420,117 +368,75 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* self = static_cast<GxEPD2Display*>(lv_display_get_user_data(disp));
-    if (!self || !self->_epd2_bw || !self->_frameBuffer) {
+    if (!self || !self->_epd2_bw) {
         lv_display_flush_ready(disp);
         return;
     }
 
     int32_t hor_res = lv_display_get_horizontal_resolution(disp);
     int32_t ver_res = lv_display_get_vertical_resolution(disp);
-    
-    lv_color_format_t cf = lv_display_get_color_format(disp);
-    uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(hor_res, cf);
-    uint8_t* src_bytes = (uint8_t*)px_map;
 
-    const int panel_width = self->_config.width;
-    const int panel_height = self->_config.height;
-    const int panel_bytes_per_row = (panel_width + 7) / 8;
+    const int width = area->x2 - area->x1 + 1;
+    const int height = area->y2 - area->y1 + 1;
 
-    if (xSemaphoreTake(self->_framebufferMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
-        ESP_LOGW(TAG, "Framebuffer mutex busy; dropping LVGL flush");
+    ESP_LOGI(TAG, "Flush: area x1=%d, y1=%d, w=%d, h=%d (res=%dx%d)",
+             area->x1, area->y1, width, height, hor_res, ver_res);
+
+    int16_t wb = (hor_res + 7) / 8;
+    const size_t bitmap_size = wb * ver_res;
+    uint8_t* bitmap = (uint8_t*)heap_caps_malloc(bitmap_size, MALLOC_CAP_DMA);
+    if (!bitmap) {
+        ESP_LOGE(TAG, "Failed to allocate bitmap buffer");
         lv_display_flush_ready(disp);
         return;
     }
+    memset(bitmap, 0xFF, bitmap_size);
 
-    lv_display_rotation_t lv_rotation = lv_display_get_rotation(disp);
-    int rotation = 0;
-    switch (lv_rotation) {
-        case LV_DISPLAY_ROTATION_90: rotation = 1; break;
-        case LV_DISPLAY_ROTATION_180: rotation = 2; break;
-        case LV_DISPLAY_ROTATION_270: rotation = 3; break;
-        default: rotation = 0; break;
-    }
+    lv_color_format_t cf = lv_display_get_color_format(disp);
+    uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(hor_res, cf);
 
-    for (int ly = 0; ly < ver_res; ++ly) {
-        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
-
-        for (int lx = 0; lx < hor_res; ++lx) {
-            int logical_x_abs = lx;
-            int logical_y_abs = ly;
-
-            int physical_x_abs, physical_y_abs;
-
-            switch (rotation) {
-                case 1:
-                    physical_x_abs = logical_y_abs;
-                    physical_y_abs = (panel_height - 1) - logical_x_abs;
-                    break;
-                case 2:
-                    physical_x_abs = (panel_width - 1) - logical_x_abs;
-                    physical_y_abs = (panel_height - 1) - logical_y_abs;
-                    break;
-                case 3:
-                    physical_x_abs = (panel_width - 1) - logical_y_abs;
-                    physical_y_abs = logical_x_abs;
-                    break;
-                case 0:
-                default:
-                    physical_x_abs = logical_x_abs;
-                    physical_y_abs = logical_y_abs;
-                    break;
-            }
-
-            physical_x_abs += self->_gapX;
-            physical_y_abs += self->_gapY;
-
-            if (physical_x_abs < 0 || physical_x_abs >= panel_width ||
-                physical_y_abs < 0 || physical_y_abs >= panel_height) {
-                continue;
-            }
-
+    for (int ly = 0; ly < ver_res; ly++) {
+        lv_color_t* src_row = (lv_color_t*)((uint8_t*)px_map + ly * src_row_stride_bytes);
+        
+        for (int lx = 0; lx < hor_res; lx++) {
             lv_color_t pixel = src_row[lx];
-            bool is_white = bayer4x4Dither(pixel, physical_x_abs, physical_y_abs);
-
-            const int byte_idx = physical_y_abs * panel_bytes_per_row + (physical_x_abs / 8);
-            const int bit_pos = 7 - (physical_x_abs & 7);
-
-            if (is_white) {
-                self->_frameBuffer[byte_idx] |= (1 << bit_pos);
-            } else {
-                self->_frameBuffer[byte_idx] &= ~(1 << bit_pos);
+            bool is_white = bayer4x4Dither(pixel, lx, ly);
+            
+            if (!is_white) {
+                int byte_idx = ly * wb + (lx / 8);
+                int bit_pos = 7 - (lx & 7);
+                bitmap[byte_idx] &= ~(1 << bit_pos);
             }
         }
     }
-
-    const size_t fb_size = (size_t)panel_bytes_per_row * (size_t)panel_height;
-    uint8_t* packed = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_DMA);
-    if (!packed) {
-        xSemaphoreGive(self->_framebufferMutex);
-        ESP_LOGE(TAG, "Failed to allocate DMA buffer of %zu bytes", fb_size);
-        lv_display_flush_ready(disp);
-        return;
-    }
-
-    memcpy(packed, self->_frameBuffer, fb_size);
-    xSemaphoreGive(self->_framebufferMutex);
 
     if (self->_queue) {
         QueueItem qi;
-        qi.buf = packed;
+        qi.buf = bitmap;
         qi.x = 0;
         qi.y = 0;
-        qi.w = (uint16_t)panel_width;
-        qi.h = (uint16_t)panel_height;
+        qi.w = (uint16_t)hor_res;
+        qi.h = (uint16_t)ver_res;
 
         if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
             ESP_LOGW(TAG, "Display queue full; frame dropped");
-            heap_caps_free(packed);
+            heap_caps_free(bitmap);
         }
     } else {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-        self->_epd2_native->writeImage(packed, 0, 0, panel_width, panel_height, false, false, false);
+        self->_epd2_bw->firstPage();
+        do {
+            for (int y = 0; y < ver_res; y++) {
+                for (int x = 0; x < hor_res; x++) {
+                    int byte_idx = y * wb + (x / 8);
+                    int bit_pos = 7 - (x & 7);
+                    bool is_white = (bitmap[byte_idx] >> bit_pos) & 1;
+                    self->_epd2_bw->drawPixel(x, y, is_white ? GxEPD_WHITE : GxEPD_BLACK);
+                }
+            }
+        } while (self->_epd2_bw->nextPage());
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-        heap_caps_free(packed);
+        heap_caps_free(bitmap);
     }
 
     lv_display_flush_ready(disp);
