@@ -319,7 +319,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     bool first_frame = true;
 
     while (true) {
-        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(200))) {
+        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(300))) {
             if (item.buf == nullptr) {
                 ESP_LOGI(TAG, "Worker: termination received");
                 break;
@@ -341,21 +341,18 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             int32_t lvgl_w = pending_item.w;
             int32_t lvgl_h = pending_item.h;
 
-            self->_epd2_bw->setPartialWindow(0, 0, lvgl_w, lvgl_h);
-            self->_epd2_bw->firstPage();
-            do {
-                self->_epd2_bw->fillScreen(GxEPD_WHITE);
-                
-                lv_color_t* pixels = (lv_color_t*)pending_item.buf;
-                for (int ly = 0; ly < lvgl_h; ly++) {
-                    for (int lx = 0; lx < lvgl_w; lx++) {
-                        lv_color_t pixel = pixels[ly * lvgl_w + lx];
-                        bool is_white = bayer4x4Dither(pixel, lx, ly);
-                        self->_epd2_bw->drawPixel(lx, ly, is_white ? GxEPD_WHITE : GxEPD_BLACK);
-                    }
+            self->_epd2_bw->fillScreen(GxEPD_WHITE);
+            
+            lv_color_t* pixels = (lv_color_t*)pending_item.buf;
+            for (int ly = 0; ly < lvgl_h; ly++) {
+                for (int lx = 0; lx < lvgl_w; lx++) {
+                    lv_color_t pixel = pixels[ly * lvgl_w + lx];
+                    bool is_white = bayer4x4Dither(pixel, lx, ly);
+                    self->_epd2_bw->drawPixel(lx, ly, is_white ? GxEPD_WHITE : GxEPD_BLACK);
                 }
-            } while (self->_epd2_bw->nextPage());
+            }
 
+            self->_epd2_bw->display(first_frame ? false : true);
             first_frame = false;
 
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
@@ -384,7 +381,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     int32_t hor_res = lv_display_get_horizontal_resolution(disp);
     int32_t ver_res = lv_display_get_vertical_resolution(disp);
 
-    ESP_LOGI(TAG, "Flush: Full screen %dx%d", hor_res, ver_res);
+    ESP_LOGI(TAG, "Flush: %dx%d", hor_res, ver_res);
 
     const size_t bufSize = (size_t)hor_res * (size_t)ver_res * sizeof(lv_color_t);
     lv_color_t* buffer_copy = (lv_color_t*)heap_caps_malloc(bufSize, MALLOC_CAP_SPIRAM);
@@ -411,19 +408,17 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     } else {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-        self->_epd2_bw->setPartialWindow(0, 0, hor_res, ver_res);
-        self->_epd2_bw->firstPage();
-        do {
-            self->_epd2_bw->fillScreen(GxEPD_WHITE);
-            
-            for (int ly = 0; ly < ver_res; ly++) {
-                for (int lx = 0; lx < hor_res; lx++) {
-                    lv_color_t pixel = buffer_copy[ly * hor_res + lx];
-                    bool is_white = bayer4x4Dither(pixel, lx, ly);
-                    self->_epd2_bw->drawPixel(lx, ly, is_white ? GxEPD_WHITE : GxEPD_BLACK);
-                }
+        self->_epd2_bw->fillScreen(GxEPD_WHITE);
+
+        for (int ly = 0; ly < ver_res; ly++) {
+            for (int lx = 0; lx < hor_res; lx++) {
+                lv_color_t pixel = buffer_copy[ly * hor_res + lx];
+                bool is_white = bayer4x4Dither(pixel, lx, ly);
+                self->_epd2_bw->drawPixel(lx, ly, is_white ? GxEPD_WHITE : GxEPD_BLACK);
             }
-        } while (self->_epd2_bw->nextPage());
+        }
+
+        self->_epd2_bw->display(true);
 
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
         heap_caps_free(buffer_copy);
