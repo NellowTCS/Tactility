@@ -67,7 +67,7 @@ public:
 private:
     Configuration _config;
     std::unique_ptr<GxEPD2_290_GDEY029T71H> _epd2_native; // for direct use
-    std::unique_ptr<GxEPD2_BW<GxEPD2_290_GDEY029T71H, 8>> _epd2_bw; // For Adafruit GFX integration
+    std::unique_ptr<GxEPD2_BW<GxEPD2_290_GDEY029T71H, GxEPD2_290_GDEY029T71H::HEIGHT>> _epd2_bw; // For Adafruit GFX integration
     lv_display_t* _lvglDisplay;
     lv_color_t* _drawBuf1;
     lv_color_t* _drawBuf2;
