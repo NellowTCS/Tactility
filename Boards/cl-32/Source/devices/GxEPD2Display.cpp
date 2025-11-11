@@ -314,12 +314,20 @@ void GxEPD2Display::refreshDisplay(bool partial) {
     if (took && _spiMutex) xSemaphoreGive(_spiMutex);
 }
 
-bool GxEPD2Display::dither8x8ToMono(lv_color_t pixel, int x, int y) {
+static inline bool bayer4x4Dither(lv_color_t pixel, int x, int y) {
     uint8_t r = pixel.red;
     uint8_t g = pixel.green;
     uint8_t b = pixel.blue;
     uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
-    uint8_t thresh = (dither8[y & 7][x & 7] << 2);
+
+    static const uint8_t bayer4[4][4] = {
+        { 0,  8,  2, 10},
+        {12,  4, 14,  6},
+        { 3, 11,  1,  9},
+        {15,  7, 13,  5}
+    };
+
+    uint8_t thresh = (uint8_t)(bayer4[y & 3][x & 3] * 16 + 8);
     return brightness > thresh;
 }
 
@@ -333,6 +341,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     QueueItem item;
     QueueItem pending_item = {nullptr, 0, 0, 0, 0};
     bool has_pending = false;
+    bool first_frame = true;
 
     while (true) {
         if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(100))) {
@@ -342,31 +351,62 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             }
 
             if (has_pending && pending_item.buf) {
+                ESP_LOGI(TAG, "Worker: discarding stale frame (superseded)");
                 heap_caps_free(pending_item.buf);
             }
 
             pending_item = item;
             has_pending = true;
 
-        } else if (has_pending && pending_item.buf) {
-            if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+        } else {
+            if (has_pending && pending_item.buf) {
+                if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            ESP_LOGI(TAG, "Worker: Drawing pending frame at x=%d, y=%d, w=%d, h=%d",
-                     pending_item.x, pending_item.y, pending_item.w, pending_item.h);
+                if (first_frame) {
+                    ESP_LOGI(TAG, "Worker: First frame detected. Using basemap pattern");
+                    
+                    ESP_LOGI(TAG, "Worker: writeImage to 0x24 (current) x=%d y=%d w=%d h=%d", 
+                             pending_item.x, pending_item.y, pending_item.w, pending_item.h);
+                    self->_epd2_native->writeImage(pending_item.buf, pending_item.x, pending_item.y, 
+                                              pending_item.w, pending_item.h, false, false, false);
+                    
+                    ESP_LOGI(TAG, "Worker: writeImagePrevious zeros to 0x26 for basemap");
+                    const size_t zero_size = ((size_t)pending_item.w * (size_t)pending_item.h + 7) / 8;
+                    uint8_t* zeros = (uint8_t*)heap_caps_calloc(zero_size, 1, MALLOC_CAP_DMA);
+                    if (zeros) {
+                        self->_epd2_native->writeImagePrevious(zeros, pending_item.x, pending_item.y, 
+                                                          pending_item.w, pending_item.h, false, false, false);
+                        heap_caps_free(zeros);
+                    }
+                    
+                    ESP_LOGI(TAG, "Worker: refresh(false), full refresh for first frame");
+                    self->_epd2_native->refresh(false);
+                    
+                    ESP_LOGI(TAG, "Worker: writeImagePrevious actual data to sync 0x26");
+                    self->_epd2_native->writeImagePrevious(pending_item.buf, pending_item.x, pending_item.y, 
+                                                        pending_item.w, pending_item.h, false, false, false);
+                    
+                    first_frame = false;
+                } else {
+                    ESP_LOGI(TAG, "Worker: writeImage to 0x24 x=%d y=%d w=%d h=%d", 
+                             pending_item.x, pending_item.y, pending_item.w, pending_item.h);
+                    self->_epd2_native->writeImage(pending_item.buf, pending_item.x, pending_item.y, 
+                                              pending_item.w, pending_item.h, false, false, false);
 
-            self->_epd2_bw->writeImage(
-                pending_item.buf,
-                pending_item.x, pending_item.y,
-                pending_item.w, pending_item.h,
-                false, false, false);
+                    ESP_LOGI(TAG, "Worker: refresh(true) - partial refresh");
+                    self->_epd2_native->refresh(true);
 
-            self->_epd2_bw->refresh(true);
+                    ESP_LOGI(TAG, "Worker: writeImagePrevious (sync 0x26)");
+                    self->_epd2_native->writeImagePrevious(pending_item.buf, pending_item.x, pending_item.y, 
+                                                        pending_item.w, pending_item.h, false, false, false);
+                }
 
-            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+                if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
-            heap_caps_free(pending_item.buf);
-            pending_item.buf = nullptr;
-            has_pending = false;
+                heap_caps_free(pending_item.buf);
+                pending_item.buf = nullptr;
+                has_pending = false;
+            }
         }
     }
 
@@ -380,63 +420,117 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
 void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* self = static_cast<GxEPD2Display*>(lv_display_get_user_data(disp));
-    if (!self || !self->_epd2_bw) {
+    if (!self || !self->_epd2_bw || !self->_frameBuffer) {
         lv_display_flush_ready(disp);
         return;
     }
 
-    const int width = area->x2 - area->x1 + 1;
-    const int height = area->y2 - area->y1 + 1;
+    int32_t hor_res = lv_display_get_horizontal_resolution(disp);
+    int32_t ver_res = lv_display_get_vertical_resolution(disp);
+    
+    lv_color_format_t cf = lv_display_get_color_format(disp);
+    uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(hor_res, cf);
+    uint8_t* src_bytes = (uint8_t*)px_map;
 
-    ESP_LOGI(TAG, "Flush: Drawing LVGL area x1=%d, y1=%d, w=%d, h=%d",
-             area->x1, area->y1, width, height);
+    const int panel_width = self->_config.width;
+    const int panel_height = self->_config.height;
+    const int panel_bytes_per_row = (panel_width + 7) / 8;
 
-    int16_t wb = (width + 7) / 8;
-    const size_t bitmap_size = wb * height;
-    uint8_t* bitmap = (uint8_t*)heap_caps_malloc(bitmap_size, MALLOC_CAP_DMA);
-    if (!bitmap) {
-        ESP_LOGE(TAG, "Failed to allocate bitmap buffer");
+    if (xSemaphoreTake(self->_framebufferMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGW(TAG, "Framebuffer mutex busy; dropping LVGL flush");
         lv_display_flush_ready(disp);
         return;
     }
-    memset(bitmap, 0xFF, bitmap_size);
 
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            int pixel_index = y * width + x;
-            lv_color_t color = ((lv_color_t*)px_map)[pixel_index];
+    lv_display_rotation_t lv_rotation = lv_display_get_rotation(disp);
+    int rotation = 0;
+    switch (lv_rotation) {
+        case LV_DISPLAY_ROTATION_90: rotation = 1; break;
+        case LV_DISPLAY_ROTATION_180: rotation = 2; break;
+        case LV_DISPLAY_ROTATION_270: rotation = 3; break;
+        default: rotation = 0; break;
+    }
 
-            bool is_white = self->dither8x8ToMono(color, area->x1 + x, area->y1 + y);
-            
-            if (!is_white) {
-                int byte_index = y * wb + (x / 8);
-                int bit_offset = 7 - (x % 8);
-                bitmap[byte_index] &= ~(1 << bit_offset);
+    for (int ly = 0; ly < ver_res; ++ly) {
+        lv_color_t* src_row = (lv_color_t*)(src_bytes + (size_t)ly * src_row_stride_bytes);
+
+        for (int lx = 0; lx < hor_res; ++lx) {
+            int logical_x_abs = lx;
+            int logical_y_abs = ly;
+
+            int physical_x_abs, physical_y_abs;
+
+            switch (rotation) {
+                case 1:
+                    physical_x_abs = logical_y_abs;
+                    physical_y_abs = (panel_height - 1) - logical_x_abs;
+                    break;
+                case 2:
+                    physical_x_abs = (panel_width - 1) - logical_x_abs;
+                    physical_y_abs = (panel_height - 1) - logical_y_abs;
+                    break;
+                case 3:
+                    physical_x_abs = (panel_width - 1) - logical_y_abs;
+                    physical_y_abs = logical_x_abs;
+                    break;
+                case 0:
+                default:
+                    physical_x_abs = logical_x_abs;
+                    physical_y_abs = logical_y_abs;
+                    break;
+            }
+
+            physical_x_abs += self->_gapX;
+            physical_y_abs += self->_gapY;
+
+            if (physical_x_abs < 0 || physical_x_abs >= panel_width ||
+                physical_y_abs < 0 || physical_y_abs >= panel_height) {
+                continue;
+            }
+
+            lv_color_t pixel = src_row[lx];
+            bool is_white = bayer4x4Dither(pixel, physical_x_abs, physical_y_abs);
+
+            const int byte_idx = physical_y_abs * panel_bytes_per_row + (physical_x_abs / 8);
+            const int bit_pos = 7 - (physical_x_abs & 7);
+
+            if (is_white) {
+                self->_frameBuffer[byte_idx] |= (1 << bit_pos);
+            } else {
+                self->_frameBuffer[byte_idx] &= ~(1 << bit_pos);
             }
         }
     }
 
-    if (self->_queue && self->_workerRunning) {
-        QueueItem item;
-        item.buf = bitmap;
-        item.x = area->x1;
-        item.y = area->y1;
-        item.w = width;
-        item.h = height;
+    const size_t fb_size = (size_t)panel_bytes_per_row * (size_t)panel_height;
+    uint8_t* packed = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_DMA);
+    if (!packed) {
+        xSemaphoreGive(self->_framebufferMutex);
+        ESP_LOGE(TAG, "Failed to allocate DMA buffer of %zu bytes", fb_size);
+        lv_display_flush_ready(disp);
+        return;
+    }
 
-        if (xQueueSend(self->_queue, &item, 0) != pdTRUE) {
-            ESP_LOGW(TAG, "Display queue full, dropping frame");
-            heap_caps_free(bitmap);
+    memcpy(packed, self->_frameBuffer, fb_size);
+    xSemaphoreGive(self->_framebufferMutex);
+
+    if (self->_queue) {
+        QueueItem qi;
+        qi.buf = packed;
+        qi.x = 0;
+        qi.y = 0;
+        qi.w = (uint16_t)panel_width;
+        qi.h = (uint16_t)panel_height;
+
+        if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
+            ESP_LOGW(TAG, "Display queue full; frame dropped");
+            heap_caps_free(packed);
         }
     } else {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-
-        self->_epd2_bw->writeImage(bitmap, area->x1, area->y1, width, height, false, false, false);
-        self->_epd2_bw->refresh(true);
-
+        self->_epd2_native->writeImage(packed, 0, 0, panel_width, panel_height, false, false, false);
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-
-        heap_caps_free(bitmap);
+        heap_caps_free(packed);
     }
 
     lv_display_flush_ready(disp);
