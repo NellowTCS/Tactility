@@ -116,8 +116,6 @@ private:
 
     // LVGL flush callback
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
-    // Enhanced dithered grayscale conversion
-    static bool dither8x8ToMono(lv_color_t pixel, int x, int y);
 
     // Worker task entry
     static void displayWorkerTask(void* arg);

@@ -84,7 +84,7 @@ bool GxEPD2Display::start() {
     _epd2_bw->init(115200);
     _epd2_bw->setRotation(_config.rotation);
 
-    ESP_LOGI(TAG, "E-paper display started successfully");
+    ESP_LOGI(TAG, "E-paper display started successfully with rotation=%d", _config.rotation);
     return true;
 }
 
@@ -325,25 +325,44 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            ESP_LOGI(TAG, "Worker: Drawing frame %ux%u at (%u,%u) [first=%d]", 
-                     item.w, item.h, item.x, item.y, first_frame);
+            ESP_LOGI(TAG, "Worker: Drawing frame %ux%u [first=%d]", item.w, item.h, first_frame);
 
-            int32_t lvgl_w = item.w;
-            int32_t lvgl_h = item.h;
+            uint32_t start_time = esp_timer_get_time() / 1000;
+
+            int32_t buf_w = item.w;
+            int32_t buf_h = item.h;
+
+            lv_color_t* lvgl_pixels = (lv_color_t*)item.buf;
 
             self->_epd2_bw->fillScreen(GxEPD_WHITE);
-            
-            lv_color_t* pixels = (lv_color_t*)item.buf;
-            for (int ly = 0; ly < lvgl_h; ly++) {
-                for (int lx = 0; lx < lvgl_w; lx++) {
-                    lv_color_t pixel = pixels[ly * lvgl_w + lx];
-                    bool is_white = bayer4x4Dither(pixel, lx, ly);
-                    self->_epd2_bw->drawPixel(lx, ly, is_white ? GxEPD_WHITE : GxEPD_BLACK);
+
+            uint8_t* dither_buf = (uint8_t*)heap_caps_malloc((buf_w * buf_h) / 8, MALLOC_CAP_SPIRAM);
+            if (dither_buf) {
+                memset(dither_buf, 0xFF, (buf_w * buf_h) / 8);
+
+                for (int ly = 0; ly < buf_h; ly++) {
+                    for (int lx = 0; lx < buf_w; lx++) {
+                        lv_color_t pixel = lvgl_pixels[ly * buf_w + lx];
+                        bool is_white = bayer4x4Dither(pixel, lx, ly);
+
+                        int byte_idx = (ly * buf_w + lx) / 8;
+                        int bit_idx = 7 - ((lx + ly * buf_w) % 8);
+
+                        if (!is_white) {
+                            dither_buf[byte_idx] &= ~(1 << bit_idx);
+                        }
+                    }
                 }
+
+                self->_epd2_bw->writeImage(dither_buf, 0, 0, buf_w, buf_h, false, false, false);
+                heap_caps_free(dither_buf);
             }
 
             self->_epd2_bw->display(first_frame ? false : true);
             first_frame = false;
+
+            uint32_t elapsed = esp_timer_get_time() / 1000 - start_time;
+            ESP_LOGI(TAG, "Worker: Frame render completed in %lu ms", elapsed);
 
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
