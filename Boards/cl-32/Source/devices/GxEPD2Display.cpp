@@ -314,36 +314,48 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     }
 
     QueueItem item;
-    bool first_frame = true;
+    QueueItem pending_item = {nullptr, 0, 0, 0, 0};
+    uint32_t last_refresh_time = 0;
+    const uint32_t MIN_REFRESH_INTERVAL_MS = 1000;  // Don't refresh faster than this
 
     while (true) {
-        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(5000))) {
+        uint32_t now_ms = esp_timer_get_time() / 1000;
+        uint32_t time_since_last = now_ms - last_refresh_time;
+
+        // Check if we have a queued frame
+        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(100)) == pdTRUE) {
             if (item.buf == nullptr) {
                 ESP_LOGI(TAG, "Worker: termination received");
                 break;
             }
 
+            // Free the old pending frame if there's a new one
+            if (pending_item.buf) {
+                heap_caps_free(pending_item.buf);
+            }
+            pending_item = item;
+        }
+
+        // Only refresh if:
+        // 1. We have a pending frame and
+        // 2. Enough time has passed since last refresh
+        if (pending_item.buf && time_since_last >= MIN_REFRESH_INTERVAL_MS) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            ESP_LOGI(TAG, "Worker: Drawing frame %ux%u [first=%d]", item.w, item.h, first_frame);
+            ESP_LOGI(TAG, "Worker: Drawing frame %ux%u (queued for %.0f ms)", 
+                     pending_item.w, pending_item.h, (float)time_since_last);
 
             uint32_t start_time = esp_timer_get_time() / 1000;
 
-            int32_t buf_w = item.w;
-            int32_t buf_h = item.h;
+            int32_t buf_w = pending_item.w;
+            int32_t buf_h = pending_item.h;
+            lv_color_t* lvgl_pixels = (lv_color_t*)pending_item.buf;
 
-            lv_color_t* lvgl_pixels = (lv_color_t*)item.buf;
-
-            self->_epd2_bw->fillScreen(GxEPD_WHITE);
-
-            // Allocate dither buffer: 1 bit per pixel, packed into bytes
             uint32_t dither_buf_size = (buf_w * buf_h + 7) / 8;
             uint8_t* dither_buf = (uint8_t*)heap_caps_malloc(dither_buf_size, MALLOC_CAP_SPIRAM);
             if (dither_buf) {
-                // Initialize to 0xFF (all white/1 bits)
                 memset(dither_buf, 0xFF, dither_buf_size);
 
-                // Dither LVGL RGB565 to 1-bit packed format
                 for (int32_t y = 0; y < buf_h; y++) {
                     for (int32_t x = 0; x < buf_w; x++) {
                         lv_color_t pixel = lvgl_pixels[y * buf_w + x];
@@ -354,29 +366,31 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                         uint8_t bit_idx = 7 - (pixel_idx % 8);
 
                         if (!is_white) {
-                            dither_buf[byte_idx] &= ~(1 << bit_idx);  // Set bit to 0 (black)
+                            dither_buf[byte_idx] &= ~(1 << bit_idx);
                         }
-                        // Leave bit as 1 if white (already initialized to 1)
                     }
                 }
 
-                ESP_LOGI(TAG, "Worker: Dither complete, writing image (%u bytes)", dither_buf_size);
+                self->_epd2_bw->setFullWindow();
                 self->_epd2_bw->writeImage(dither_buf, 0, 0, buf_w, buf_h, false, false, false);
+                self->_epd2_bw->refresh(false);
+                
                 heap_caps_free(dither_buf);
-            } else {
-                ESP_LOGE(TAG, "Worker: Failed to allocate dither buffer (%u bytes)", dither_buf_size);
             }
-
-            self->_epd2_bw->display(first_frame ? false : true);
-            first_frame = false;
 
             uint32_t elapsed = esp_timer_get_time() / 1000 - start_time;
             ESP_LOGI(TAG, "Worker: Frame render completed in %lu ms", elapsed);
 
-            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+            last_refresh_time = now_ms;
+            heap_caps_free(pending_item.buf);
+            pending_item.buf = nullptr;
 
-            heap_caps_free(item.buf);
+            if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
         }
+    }
+
+    if (pending_item.buf) {
+        heap_caps_free(pending_item.buf);
     }
 
     self->_workerRunning = false;
