@@ -237,7 +237,7 @@ bool GxEPD2Display::startLvgl() {
     lv_display_set_user_data(_lvglDisplay, this);
 
     if (!createWorker()) {
-        ESP_LOGW(TAG, "Failed to create display worker. Direct rendering will be used");
+        ESP_LOGW(TAG, "Failed to create display worker - direct rendering will be used");
     }
 
     ESP_LOGI(TAG, "LVGL started successfully");
@@ -358,7 +358,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                 pending_item.buf,
                 pending_item.x, pending_item.y,
                 pending_item.w, pending_item.h,
-                false, false, true);
+                false, false, false);
 
             self->_epd2_bw->refresh(true);
 
@@ -391,27 +391,27 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     ESP_LOGI(TAG, "Flush: Drawing LVGL area x1=%d, y1=%d, w=%d, h=%d",
              area->x1, area->y1, width, height);
 
-    const size_t bitmap_size = ((size_t)width * (size_t)height + 7) / 8;
+    int16_t wb = (width + 7) / 8;
+    const size_t bitmap_size = wb * height;
     uint8_t* bitmap = (uint8_t*)heap_caps_malloc(bitmap_size, MALLOC_CAP_DMA);
     if (!bitmap) {
         ESP_LOGE(TAG, "Failed to allocate bitmap buffer");
         lv_display_flush_ready(disp);
         return;
     }
-    memset(bitmap, 0x00, bitmap_size);
+    memset(bitmap, 0xFF, bitmap_size);
 
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             int pixel_index = y * width + x;
             lv_color_t color = ((lv_color_t*)px_map)[pixel_index];
 
-            bool is_black = !self->dither8x8ToMono(color, area->x1 + x, area->y1 + y);
+            bool is_white = self->dither8x8ToMono(color, area->x1 + x, area->y1 + y);
             
-            if (is_black) {
-                int bit_index = pixel_index;
-                int byte_index = bit_index / 8;
-                int bit_offset = 7 - (bit_index % 8);
-                bitmap[byte_index] |= (1 << bit_offset);
+            if (!is_white) {
+                int byte_index = y * wb + (x / 8);
+                int bit_offset = 7 - (x % 8);
+                bitmap[byte_index] &= ~(1 << bit_offset);
             }
         }
     }
@@ -431,7 +431,7 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     } else {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-        self->_epd2_bw->writeImage(bitmap, area->x1, area->y1, width, height, false, false, true);
+        self->_epd2_bw->writeImage(bitmap, area->x1, area->y1, width, height, false, false, false);
         self->_epd2_bw->refresh(true);
 
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
