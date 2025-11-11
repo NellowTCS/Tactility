@@ -52,30 +52,45 @@ std::string GxEPD2Display::getDescription() const {
 bool GxEPD2Display::start() {
     ESP_LOGI(TAG, "Starting e-paper display...");
 
-    // SPI device configuration for the e-paper display
-    spi_device_interface_config_t dev_cfg = {
-        .mode = 0,                     // SPI mode 0
-        .clock_speed_hz = 10000000,    // SPI clock
-        .input_delay_ns = 0,
-        .spics_io_num = _config.csPin, // Chip Select GPIO pin
-        .queue_size = 7,               // Max queued transactions
-        .pre_cb = nullptr,             // No pre-transaction callbacks
-        .post_cb = nullptr,            // No post-transaction callbacks
-    };
-
-    spi_device_handle_t spi_device;
-    // Add device to the SPI bus (already initialized in Configuration)
-    esp_err_t ret = spi_bus_add_device(_config.spiHost, &dev_cfg, &spi_device);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to add SPI device: %s", esp_err_to_name(ret));
+    // Create SPI mutex for thread-safe access
+    _spiMutex = xSemaphoreCreateMutex();
+    if (!_spiMutex) {
+        ESP_LOGE(TAG, "Failed to create SPI mutex");
         return false;
     }
 
-    // Instantiate and initialize the e-paper display
+    // SPI device configuration for the e-paper display
+    spi_device_interface_config_t dev_cfg = {
+        .mode = 0,
+        .clock_speed_hz = 10000000,
+        .input_delay_ns = 0,
+        .spics_io_num = _config.csPin,
+        .queue_size = 7,
+        .pre_cb = nullptr,
+        .post_cb = nullptr,
+    };
+
+    spi_device_handle_t spi_device;
+    esp_err_t ret = spi_bus_add_device(_config.spiHost, &dev_cfg, &spi_device);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add SPI device: %s", esp_err_to_name(ret));
+        vSemaphoreDelete(_spiMutex);
+        _spiMutex = nullptr;
+        return false;
+    }
+
+    // Instantiate and initialize the native e-paper display
     _epd2_native = std::make_unique<GxEPD2_290_GDEY029T71H>(
         _config.csPin, _config.dcPin, _config.rstPin, _config.busyPin);
-    _epd2_native->selectSPI(_config.spiHost, dev_cfg); // Pass SPI host and device configuration
-    _epd2_native->init(115200); // Initialize the e-paper display
+    _epd2_native->selectSPI(_config.spiHost, dev_cfg);
+    _epd2_native->init(115200);
+
+    // Create the BW wrapper for Adafruit GFX compatibility
+    _epd2_bw = std::make_unique<GxEPD2_BW<GxEPD2_290_GDEY029T71H, 8>>(*_epd2_native);
+    _epd2_bw->init(115200);
+    _epd2_bw->setRotation(_config.rotation);
+    _epd2_bw->setFullWindow();
+    _epd2_bw->firstPage();
 
     ESP_LOGI(TAG, "E-paper display started successfully");
     return true;
@@ -318,7 +333,7 @@ bool GxEPD2Display::dither8x8ToMono(lv_color_t pixel, int x, int y) {
     uint8_t g = pixel.green;
     uint8_t b = pixel.blue;
     uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
-    uint8_t thresh = (dither8[y & 7][x & 7] << 2); // scale 0-63 to 0-252
+    uint8_t thresh = (dither8[y & 7][x & 7] << 2);
     return brightness > thresh;
 }
 
@@ -341,7 +356,6 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             }
 
             if (has_pending && pending_item.buf) {
-                // Discard stale frame
                 heap_caps_free(pending_item.buf);
             }
 
@@ -349,10 +363,8 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             has_pending = true;
 
         } else if (has_pending && pending_item.buf) {
-            // Process the pending item
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            // Use Adafruit GFX to manage the frame drawing and refresh
             ESP_LOGI(TAG, "Worker: Drawing pending frame at x=%d, y=%d, w=%d, h=%d",
                      pending_item.x, pending_item.y, pending_item.w, pending_item.h);
 
@@ -361,7 +373,7 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
                 pending_item.buf, pending_item.w, pending_item.h, 
                 GxEPD_BLACK);
 
-            self->_epd2_bw->display(true); // Partial refresh
+            self->_epd2_bw->display(true);
 
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
@@ -386,26 +398,22 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
         return;
     }
 
-    // Flush the LVGL-rendered frame using Adafruit GFX
     const int width = area->x2 - area->x1 + 1;
     const int height = area->y2 - area->y1 + 1;
 
-    // Use Adafruit GFX for rendering directly
     ESP_LOGI(TAG, "Flush: Drawing LVGL area x1=%d, y1=%d, w=%d, h=%d",
              area->x1, area->y1, width, height);
 
-    // Convert the LVGL buffer and render
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             int index = y * width + x;
             lv_color_t color = ((lv_color_t*)px_map)[index];
 
-            // Map the pixel directly as black or white using dither
             bool is_white = self->dither8x8ToMono(color, area->x1 + x, area->y1 + y);
             self->_epd2_bw->drawPixel(area->x1 + x, area->y1 + y, is_white ? GxEPD_WHITE : GxEPD_BLACK);
         }
     }
 
-    self->_epd2_bw->display(true); // Partial refresh
+    self->_epd2_bw->display(true);
     lv_display_flush_ready(disp);
 }
