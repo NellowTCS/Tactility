@@ -46,20 +46,18 @@ std::string GxEPD2Display::getName() const {
 }
 
 std::string GxEPD2Display::getDescription() const {
-    return "E-paper display GDEY029T71H with Adafruit GFX dithered grayscale";
+    return "GDEY029T71H E-paper Display";
 }
 
 bool GxEPD2Display::start() {
     ESP_LOGI(TAG, "Starting e-paper display...");
 
-    // Create SPI mutex for thread-safe access
     _spiMutex = xSemaphoreCreateMutex();
     if (!_spiMutex) {
         ESP_LOGE(TAG, "Failed to create SPI mutex");
         return false;
     }
 
-    // SPI device configuration for the e-paper display
     spi_device_interface_config_t dev_cfg = {
         .mode = 0,
         .clock_speed_hz = 10000000,
@@ -79,18 +77,14 @@ bool GxEPD2Display::start() {
         return false;
     }
 
-    // Instantiate and initialize the native e-paper display
     _epd2_native = std::make_unique<GxEPD2_290_GDEY029T71H>(
         _config.csPin, _config.dcPin, _config.rstPin, _config.busyPin);
     _epd2_native->selectSPI(_config.spiHost, dev_cfg);
     _epd2_native->init(115200);
 
-    // Create the BW wrapper for Adafruit GFX compatibility
-    _epd2_bw = std::make_unique<GxEPD2_BW<GxEPD2_290_GDEY029T71H, 8>>(*_epd2_native);
+    _epd2_bw = std::make_unique<GxEPD2_BW<GxEPD2_290_GDEY029T71H, GxEPD2_290_GDEY029T71H::HEIGHT>>(*_epd2_native);
     _epd2_bw->init(115200);
     _epd2_bw->setRotation(_config.rotation);
-    _epd2_bw->setFullWindow();
-    _epd2_bw->firstPage();
 
     ESP_LOGI(TAG, "E-paper display started successfully");
     return true;
@@ -250,7 +244,7 @@ bool GxEPD2Display::startLvgl() {
     lv_display_set_user_data(_lvglDisplay, this);
 
     if (!createWorker()) {
-        ESP_LOGW(TAG, "Failed to create display worker - LVGL flushes will still attempt direct writes (risky)");
+        ESP_LOGW(TAG, "Failed to create display worker. Direct rendering will be used");
     }
 
     ESP_LOGI(TAG, "LVGL started successfully (physical=%ux%u logical=%dx%d rotation=%d mode=FULL)",
@@ -368,12 +362,13 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
             ESP_LOGI(TAG, "Worker: Drawing pending frame at x=%d, y=%d, w=%d, h=%d",
                      pending_item.x, pending_item.y, pending_item.w, pending_item.h);
 
-            self->_epd2_bw->drawBitmap(
-                pending_item.x, pending_item.y, 
-                pending_item.buf, pending_item.w, pending_item.h, 
-                GxEPD_BLACK);
+            self->_epd2_bw->writeImage(
+                pending_item.buf,
+                pending_item.x, pending_item.y,
+                pending_item.w, pending_item.h,
+                false, false, true);
 
-            self->_epd2_bw->display(true);
+            self->_epd2_bw->refresh(true);
 
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
@@ -404,16 +399,53 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     ESP_LOGI(TAG, "Flush: Drawing LVGL area x1=%d, y1=%d, w=%d, h=%d",
              area->x1, area->y1, width, height);
 
+    const size_t bitmap_size = ((size_t)width * (size_t)height + 7) / 8;
+    uint8_t* bitmap = (uint8_t*)heap_caps_malloc(bitmap_size, MALLOC_CAP_DMA);
+    if (!bitmap) {
+        ESP_LOGE(TAG, "Failed to allocate bitmap buffer");
+        lv_display_flush_ready(disp);
+        return;
+    }
+    memset(bitmap, 0x00, bitmap_size);
+
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            int index = y * width + x;
-            lv_color_t color = ((lv_color_t*)px_map)[index];
+            int pixel_index = y * width + x;
+            lv_color_t color = ((lv_color_t*)px_map)[pixel_index];
 
-            bool is_white = self->dither8x8ToMono(color, area->x1 + x, area->y1 + y);
-            self->_epd2_bw->drawPixel(area->x1 + x, area->y1 + y, is_white ? GxEPD_WHITE : GxEPD_BLACK);
+            bool is_black = !self->dither8x8ToMono(color, area->x1 + x, area->y1 + y);
+            
+            if (is_black) {
+                int bit_index = pixel_index;
+                int byte_index = bit_index / 8;
+                int bit_offset = 7 - (bit_index % 8);
+                bitmap[byte_index] |= (1 << bit_offset);
+            }
         }
     }
 
-    self->_epd2_bw->display(true);
+    if (self->_queue && self->_workerRunning) {
+        QueueItem item;
+        item.buf = bitmap;
+        item.x = area->x1;
+        item.y = area->y1;
+        item.w = width;
+        item.h = height;
+
+        if (xQueueSend(self->_queue, &item, 0) != pdTRUE) {
+            ESP_LOGW(TAG, "Display queue full, dropping frame");
+            heap_caps_free(bitmap);
+        }
+    } else {
+        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
+
+        self->_epd2_bw->writeImage(bitmap, area->x1, area->y1, width, height, false, false, true);
+        self->_epd2_bw->refresh(true);
+
+        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+
+        heap_caps_free(bitmap);
+    }
+
     lv_display_flush_ready(disp);
 }
