@@ -314,52 +314,44 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     }
 
     QueueItem item;
-    bool first_frame = true;
+    QueueItem pending_item = {nullptr, 0, 0, 0, 0};
+    bool has_pending = false;
 
     while (true) {
-        if (xQueueReceive(self->_queue, &item, portMAX_DELAY)) {
+        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(100))) {
             if (item.buf == nullptr) {
                 ESP_LOGI(TAG, "Worker: termination received");
                 break;
             }
 
+            if (has_pending && pending_item.buf) {
+                heap_caps_free(pending_item.buf);
+            }
+
+            pending_item = item;
+            has_pending = true;
+
+        } else if (has_pending && pending_item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            if (first_frame) {
-                ESP_LOGI(TAG, "Worker: First frame - full refresh");
-                self->_epd2_bw->firstPage();
-                do {
-                    for (int y = 0; y < item.h; y++) {
-                        for (int x = 0; x < item.w; x++) {
-                            int byte_idx = y * ((item.w + 7) / 8) + (x / 8);
-                            int bit_pos = 7 - (x & 7);
-                            bool is_white = (item.buf[byte_idx] >> bit_pos) & 1;
-                            self->_epd2_bw->drawPixel(x, y, is_white ? GxEPD_WHITE : GxEPD_BLACK);
-                        }
-                    }
-                } while (self->_epd2_bw->nextPage());
-                
-                first_frame = false;
-            } else {
-                ESP_LOGI(TAG, "Worker: Partial refresh");
-                self->_epd2_bw->setPartialWindow(0, 0, item.w, item.h);
-                self->_epd2_bw->firstPage();
-                do {
-                    for (int y = 0; y < item.h; y++) {
-                        for (int x = 0; x < item.w; x++) {
-                            int byte_idx = y * ((item.w + 7) / 8) + (x / 8);
-                            int bit_pos = 7 - (x & 7);
-                            bool is_white = (item.buf[byte_idx] >> bit_pos) & 1;
-                            self->_epd2_bw->drawPixel(x, y, is_white ? GxEPD_WHITE : GxEPD_BLACK);
-                        }
-                    }
-                } while (self->_epd2_bw->nextPage());
-            }
+            ESP_LOGI(TAG, "Worker: Rendering frame");
+
+            self->_epd2_bw->setFullWindow();
+            self->_epd2_bw->firstPage();
+            do {
+                self->_epd2_bw->fillScreen(GxEPD_WHITE);
+            } while (self->_epd2_bw->nextPage());
 
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
-            heap_caps_free(item.buf);
+            heap_caps_free(pending_item.buf);
+            pending_item.buf = nullptr;
+            has_pending = false;
         }
+    }
+
+    if (has_pending && pending_item.buf) {
+        heap_caps_free(pending_item.buf);
     }
 
     self->_workerRunning = false;
@@ -376,68 +368,28 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     int32_t hor_res = lv_display_get_horizontal_resolution(disp);
     int32_t ver_res = lv_display_get_vertical_resolution(disp);
 
-    const int width = area->x2 - area->x1 + 1;
-    const int height = area->y2 - area->y1 + 1;
+    ESP_LOGI(TAG, "Flush: Full screen %dx%d", hor_res, ver_res);
 
-    ESP_LOGI(TAG, "Flush: area x1=%d, y1=%d, w=%d, h=%d (res=%dx%d)",
-             area->x1, area->y1, width, height, hor_res, ver_res);
+    if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-    int16_t wb = (hor_res + 7) / 8;
-    const size_t bitmap_size = wb * ver_res;
-    uint8_t* bitmap = (uint8_t*)heap_caps_malloc(bitmap_size, MALLOC_CAP_DMA);
-    if (!bitmap) {
-        ESP_LOGE(TAG, "Failed to allocate bitmap buffer");
-        lv_display_flush_ready(disp);
-        return;
-    }
-    memset(bitmap, 0xFF, bitmap_size);
+    self->_epd2_bw->setFullWindow();
+    self->_epd2_bw->firstPage();
+    do {
+        lv_color_format_t cf = lv_display_get_color_format(disp);
+        uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(hor_res, cf);
 
-    lv_color_format_t cf = lv_display_get_color_format(disp);
-    uint32_t src_row_stride_bytes = (uint32_t)lv_draw_buf_width_to_stride(hor_res, cf);
-
-    for (int ly = 0; ly < ver_res; ly++) {
-        lv_color_t* src_row = (lv_color_t*)((uint8_t*)px_map + ly * src_row_stride_bytes);
-        
-        for (int lx = 0; lx < hor_res; lx++) {
-            lv_color_t pixel = src_row[lx];
-            bool is_white = bayer4x4Dither(pixel, lx, ly);
+        for (int ly = 0; ly < ver_res; ly++) {
+            lv_color_t* src_row = (lv_color_t*)((uint8_t*)px_map + ly * src_row_stride_bytes);
             
-            if (!is_white) {
-                int byte_idx = ly * wb + (lx / 8);
-                int bit_pos = 7 - (lx & 7);
-                bitmap[byte_idx] &= ~(1 << bit_pos);
+            for (int lx = 0; lx < hor_res; lx++) {
+                lv_color_t pixel = src_row[lx];
+                bool is_white = bayer4x4Dither(pixel, lx, ly);
+                self->_epd2_bw->drawPixel(lx, ly, is_white ? GxEPD_WHITE : GxEPD_BLACK);
             }
         }
-    }
+    } while (self->_epd2_bw->nextPage());
 
-    if (self->_queue) {
-        QueueItem qi;
-        qi.buf = bitmap;
-        qi.x = 0;
-        qi.y = 0;
-        qi.w = (uint16_t)hor_res;
-        qi.h = (uint16_t)ver_res;
-
-        if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(50)) != pdTRUE) {
-            ESP_LOGW(TAG, "Display queue full; frame dropped");
-            heap_caps_free(bitmap);
-        }
-    } else {
-        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-        self->_epd2_bw->firstPage();
-        do {
-            for (int y = 0; y < ver_res; y++) {
-                for (int x = 0; x < hor_res; x++) {
-                    int byte_idx = y * wb + (x / 8);
-                    int bit_pos = 7 - (x & 7);
-                    bool is_white = (bitmap[byte_idx] >> bit_pos) & 1;
-                    self->_epd2_bw->drawPixel(x, y, is_white ? GxEPD_WHITE : GxEPD_BLACK);
-                }
-            }
-        } while (self->_epd2_bw->nextPage());
-        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
-        heap_caps_free(bitmap);
-    }
+    if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
     lv_display_flush_ready(disp);
 }
