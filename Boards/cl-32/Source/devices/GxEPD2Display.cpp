@@ -336,26 +336,35 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
             self->_epd2_bw->fillScreen(GxEPD_WHITE);
 
-            uint8_t* dither_buf = (uint8_t*)heap_caps_malloc((buf_w * buf_h) / 8, MALLOC_CAP_SPIRAM);
+            // Allocate dither buffer: 1 bit per pixel, packed into bytes
+            uint32_t dither_buf_size = (buf_w * buf_h + 7) / 8;
+            uint8_t* dither_buf = (uint8_t*)heap_caps_malloc(dither_buf_size, MALLOC_CAP_SPIRAM);
             if (dither_buf) {
-                memset(dither_buf, 0xFF, (buf_w * buf_h) / 8);
+                // Initialize to 0xFF (all white/1 bits)
+                memset(dither_buf, 0xFF, dither_buf_size);
 
-                for (int ly = 0; ly < buf_h; ly++) {
-                    for (int lx = 0; lx < buf_w; lx++) {
-                        lv_color_t pixel = lvgl_pixels[ly * buf_w + lx];
-                        bool is_white = bayer4x4Dither(pixel, lx, ly);
+                // Dither LVGL RGB565 to 1-bit packed format
+                for (int32_t y = 0; y < buf_h; y++) {
+                    for (int32_t x = 0; x < buf_w; x++) {
+                        lv_color_t pixel = lvgl_pixels[y * buf_w + x];
+                        bool is_white = bayer4x4Dither(pixel, x, y);
 
-                        int byte_idx = (ly * buf_w + lx) / 8;
-                        int bit_idx = 7 - ((lx + ly * buf_w) % 8);
+                        uint32_t pixel_idx = y * buf_w + x;
+                        uint32_t byte_idx = pixel_idx / 8;
+                        uint8_t bit_idx = 7 - (pixel_idx % 8);
 
                         if (!is_white) {
-                            dither_buf[byte_idx] &= ~(1 << bit_idx);
+                            dither_buf[byte_idx] &= ~(1 << bit_idx);  // Set bit to 0 (black)
                         }
+                        // Leave bit as 1 if white (already initialized to 1)
                     }
                 }
 
+                ESP_LOGI(TAG, "Worker: Dither complete, writing image (%u bytes)", dither_buf_size);
                 self->_epd2_bw->writeImage(dither_buf, 0, 0, buf_w, buf_h, false, false, false);
                 heap_caps_free(dither_buf);
+            } else {
+                ESP_LOGE(TAG, "Worker: Failed to allocate dither buffer (%u bytes)", dither_buf_size);
             }
 
             self->_epd2_bw->display(first_frame ? false : true);
