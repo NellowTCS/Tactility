@@ -46,7 +46,7 @@ std::string GxEPD2Display::getName() const {
 }
 
 std::string GxEPD2Display::getDescription() const {
-    return "GDEY029T71H E-paper Display";
+    return "E-paper display GDEY029T71H with Adafruit GFX dithered grayscale";
 }
 
 bool GxEPD2Display::start() {
@@ -58,15 +58,13 @@ bool GxEPD2Display::start() {
         return false;
     }
 
-    spi_device_interface_config_t dev_cfg = {
-        .mode = 0,
-        .clock_speed_hz = 10000000,
-        .input_delay_ns = 0,
-        .spics_io_num = _config.csPin,
-        .queue_size = 7,
-        .pre_cb = nullptr,
-        .post_cb = nullptr,
-    };
+    spi_device_interface_config_t dev_cfg = {};
+    dev_cfg.mode = 0;
+    dev_cfg.clock_speed_hz = 10000000;
+    dev_cfg.spics_io_num = _config.csPin;
+    dev_cfg.queue_size = 7;
+    dev_cfg.pre_cb = nullptr;
+    dev_cfg.post_cb = nullptr;
 
     spi_device_handle_t spi_device;
     esp_err_t ret = spi_bus_add_device(_config.spiHost, &dev_cfg, &spi_device);
@@ -175,29 +173,24 @@ bool GxEPD2Display::startLvgl() {
         return false;
     }
 
-    lv_display_rotation_t lv_rotation = LV_DISPLAY_ROTATION_0;
-    switch (_config.rotation) {
-        case 1: lv_rotation = LV_DISPLAY_ROTATION_90; break;
-        case 2: lv_rotation = LV_DISPLAY_ROTATION_180; break;
-        case 3: lv_rotation = LV_DISPLAY_ROTATION_270; break;
-        default: lv_rotation = LV_DISPLAY_ROTATION_0; break;
+    uint16_t lvgl_width = _config.width;
+    uint16_t lvgl_height = _config.height;
+
+    if (_config.rotation == 1 || _config.rotation == 3) {
+        lvgl_width = _config.height;
+        lvgl_height = _config.width;
     }
 
-    ESP_LOGI(TAG, "Starting LVGL: requested physical=%ux%u rotation=%d (config.rotation=%d)",
-             _config.width, _config.height, lv_rotation, _config.rotation);
+    ESP_LOGI(TAG, "Starting LVGL: physical=%ux%u rotation=%d -> LVGL dimensions=%ux%u",
+             _config.width, _config.height, _config.rotation, lvgl_width, lvgl_height);
 
-    _lvglDisplay = lv_display_create(_config.width, _config.height);
+    _lvglDisplay = lv_display_create(lvgl_width, lvgl_height);
     if (!_lvglDisplay) {
-        ESP_LOGE(TAG, "Failed to create LVGL display (lv_display_create)");
+        ESP_LOGE(TAG, "Failed to create LVGL display");
         return false;
     }
 
-    lv_display_set_rotation(_lvglDisplay, lv_rotation);
-
-    int32_t hor_res = lv_display_get_horizontal_resolution(_lvglDisplay);
-    int32_t ver_res = lv_display_get_vertical_resolution(_lvglDisplay);
-
-    ESP_LOGI(TAG, "LVGL reports logical resolution: %dx%d (after rotation)", hor_res, ver_res);
+    lv_display_set_rotation(_lvglDisplay, LV_DISPLAY_ROTATION_0);
 
     const size_t fb_size = ((size_t)_config.width * (size_t)_config.height + 7) / 8;
     _frameBuffer = (uint8_t*)heap_caps_malloc(fb_size, MALLOC_CAP_SPIRAM);
@@ -220,7 +213,7 @@ bool GxEPD2Display::startLvgl() {
         return false;
     }
 
-    const size_t bufSize = (size_t)hor_res * (size_t)ver_res;
+    const size_t bufSize = (size_t)lvgl_width * (size_t)lvgl_height;
     _drawBuf1 = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
     if (!_drawBuf1) {
         ESP_LOGE(TAG, "Failed to allocate LVGL draw buffer (%zu bytes)", bufSize * sizeof(lv_color_t));
@@ -234,7 +227,7 @@ bool GxEPD2Display::startLvgl() {
     }
 
     ESP_LOGI(TAG, "Allocated %zu bytes for full-screen buffer (%d×%d = %zu pixels)", 
-             bufSize * sizeof(lv_color_t), (int)hor_res, (int)ver_res, bufSize);
+             bufSize * sizeof(lv_color_t), (int)lvgl_width, (int)lvgl_height, bufSize);
 
     lv_display_set_color_format(_lvglDisplay, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(_lvglDisplay, _drawBuf1, nullptr,
@@ -247,8 +240,7 @@ bool GxEPD2Display::startLvgl() {
         ESP_LOGW(TAG, "Failed to create display worker. Direct rendering will be used");
     }
 
-    ESP_LOGI(TAG, "LVGL started successfully (physical=%ux%u logical=%dx%d rotation=%d mode=FULL)",
-             _config.width, _config.height, hor_res, ver_res, (int)lv_rotation);
+    ESP_LOGI(TAG, "LVGL started successfully");
 
     return true;
 }
