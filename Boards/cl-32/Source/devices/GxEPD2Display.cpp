@@ -338,21 +338,24 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
             ESP_LOGI(TAG, "Worker: Drawing frame (first=%d)", first_frame);
 
-            int32_t hor_res = pending_item.w;
-            int32_t ver_res = pending_item.h;
+            int32_t lvgl_w = pending_item.w;
+            int32_t lvgl_h = pending_item.h;
 
-            self->_epd2_bw->fillScreen(GxEPD_WHITE);
-
-            lv_color_t* pixels = (lv_color_t*)pending_item.buf;
-            for (int ly = 0; ly < ver_res; ly++) {
-                for (int lx = 0; lx < hor_res; lx++) {
-                    lv_color_t pixel = pixels[ly * hor_res + lx];
-                    bool is_white = bayer4x4Dither(pixel, lx, ly);
-                    self->_epd2_bw->drawPixel(lx, ly, is_white ? GxEPD_WHITE : GxEPD_BLACK);
+            self->_epd2_bw->setPartialWindow(0, 0, lvgl_w, lvgl_h);
+            self->_epd2_bw->firstPage();
+            do {
+                self->_epd2_bw->fillScreen(GxEPD_WHITE);
+                
+                lv_color_t* pixels = (lv_color_t*)pending_item.buf;
+                for (int ly = 0; ly < lvgl_h; ly++) {
+                    for (int lx = 0; lx < lvgl_w; lx++) {
+                        lv_color_t pixel = pixels[ly * lvgl_w + lx];
+                        bool is_white = bayer4x4Dither(pixel, lx, ly);
+                        self->_epd2_bw->drawPixel(lx, ly, is_white ? GxEPD_WHITE : GxEPD_BLACK);
+                    }
                 }
-            }
+            } while (self->_epd2_bw->nextPage());
 
-            self->_epd2_bw->display(first_frame ? false : true);
             first_frame = false;
 
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
@@ -408,17 +411,19 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     } else {
         if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-        self->_epd2_bw->fillScreen(GxEPD_WHITE);
-
-        for (int ly = 0; ly < ver_res; ly++) {
-            for (int lx = 0; lx < hor_res; lx++) {
-                lv_color_t pixel = buffer_copy[ly * hor_res + lx];
-                bool is_white = bayer4x4Dither(pixel, lx, ly);
-                self->_epd2_bw->drawPixel(lx, ly, is_white ? GxEPD_WHITE : GxEPD_BLACK);
+        self->_epd2_bw->setPartialWindow(0, 0, hor_res, ver_res);
+        self->_epd2_bw->firstPage();
+        do {
+            self->_epd2_bw->fillScreen(GxEPD_WHITE);
+            
+            for (int ly = 0; ly < ver_res; ly++) {
+                for (int lx = 0; lx < hor_res; lx++) {
+                    lv_color_t pixel = buffer_copy[ly * hor_res + lx];
+                    bool is_white = bayer4x4Dither(pixel, lx, ly);
+                    self->_epd2_bw->drawPixel(lx, ly, is_white ? GxEPD_WHITE : GxEPD_BLACK);
+                }
             }
-        }
-
-        self->_epd2_bw->display(true);
+        } while (self->_epd2_bw->nextPage());
 
         if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
         heap_caps_free(buffer_copy);
