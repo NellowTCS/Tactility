@@ -314,36 +314,26 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
     }
 
     QueueItem item;
-    QueueItem pending_item = {nullptr, 0, 0, 0, 0};
-    bool has_pending = false;
     bool first_frame = true;
 
     while (true) {
-        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(300))) {
+        if (xQueueReceive(self->_queue, &item, pdMS_TO_TICKS(5000))) {
             if (item.buf == nullptr) {
                 ESP_LOGI(TAG, "Worker: termination received");
                 break;
             }
 
-            if (has_pending && pending_item.buf) {
-                ESP_LOGI(TAG, "Worker: Discarding old frame (batching)");
-                heap_caps_free(pending_item.buf);
-            }
-
-            pending_item = item;
-            has_pending = true;
-
-        } else if (has_pending && pending_item.buf) {
             if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
 
-            ESP_LOGI(TAG, "Worker: Drawing frame (first=%d)", first_frame);
+            ESP_LOGI(TAG, "Worker: Drawing frame %ux%u at (%u,%u) [first=%d]", 
+                     item.w, item.h, item.x, item.y, first_frame);
 
-            int32_t lvgl_w = pending_item.w;
-            int32_t lvgl_h = pending_item.h;
+            int32_t lvgl_w = item.w;
+            int32_t lvgl_h = item.h;
 
             self->_epd2_bw->fillScreen(GxEPD_WHITE);
             
-            lv_color_t* pixels = (lv_color_t*)pending_item.buf;
+            lv_color_t* pixels = (lv_color_t*)item.buf;
             for (int ly = 0; ly < lvgl_h; ly++) {
                 for (int lx = 0; lx < lvgl_w; lx++) {
                     lv_color_t pixel = pixels[ly * lvgl_w + lx];
@@ -357,14 +347,8 @@ void GxEPD2Display::displayWorkerTask(void* arg) {
 
             if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
 
-            heap_caps_free(pending_item.buf);
-            pending_item.buf = nullptr;
-            has_pending = false;
+            heap_caps_free(item.buf);
         }
-    }
-
-    if (has_pending && pending_item.buf) {
-        heap_caps_free(pending_item.buf);
     }
 
     self->_workerRunning = false;
@@ -381,7 +365,13 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
     int32_t hor_res = lv_display_get_horizontal_resolution(disp);
     int32_t ver_res = lv_display_get_vertical_resolution(disp);
 
-    ESP_LOGI(TAG, "Flush: %dx%d", hor_res, ver_res);
+    ESP_LOGI(TAG, "Flush callback: %dx%d", hor_res, ver_res);
+
+    if (!self->_queue) {
+        ESP_LOGE(TAG, "Display queue not initialized");
+        lv_display_flush_ready(disp);
+        return;
+    }
 
     const size_t bufSize = (size_t)hor_res * (size_t)ver_res * sizeof(lv_color_t);
     lv_color_t* buffer_copy = (lv_color_t*)heap_caps_malloc(bufSize, MALLOC_CAP_SPIRAM);
@@ -393,34 +383,15 @@ void GxEPD2Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area,
 
     memcpy(buffer_copy, px_map, bufSize);
 
-    if (self->_queue) {
-        QueueItem qi;
-        qi.buf = (uint8_t*)buffer_copy;
-        qi.x = 0;
-        qi.y = 0;
-        qi.w = (uint16_t)hor_res;
-        qi.h = (uint16_t)ver_res;
+    QueueItem qi;
+    qi.buf = (uint8_t*)buffer_copy;
+    qi.x = 0;
+    qi.y = 0;
+    qi.w = (uint16_t)hor_res;
+    qi.h = (uint16_t)ver_res;
 
-        if (xQueueSend(self->_queue, &qi, 0) != pdTRUE) {
-            ESP_LOGW(TAG, "Display queue full; frame dropped");
-            heap_caps_free(buffer_copy);
-        }
-    } else {
-        if (self->_spiMutex) xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-
-        self->_epd2_bw->fillScreen(GxEPD_WHITE);
-
-        for (int ly = 0; ly < ver_res; ly++) {
-            for (int lx = 0; lx < hor_res; lx++) {
-                lv_color_t pixel = buffer_copy[ly * hor_res + lx];
-                bool is_white = bayer4x4Dither(pixel, lx, ly);
-                self->_epd2_bw->drawPixel(lx, ly, is_white ? GxEPD_WHITE : GxEPD_BLACK);
-            }
-        }
-
-        self->_epd2_bw->display(true);
-
-        if (self->_spiMutex) xSemaphoreGive(self->_spiMutex);
+    if (xQueueSend(self->_queue, &qi, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGW(TAG, "Display queue full; frame dropped");
         heap_caps_free(buffer_copy);
     }
 
