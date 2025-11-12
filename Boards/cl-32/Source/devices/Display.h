@@ -3,6 +3,7 @@
 #include <Tactility/hal/display/DisplayDevice.h>
 #include <driver/gpio.h>
 #include <driver/spi_common.h>
+#include <driver/spi_master.h>
 #include <memory>
 
 // E-Paper Display pins (matching CL-32 hardware)
