@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-      - cl-32-only-gxepd2
+      - cl-32-only-gxepd2-lvgl
     tags:
       - v*
   pull_request:
