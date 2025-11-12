@@ -1,15 +1,16 @@
 #include "Ssd1685Display.h"
-#include "ssd1685.h"
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include <Tactility/Log.h>
-#include <driver/gpio.h>
+#include <cstring>
 
 static const char* TAG = "Ssd1685Display";
 
 Ssd1685Display::Ssd1685Display(const Configuration& config)
     : _config(config)
+    , _ssd1685_handle({.spi_handle = config.spiHandle, .dc_pin = config.dcPin, .rst_pin = config.rstPin, .busy_pin = config.busyPin})
     , _lvglDisplay(nullptr)
+    , _drawBuf(nullptr)
     , _spiMutex(nullptr)
     , _initialized(false)
 {
@@ -41,36 +42,18 @@ bool Ssd1685Display::start() {
         return false;
     }
 
-    if (_config.rstPin >= 0) {
-        gpio_set_direction(_config.rstPin, GPIO_MODE_OUTPUT);
-        gpio_set_level(_config.rstPin, 1);
-    }
-
-    if (_config.dcPin >= 0) {
-        gpio_set_direction(_config.dcPin, GPIO_MODE_OUTPUT);
-        gpio_set_level(_config.dcPin, 1);
-    }
-
-    if (_config.busyPin >= 0) {
-        gpio_set_direction(_config.busyPin, GPIO_MODE_INPUT);
-    }
-
+    ssd1685_init_io(&_ssd1685_handle);
     _initialized = true;
-    ESP_LOGI(TAG, "E-paper display GPIO initialized");
+
+    ESP_LOGI(TAG, "E-paper display started");
     return true;
 }
 
 bool Ssd1685Display::stop() {
-    if (_config.rstPin >= 0) {
-        gpio_set_direction(_config.rstPin, GPIO_MODE_INPUT);
+    if (_initialized) {
+        ssd1685_deinit_io(&_ssd1685_handle);
+        _initialized = false;
     }
-    if (_config.dcPin >= 0) {
-        gpio_set_direction(_config.dcPin, GPIO_MODE_INPUT);
-    }
-    if (_config.busyPin >= 0) {
-        gpio_set_direction(_config.busyPin, GPIO_MODE_INPUT);
-    }
-    _initialized = false;
     return true;
 }
 
@@ -104,8 +87,8 @@ bool Ssd1685Display::startLvgl() {
     lv_display_set_rotation(_lvglDisplay, LV_DISPLAY_ROTATION_0);
 
     const size_t bufSize = (size_t)_config.width * (size_t)_config.height;
-    lv_color_t* drawBuf = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
-    if (!drawBuf) {
+    _drawBuf = (lv_color_t*)heap_caps_malloc(bufSize * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
+    if (!_drawBuf) {
         ESP_LOGE(TAG, "Failed to allocate LVGL draw buffer (%zu bytes)", bufSize * sizeof(lv_color_t));
         lv_display_delete(_lvglDisplay);
         _lvglDisplay = nullptr;
@@ -116,13 +99,13 @@ bool Ssd1685Display::startLvgl() {
              bufSize * sizeof(lv_color_t), _config.width, _config.height, bufSize);
 
     lv_display_set_color_format(_lvglDisplay, LV_COLOR_FORMAT_RGB565);
-    lv_display_set_buffers(_lvglDisplay, drawBuf, nullptr,
+    lv_display_set_buffers(_lvglDisplay, _drawBuf, nullptr,
                            bufSize * sizeof(lv_color_t),
                            LV_DISPLAY_RENDER_MODE_FULL);
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
-    ssd1685_init();
+    ssd1685_init(&_ssd1685_handle);
 
     ESP_LOGI(TAG, "LVGL started successfully");
     return true;
@@ -131,9 +114,9 @@ bool Ssd1685Display::startLvgl() {
 bool Ssd1685Display::stopLvgl() {
     if (_lvglDisplay) {
         ESP_LOGI(TAG, "Stopping LVGL...");
-        lv_color_t* buf = (lv_color_t*)lv_display_get_buf_1(_lvglDisplay);
-        if (buf) {
-            heap_caps_free(buf);
+        if (_drawBuf) {
+            heap_caps_free(_drawBuf);
+            _drawBuf = nullptr;
         }
         lv_display_delete(_lvglDisplay);
         _lvglDisplay = nullptr;
@@ -172,7 +155,12 @@ void Ssd1685Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area
         xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
     }
 
-    ssd1685_flush(nullptr, area, (lv_color_t*)px_map);
+    bool partial = (area->x1 != 0 || area->y1 != 0 || 
+                    area->x2 != (self->_config.width - 1) || 
+                    area->y2 != (self->_config.height - 1));
+
+    ssd1685_flush_buffer(&self->_ssd1685_handle, px_map, partial);
+    ssd1685_deep_sleep(&self->_ssd1685_handle);
 
     if (self->_spiMutex) {
         xSemaphoreGive(self->_spiMutex);

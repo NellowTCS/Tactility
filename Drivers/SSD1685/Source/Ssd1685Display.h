@@ -8,6 +8,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+extern "C" {
+    #include "ssd1685.h"
+}
+
 class Ssd1685Display : public tt::hal::display::DisplayDevice {
 public:
     struct Configuration {
@@ -16,7 +20,7 @@ public:
         gpio_num_t dcPin;
         gpio_num_t rstPin;
         gpio_num_t busyPin;
-        spi_host_device_t spiHost;
+        spi_device_handle_t spiHandle;
     };
 
     explicit Ssd1685Display(const Configuration& config);
@@ -42,7 +46,9 @@ public:
 
 private:
     Configuration _config;
+    ssd1685_handle_t _ssd1685_handle;
     lv_display_t* _lvglDisplay;
+    lv_color_t* _drawBuf;
     SemaphoreHandle_t _spiMutex;
     bool _initialized;
 

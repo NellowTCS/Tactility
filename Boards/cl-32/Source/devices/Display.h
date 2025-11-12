@@ -22,4 +22,4 @@ constexpr auto LCD_PIN_BACKLIGHT = GPIO_NUM_NC;
 // SPI transfer limit for e-paper (smaller buffers)
 constexpr auto LCD_SPI_TRANSFER_SIZE_LIMIT = 4096;
 
-std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay();
+std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay(spi_device_handle_t spiHandle);
