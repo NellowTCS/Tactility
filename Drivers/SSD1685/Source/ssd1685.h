@@ -100,5 +100,3 @@ void ssd1685_deep_sleep(ssd1685_handle_t *handle);
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
-
-#endif /* __SSD1680_REGS_H__ */
