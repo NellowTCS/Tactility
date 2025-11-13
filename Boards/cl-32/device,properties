@@ -1,6 +1,6 @@
 [general]
 vendor=CL-32
-name=Cl-32
+name=cl-32
 
 [hardware]
 target=ESP32S3
