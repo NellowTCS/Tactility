@@ -8,7 +8,6 @@
 #include "ssd1685.h"
 #include <string.h>
 #include <esp_log.h>
-#include <esp_task_wdt.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -81,23 +80,16 @@ static inline void ssd1685_waitbusy(ssd1685_handle_t *handle, int wait_ms)
 {
     if (handle->busy_pin < 0) {
         vTaskDelay(pdMS_TO_TICKS(wait_ms));
-        esp_task_wdt_reset();
         return;
     }
 
     vTaskDelay(pdMS_TO_TICKS(10));
-    esp_task_wdt_reset();
 
     for (int i = 0; i < (wait_ms * 10); i++) {
         if (gpio_get_level(handle->busy_pin) != SSD1685_BUSY_LEVEL) {
             return;
         }
         vTaskDelay(pdMS_TO_TICKS(10));
-        
-        // Feed watchdog every 100ms to prevent timeout during long e-ink operations
-        if (i % 10 == 0) {
-            esp_task_wdt_reset();
-        }
     }
     ESP_LOGE(TAG, "busy exceeded %dms", wait_ms);
 }
@@ -268,5 +260,4 @@ void ssd1685_deep_sleep(ssd1685_handle_t *handle)
     ssd1685_waitbusy(handle, SSD1685_WAIT);
     ssd1685_write_cmd(handle, SSD1685_CMD_DEEP_SLEEP_MODE, data, 1);
     vTaskDelay(pdMS_TO_TICKS(100));
-    esp_task_wdt_reset();
 }

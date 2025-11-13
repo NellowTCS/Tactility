@@ -148,6 +148,8 @@ bool Ssd1685Display::startLvgl() {
         return false;
     }
 
+    // Wait for task to be ready before calling ssd1685_init
+    vTaskDelay(pdMS_TO_TICKS(100));
     ssd1685_init(&_ssd1685_handle);
 
     ESP_LOGI(TAG, "LVGL started successfully");
@@ -224,14 +226,13 @@ void Ssd1685Display::displayUpdateTask(void* pvParameter) {
     while (!self->_shouldStop) {
         if (xQueueReceive(self->_flushQueue, &req, pdMS_TO_TICKS(100)) == pdPASS) {
             if (xSemaphoreTake(self->_spiMutex, pdMS_TO_TICKS(5000)) == pdTRUE) {
-                esp_task_wdt_reset();
-
                 bool partial = (req.area.x1 != 0 || req.area.y1 != 0 || 
                                 req.area.x2 != (self->_config.width - 1) || 
                                 req.area.y2 != (self->_config.height - 1));
 
                 ssd1685_flush_buffer(&self->_ssd1685_handle, req.px_map, partial);
                 esp_task_wdt_reset();
+                
                 ssd1685_deep_sleep(&self->_ssd1685_handle);
                 esp_task_wdt_reset();
 
@@ -240,6 +241,7 @@ void Ssd1685Display::displayUpdateTask(void* pvParameter) {
                 ESP_LOGE(TAG, "Failed to acquire SPI mutex for display update");
             }
         }
+        esp_task_wdt_reset();
     }
 
     vTaskDelete(NULL);
