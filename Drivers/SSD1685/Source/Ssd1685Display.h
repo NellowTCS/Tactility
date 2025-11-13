@@ -7,6 +7,7 @@
 #include <lvgl.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 
 extern "C" {
     #include "ssd1685.h"
@@ -45,12 +46,21 @@ public:
     uint16_t getHeight() const;
 
 private:
+    struct FlushRequest {
+        lv_area_t area;
+        uint8_t* px_map;
+    };
+
     Configuration _config;
     ssd1685_handle_t _ssd1685_handle;
     lv_display_t* _lvglDisplay;
     lv_color_t* _drawBuf;
     SemaphoreHandle_t _spiMutex;
+    QueueHandle_t _flushQueue;
+    TaskHandle_t _displayTaskHandle;
     bool _initialized;
+    bool _shouldStop;
 
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
+    static void displayUpdateTask(void* pvParameter);
 };

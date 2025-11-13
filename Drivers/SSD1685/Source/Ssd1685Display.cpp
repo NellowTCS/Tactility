@@ -1,6 +1,7 @@
 #include "Ssd1685Display.h"
 #include <esp_log.h>
 #include <esp_heap_caps.h>
+#include <esp_task_wdt.h>
 #include <Tactility/Log.h>
 #include <cstring>
 
@@ -12,7 +13,10 @@ Ssd1685Display::Ssd1685Display(const Configuration& config)
     , _lvglDisplay(nullptr)
     , _drawBuf(nullptr)
     , _spiMutex(nullptr)
+    , _flushQueue(nullptr)
+    , _displayTaskHandle(nullptr)
     , _initialized(false)
+    , _shouldStop(false)
 {
 }
 
@@ -22,6 +26,10 @@ Ssd1685Display::~Ssd1685Display() {
     if (_spiMutex) {
         vSemaphoreDelete(_spiMutex);
         _spiMutex = nullptr;
+    }
+    if (_flushQueue) {
+        vQueueDelete(_flushQueue);
+        _flushQueue = nullptr;
     }
 }
 
@@ -51,6 +59,11 @@ bool Ssd1685Display::start() {
 
 bool Ssd1685Display::stop() {
     if (_initialized) {
+        _shouldStop = true;
+        if (_displayTaskHandle) {
+            vTaskDelete(_displayTaskHandle);
+            _displayTaskHandle = nullptr;
+        }
         ssd1685_deinit_io(&_ssd1685_handle);
         _initialized = false;
     }
@@ -105,6 +118,36 @@ bool Ssd1685Display::startLvgl() {
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
+    _flushQueue = xQueueCreate(1, sizeof(FlushRequest));
+    if (!_flushQueue) {
+        ESP_LOGE(TAG, "Failed to create flush queue");
+        heap_caps_free(_drawBuf);
+        _drawBuf = nullptr;
+        lv_display_delete(_lvglDisplay);
+        _lvglDisplay = nullptr;
+        return false;
+    }
+
+    _shouldStop = false;
+    BaseType_t ret = xTaskCreate(
+        displayUpdateTask,
+        "DisplayUpdate",
+        4096,
+        this,
+        configMAX_PRIORITIES - 2,
+        &_displayTaskHandle
+    );
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create display update task");
+        vQueueDelete(_flushQueue);
+        _flushQueue = nullptr;
+        heap_caps_free(_drawBuf);
+        _drawBuf = nullptr;
+        lv_display_delete(_lvglDisplay);
+        _lvglDisplay = nullptr;
+        return false;
+    }
+
     ssd1685_init(&_ssd1685_handle);
 
     ESP_LOGI(TAG, "LVGL started successfully");
@@ -114,6 +157,18 @@ bool Ssd1685Display::startLvgl() {
 bool Ssd1685Display::stopLvgl() {
     if (_lvglDisplay) {
         ESP_LOGI(TAG, "Stopping LVGL...");
+        _shouldStop = true;
+        
+        if (_displayTaskHandle) {
+            vTaskDelete(_displayTaskHandle);
+            _displayTaskHandle = nullptr;
+        }
+        
+        if (_flushQueue) {
+            vQueueDelete(_flushQueue);
+            _flushQueue = nullptr;
+        }
+        
         if (_drawBuf) {
             heap_caps_free(_drawBuf);
             _drawBuf = nullptr;
@@ -146,25 +201,46 @@ uint16_t Ssd1685Display::getHeight() const {
 
 void Ssd1685Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* self = static_cast<Ssd1685Display*>(lv_display_get_user_data(disp));
-    if (!self) {
+    if (!self || !self->_flushQueue) {
         lv_display_flush_ready(disp);
         return;
     }
 
-    if (self->_spiMutex) {
-        xSemaphoreTake(self->_spiMutex, portMAX_DELAY);
-    }
+    FlushRequest req;
+    req.area = *area;
+    req.px_map = px_map;
 
-    bool partial = (area->x1 != 0 || area->y1 != 0 || 
-                    area->x2 != (self->_config.width - 1) || 
-                    area->y2 != (self->_config.height - 1));
-
-    ssd1685_flush_buffer(&self->_ssd1685_handle, px_map, partial);
-    ssd1685_deep_sleep(&self->_ssd1685_handle);
-
-    if (self->_spiMutex) {
-        xSemaphoreGive(self->_spiMutex);
+    if (xQueueSend(self->_flushQueue, &req, pdMS_TO_TICKS(100)) != pdPASS) {
+        ESP_LOGW(TAG, "Flush queue full, dropping frame");
     }
 
     lv_display_flush_ready(disp);
+}
+
+void Ssd1685Display::displayUpdateTask(void* pvParameter) {
+    auto* self = static_cast<Ssd1685Display*>(pvParameter);
+    FlushRequest req;
+
+    while (!self->_shouldStop) {
+        if (xQueueReceive(self->_flushQueue, &req, pdMS_TO_TICKS(100)) == pdPASS) {
+            if (xSemaphoreTake(self->_spiMutex, pdMS_TO_TICKS(5000)) == pdTRUE) {
+                esp_task_wdt_reset();
+
+                bool partial = (req.area.x1 != 0 || req.area.y1 != 0 || 
+                                req.area.x2 != (self->_config.width - 1) || 
+                                req.area.y2 != (self->_config.height - 1));
+
+                ssd1685_flush_buffer(&self->_ssd1685_handle, req.px_map, partial);
+                esp_task_wdt_reset();
+                ssd1685_deep_sleep(&self->_ssd1685_handle);
+                esp_task_wdt_reset();
+
+                xSemaphoreGive(self->_spiMutex);
+            } else {
+                ESP_LOGE(TAG, "Failed to acquire SPI mutex for display update");
+            }
+        }
+    }
+
+    vTaskDelete(NULL);
 }
