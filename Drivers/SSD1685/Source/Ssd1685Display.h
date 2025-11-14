@@ -49,17 +49,20 @@ private:
     struct FlushRequest {
         lv_area_t area;
         uint8_t* px_map;
+        bool forceFullRefresh;
     };
 
     Configuration _config;
     ssd1685_handle_t _ssd1685_handle;
     lv_display_t* _lvglDisplay;
     lv_color_t* _drawBuf;
+    lv_color_t* _previousBuf;  // For differential updates
     SemaphoreHandle_t _spiMutex;
     QueueHandle_t _flushQueue;
     TaskHandle_t _displayTaskHandle;
     bool _initialized;
     bool _shouldStop;
+    bool _fullRefreshNeeded;
 
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
     static void displayUpdateTask(void* pvParameter);
