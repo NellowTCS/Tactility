@@ -5,13 +5,9 @@
 #include <driver/spi_common.h>
 #include <memory>
 #include <lvgl.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
-#include "freertos/queue.h"
 
-extern "C" {
-    #include "ssd1685.h"
-}
+// Forward declare C struct
+typedef struct epd_w21_handle_t epd_w21_handle_t;
 
 class Ssd1685Display : public tt::hal::display::DisplayDevice {
 public:
@@ -47,21 +43,12 @@ public:
 
 private:
     Configuration _config;
-    ssd1685_handle_t _ssd1685_handle;
+    epd_w21_handle_t _epd_handle;
     lv_display_t* _lvglDisplay;
     lv_color_t* _drawBuf;
-    lv_color_t* _previousBuf;
     uint8_t* _monoBuffer;
-    SemaphoreHandle_t _spiMutex;
-    SemaphoreHandle_t _updateSemaphore;
-    SemaphoreHandle_t _updateCompleteSemaphore;
-    TaskHandle_t _displayTaskHandle;
     bool _initialized;
-    bool _shouldStop;
-    bool _fullRefreshNeeded;
-    volatile bool _hasNewFrame;
+    uint32_t _refreshCount;
 
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
-    static void displayUpdateTask(void* pvParameter);
-    void performUpdate();
 };
