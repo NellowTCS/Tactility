@@ -12,7 +12,7 @@ else:
     SHELL_COLOR_ORANGE = "\033[93m"
     SHELL_COLOR_RESET = "\033[m"
 
-DEVICES_DIRECTORY = "Boards"
+DEVICES_DIRECTORY = "Devices"
 
 def print_warning(message):
     print(f"{SHELL_COLOR_ORANGE}WARNING: {message}{SHELL_COLOR_RESET}")
@@ -93,15 +93,15 @@ def write_partition_table(output_file, device_properties: ConfigParser, is_dev: 
 
 def write_tactility_variables(output_file, device_properties: ConfigParser, device_id: str):
     device_selector_name = device_id.upper().replace("-", "_")
-    device_selector = f"CONFIG_TT_BOARD_{device_selector_name}"
+    device_selector = f"CONFIG_TT_DEVICE_{device_selector_name}"
     output_file.write(f"{device_selector}=y\n")
     board_vendor = get_property_or_exit(device_properties, "general", "vendor").replace("\"", "\\\"")
     board_name = get_property_or_exit(device_properties, "general", "name").replace("\"", "\\\"")
     if board_name == board_vendor or board_vendor == "":
-        output_file.write(f"CONFIG_TT_BOARD_NAME=\"{board_name}\"\n")
+        output_file.write(f"CONFIG_TT_DEVICE_NAME=\"{board_name}\"\n")
     else:
-        output_file.write(f"CONFIG_TT_BOARD_NAME=\"{board_vendor} {board_name}\"\n")
-    output_file.write(f"CONFIG_TT_BOARD_ID=\"{device_id}\"\n")
+        output_file.write(f"CONFIG_TT_DEVICE_NAME=\"{board_vendor} {board_name}\"\n")
+    output_file.write(f"CONFIG_TT_DEVICE_ID=\"{device_id}\"\n")
 
 def write_core_variables(output_file, device_properties: ConfigParser):
     idf_target = get_property_or_exit(device_properties, "hardware", "target")
@@ -228,6 +228,11 @@ def main(device_id: str, is_dev: bool):
     device_properties = read_device_properties(device_id)
     with open(output_file_path, "w") as output_file:
         write_properties(output_file, device_properties, device_id, is_dev)
+    if is_dev:
+        dev_mode_postfix = " in dev mode"
+    else:
+        dev_mode_postfix = ""
+    print(f"Created sdkconfig for {device_id}{dev_mode_postfix}")
 
 if __name__ == "__main__":
     if "--help" in sys.argv:
