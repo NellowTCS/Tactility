@@ -6,6 +6,7 @@
 #include "ssd1685.h"
 #include <string.h>
 #include <esp_log.h>
+#include <esp_task_wdt.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -107,6 +108,11 @@ static inline void ssd1685_waitbusy(ssd1685_handle_t *handle, int wait_ms)
             return;
         }
         vTaskDelay(pdMS_TO_TICKS(10));
+        
+        // Reset watchdog every 100ms to prevent timeout during long waits
+        if (i % 10 == 0) {
+            esp_task_wdt_reset();
+        }
     }
     ESP_LOGE(TAG, "busy exceeded %dms", wait_ms);
 }

@@ -22,11 +22,9 @@ Ssd1685Display::Ssd1685Display(const Configuration& config)
     , _drawBuf(nullptr)
     , _previousBuf(nullptr)
     , _spiMutex(nullptr)
-    , _flushQueue(nullptr)
-    , _displayTaskHandle(nullptr)
     , _initialized(false)
-    , _shouldStop(false)
     , _fullRefreshNeeded(true)
+    , _updateInProgress(false)
 {
 }
 
@@ -36,10 +34,6 @@ Ssd1685Display::~Ssd1685Display() {
     if (_spiMutex) {
         vSemaphoreDelete(_spiMutex);
         _spiMutex = nullptr;
-    }
-    if (_flushQueue) {
-        vQueueDelete(_flushQueue);
-        _flushQueue = nullptr;
     }
 }
 
@@ -69,11 +63,6 @@ bool Ssd1685Display::start() {
 
 bool Ssd1685Display::stop() {
     if (_initialized) {
-        _shouldStop = true;
-        if (_displayTaskHandle) {
-            vTaskDelete(_displayTaskHandle);
-            _displayTaskHandle = nullptr;
-        }
         ssd1685_deinit_io(&_ssd1685_handle);
         _initialized = false;
     }
@@ -143,43 +132,6 @@ bool Ssd1685Display::startLvgl() {
     lv_display_set_flush_cb(_lvglDisplay, lvglFlushCallback);
     lv_display_set_user_data(_lvglDisplay, this);
 
-    _flushQueue = xQueueCreate(1, sizeof(FlushRequest));
-    if (!_flushQueue) {
-        ESP_LOGE(TAG, "Failed to create flush queue");
-        heap_caps_free(_previousBuf);
-        _previousBuf = nullptr;
-        heap_caps_free(_drawBuf);
-        _drawBuf = nullptr;
-        lv_display_delete(_lvglDisplay);
-        _lvglDisplay = nullptr;
-        return false;
-    }
-
-    _shouldStop = false;
-    BaseType_t ret = xTaskCreate(
-        displayUpdateTask,
-        "DisplayUpdate",
-        8192,  // Increased stack size
-        this,
-        configMAX_PRIORITIES - 2,
-        &_displayTaskHandle
-    );
-    if (ret != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create display update task");
-        vQueueDelete(_flushQueue);
-        _flushQueue = nullptr;
-        heap_caps_free(_previousBuf);
-        _previousBuf = nullptr;
-        heap_caps_free(_drawBuf);
-        _drawBuf = nullptr;
-        lv_display_delete(_lvglDisplay);
-        _lvglDisplay = nullptr;
-        return false;
-    }
-
-    // Wait for task to be ready
-    vTaskDelay(pdMS_TO_TICKS(100));
-    
     // Do initial full refresh
     ssd1685_init(&_ssd1685_handle);
     _fullRefreshNeeded = true;
@@ -191,17 +143,6 @@ bool Ssd1685Display::startLvgl() {
 bool Ssd1685Display::stopLvgl() {
     if (_lvglDisplay) {
         ESP_LOGI(TAG, "Stopping LVGL...");
-        _shouldStop = true;
-        
-        if (_displayTaskHandle) {
-            vTaskDelete(_displayTaskHandle);
-            _displayTaskHandle = nullptr;
-        }
-        
-        if (_flushQueue) {
-            vQueueDelete(_flushQueue);
-            _flushQueue = nullptr;
-        }
         
         if (_previousBuf) {
             heap_caps_free(_previousBuf);
@@ -241,109 +182,106 @@ uint16_t Ssd1685Display::getHeight() const {
 
 void Ssd1685Display::lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     auto* self = static_cast<Ssd1685Display*>(lv_display_get_user_data(disp));
-    if (!self || !self->_flushQueue) {
+    if (!self) {
         lv_display_flush_ready(disp);
         return;
     }
 
-    FlushRequest req;
-    req.area = *area;
-    req.px_map = px_map;
-    req.forceFullRefresh = self->_fullRefreshNeeded;
-
-    if (xQueueSend(self->_flushQueue, &req, pdMS_TO_TICKS(100)) != pdPASS) {
-        ESP_LOGW(TAG, "Flush queue full, dropping frame");
-    }
-
-    lv_display_flush_ready(disp);
-}
-
-void Ssd1685Display::displayUpdateTask(void* pvParameter) {
-    auto* self = static_cast<Ssd1685Display*>(pvParameter);
-    FlushRequest req;
-    
-    const size_t pixelCount = (size_t)self->_config.width * (size_t)self->_config.height;
-    const size_t bufferSize = pixelCount / 8;  // 1 bit per pixel
-    
-    // Allocate monochrome buffer
-    uint8_t* monoBuffer = (uint8_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_DMA);
-    if (!monoBuffer) {
-        ESP_LOGE(TAG, "Failed to allocate mono buffer");
-        vTaskDelete(NULL);
+    // Skip if an update is already in progress (e-paper is SLOW)
+    if (self->_updateInProgress) {
+        ESP_LOGD(TAG, "Update already in progress, skipping frame");
+        lv_display_flush_ready(disp);
         return;
     }
 
-    while (!self->_shouldStop) {
-        if (xQueueReceive(self->_flushQueue, &req, pdMS_TO_TICKS(100)) == pdPASS) {
-            if (xSemaphoreTake(self->_spiMutex, pdMS_TO_TICKS(5000)) == pdTRUE) {
-                
-                // Convert RGB565 to monochrome (1 bit per pixel)
-                const lv_color_t* src = (const lv_color_t*)req.px_map;
-                memset(monoBuffer, 0, bufferSize);
-                
-                for (size_t i = 0; i < pixelCount; i++) {
-                    // Calculate luminance from RGB565
-                    uint8_t r = (src[i].red * 255) / 31;
-                    uint8_t g = (src[i].green * 255) / 63;
-                    uint8_t b = (src[i].blue * 255) / 31;
-                    uint16_t luma = (r * 299 + g * 587 + b * 114) / 1000;
-                    
-                    // White pixels = 1, Black pixels = 0 (inverted for e-paper)
-                    if (luma > 127) {
-                        size_t byteIdx = i / 8;
-                        uint8_t bitIdx = 7 - (i % 8);
-                        monoBuffer[byteIdx] |= (1 << bitIdx);
-                    }
-                }
+    self->_updateInProgress = true;
 
-                // Decide if we need full or partial refresh
-                bool usePartial = !req.forceFullRefresh;
-                
-                // Check if changes are significant enough for partial update
-                if (usePartial && self->_previousBuf) {
-                    size_t changedPixels = 0;
-                    const lv_color_t* current = (const lv_color_t*)req.px_map;
-                    
-                    for (size_t i = 0; i < pixelCount && changedPixels < 1000; i++) {
-                        if (memcmp(&current[i], &self->_previousBuf[i], sizeof(lv_color_t)) != 0) {
-                            changedPixels++;
-                        }
-                    }
-                    
-                    // If more than 20% changed, do full refresh
-                    if (changedPixels > pixelCount / 5) {
-                        ESP_LOGI(TAG, "Large change detected (%zu pixels), forcing full refresh", changedPixels);
-                        usePartial = false;
-                    }
-                }
-
-                // Perform the update
-                if (usePartial) {
-                    ssd1685_flush_partial(&self->_ssd1685_handle, monoBuffer);
-                } else {
-                    ssd1685_flush_full(&self->_ssd1685_handle, monoBuffer);
-                    self->_fullRefreshNeeded = false;
-                }
-                
-                esp_task_wdt_reset();
-                
-                // Update previous buffer
-                if (self->_previousBuf) {
-                    memcpy(self->_previousBuf, req.px_map, pixelCount * sizeof(lv_color_t));
-                }
-                
-                // Enter deep sleep to save power
-                ssd1685_deep_sleep(&self->_ssd1685_handle);
-                esp_task_wdt_reset();
-
-                xSemaphoreGive(self->_spiMutex);
-            } else {
-                ESP_LOGE(TAG, "Failed to acquire SPI mutex for display update");
-            }
-        }
-        esp_task_wdt_reset();
+    // Perform the update directly in the callback (blocking)
+    // This is necessary because e-paper updates are so slow that we can't queue them
+    if (xSemaphoreTake(self->_spiMutex, pdMS_TO_TICKS(5000)) == pdTRUE) {
+        self->performUpdate(px_map, area);
+        xSemaphoreGive(self->_spiMutex);
+    } else {
+        ESP_LOGE(TAG, "Failed to acquire SPI mutex");
     }
 
+    self->_updateInProgress = false;
+    lv_display_flush_ready(disp);
+}
+
+void Ssd1685Display::performUpdate(const uint8_t* px_map, const lv_area_t* area) {
+    const size_t pixelCount = (size_t)_config.width * (size_t)_config.height;
+    const size_t bufferSize = pixelCount / 8;  // 1 bit per pixel
+    
+    // Allocate monochrome buffer (use DMA-capable memory)
+    uint8_t* monoBuffer = (uint8_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_DMA);
+    if (!monoBuffer) {
+        ESP_LOGE(TAG, "Failed to allocate mono buffer");
+        return;
+    }
+
+    // Convert RGB565 to monochrome (1 bit per pixel)
+    const lv_color_t* src = (const lv_color_t*)px_map;
+    memset(monoBuffer, 0, bufferSize);
+    
+    for (size_t i = 0; i < pixelCount; i++) {
+        // Calculate luminance from RGB565
+        uint8_t r = (src[i].red * 255) / 31;
+        uint8_t g = (src[i].green * 255) / 63;
+        uint8_t b = (src[i].blue * 255) / 31;
+        uint16_t luma = (r * 299 + g * 587 + b * 114) / 1000;
+        
+        // White pixels = 1, Black pixels = 0 (inverted for e-paper)
+        if (luma > 127) {
+            size_t byteIdx = i / 8;
+            uint8_t bitIdx = 7 - (i % 8);
+            monoBuffer[byteIdx] |= (1 << bitIdx);
+        }
+    }
+
+    // Decide if we need full or partial refresh
+    bool usePartial = !_fullRefreshNeeded;
+    
+    // Check if changes are significant enough for partial update
+    if (usePartial && _previousBuf) {
+        size_t changedPixels = 0;
+        const lv_color_t* current = (const lv_color_t*)px_map;
+        
+        // Sample every 10th pixel to speed up comparison
+        for (size_t i = 0; i < pixelCount; i += 10) {
+            if (memcmp(&current[i], &_previousBuf[i], sizeof(lv_color_t)) != 0) {
+                changedPixels++;
+                if (changedPixels > 100) break; // Early exit
+            }
+        }
+        
+        // Scale up the sampled count
+        changedPixels *= 10;
+        
+        // If more than 20% changed, do full refresh
+        if (changedPixels > pixelCount / 5) {
+            ESP_LOGI(TAG, "Large change detected (~%zu pixels), forcing full refresh", changedPixels);
+            usePartial = false;
+        }
+    }
+
+    // Perform the update
+    if (usePartial) {
+        ESP_LOGI(TAG, "Performing partial refresh");
+        ssd1685_flush_partial(&_ssd1685_handle, monoBuffer);
+    } else {
+        ESP_LOGI(TAG, "Performing full refresh");
+        ssd1685_flush_full(&_ssd1685_handle, monoBuffer);
+        _fullRefreshNeeded = false;
+    }
+    
+    // Update previous buffer
+    if (_previousBuf) {
+        memcpy(_previousBuf, px_map, pixelCount * sizeof(lv_color_t));
+    }
+    
+    // Enter deep sleep to save power
+    ssd1685_deep_sleep(&_ssd1685_handle);
+
     heap_caps_free(monoBuffer);
-    vTaskDelete(NULL);
 }
