@@ -32,8 +32,7 @@ public:
             bool mirrorY = false,
             bool invertColor = false,
             uint32_t bufferSize = 0, // Size in pixel count. 0 means default, which is 1/10 of the screen size,
-            lcd_rgb_element_order_t rgbElementOrder = LCD_RGB_ELEMENT_ORDER_RGB,
-            float physicalDiagonalInches = 0.0f
+            lcd_rgb_element_order_t rgbElementOrder = LCD_RGB_ELEMENT_ORDER_RGB
         ) : spiHostDevice(spiHostDevice),
             csPin(csPin),
             dcPin(dcPin),
@@ -46,7 +45,6 @@ public:
             invertColor(invertColor),
             bufferSize(bufferSize),
             rgbElementOrder(rgbElementOrder),
-            physicalDiagonalInches(physicalDiagonalInches),
             touch(std::move(touch)
         ) {
             if (this->bufferSize == 0) {
@@ -68,7 +66,6 @@ public:
         bool invertColor;
         uint32_t bufferSize; // Size in pixel count. 0 means default, which is 1/10 of the screen size
         lcd_rgb_element_order_t rgbElementOrder;
-        float physicalDiagonalInches; // Physical diagonal size in inches
         std::shared_ptr<tt::hal::touch::TouchDevice> touch;
         std::function<void(uint8_t)> _Nullable backlightDutyFunction = nullptr;
     };
@@ -97,8 +94,6 @@ public:
     std::string getDescription() const override { return "JD9853 display"; }
 
     std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable getTouchDevice() override { return configuration->touch; }
-
-    float getPhysicalDiagonalInches() const override { return configuration->physicalDiagonalInches; }
 
     void setBacklightDuty(uint8_t backlightDuty) override {
         if (configuration->backlightDutyFunction != nullptr) {

@@ -28,13 +28,6 @@ public:
 
     virtual std::shared_ptr<touch::TouchDevice> _Nullable getTouchDevice() = 0;
     
-    /** 
-     * Get the physical diagonal size of the display in inches.
-     * This is used for DPI-aware UI scaling calculations.
-     * @return Physical diagonal size in inches, or 0.0 if unknown
-     */
-    virtual float getPhysicalDiagonalInches() const { return 0.0f; }
-
     /** Set a value in the range [0, 255] */
     virtual void setBacklightDuty(uint8_t backlightDuty) { /* NO-OP */ }
     virtual bool supportsBacklightDuty() const { return false; }

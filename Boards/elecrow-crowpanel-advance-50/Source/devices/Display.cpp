@@ -97,8 +97,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         false,
         false,
         false,
-        nullptr, // backlightDutyFunction
-        5.0f // physicalDiagonalInches
+        nullptr // backlightDutyFunction
     );
 
     return std::make_shared<RgbDisplay>(std::move(configuration));

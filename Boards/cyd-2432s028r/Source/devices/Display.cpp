@@ -34,8 +34,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         .touch = createTouch(),
         .backlightDutyFunction = driver::pwmbacklight::setBacklightDuty,
         .resetPin = GPIO_NUM_NC,
-        .rgbElementOrder = LCD_RGB_ELEMENT_ORDER_BGR,
-        .physicalDiagonalInches = 2.8f
+        .rgbElementOrder = LCD_RGB_ELEMENT_ORDER_BGR
     };
 
     auto spi_configuration = std::make_shared<Ili934xDisplay::SpiConfiguration>(Ili934xDisplay::SpiConfiguration {

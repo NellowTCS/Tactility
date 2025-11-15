@@ -27,7 +27,6 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
     );
 
     configuration->backlightDutyFunction = driver::pwmbacklight::setBacklightDuty;
-    configuration->physicalDiagonalInches = 2.33f;
 
     auto display = std::make_shared<St7796Display>(std::move(configuration));
     return std::reinterpret_pointer_cast<tt::hal::display::DisplayDevice>(display);

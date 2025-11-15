@@ -57,8 +57,6 @@ public:
 
     // TODO: Set to true after fixing UnPhoneDisplayDriver
     bool supportsDisplayDriver() const override { return false; }
-    
-    float getPhysicalDiagonalInches() const override { return 3.5f; }
 
     std::shared_ptr<tt::hal::display::DisplayDriver> _Nullable getDisplayDriver() override {
         if (nativeDisplay == nullptr) {
