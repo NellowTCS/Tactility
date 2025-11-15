@@ -1,6 +1,6 @@
 /**
  * @file ssd1685.c
- * SSD1685 e-paper controller driver
+ * SSD1685 e-paper controller driver - Fixed for proper partial updates
  */
  
 #include "ssd1685.h"
@@ -108,11 +108,6 @@ static inline void ssd1685_waitbusy(ssd1685_handle_t *handle, int wait_ms)
             return;
         }
         vTaskDelay(pdMS_TO_TICKS(10));
-        
-        // Reset watchdog every 100ms to prevent timeout during long waits
-        if (i % 10 == 0) {
-            esp_task_wdt_reset();
-        }
     }
     ESP_LOGE(TAG, "busy exceeded %dms", wait_ms);
 }

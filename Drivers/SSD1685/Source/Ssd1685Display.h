@@ -50,12 +50,18 @@ private:
     ssd1685_handle_t _ssd1685_handle;
     lv_display_t* _lvglDisplay;
     lv_color_t* _drawBuf;
-    lv_color_t* _previousBuf;  // For differential updates
+    lv_color_t* _previousBuf;
+    uint8_t* _monoBuffer;
     SemaphoreHandle_t _spiMutex;
+    SemaphoreHandle_t _updateSemaphore;
+    SemaphoreHandle_t _updateCompleteSemaphore;
+    TaskHandle_t _displayTaskHandle;
     bool _initialized;
+    bool _shouldStop;
     bool _fullRefreshNeeded;
-    volatile bool _updateInProgress;
+    volatile bool _hasNewFrame;
 
     static void lvglFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
-    void performUpdate(const uint8_t* px_map, const lv_area_t* area);
+    static void displayUpdateTask(void* pvParameter);
+    void performUpdate();
 };
