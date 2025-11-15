@@ -25,4 +25,12 @@ else ()
 
     add_definitions(-D_Nullable=)
     add_definitions(-D_Nonnull=)
+
+    if (CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+        # Bundle system and data partitions into the virtual filesystem so assets/settings are available at runtime
+        target_link_options(FirmwareSim PRIVATE
+            "--preload-file=${CMAKE_SOURCE_DIR}/Data/system@/system"
+            "--preload-file=${CMAKE_SOURCE_DIR}/Data/data@/data"
+        )
+    endif ()
 endif ()

@@ -6,6 +6,11 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_ASM_COMPILE_OBJECT "${CMAKE_CXX_COMPILER_TARGET}")
 
+# For Emscripten builds, don't use pthreads at all - we run single-threaded
+if (CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1")
+endif()
+
 include("Buildscripts/logo.cmake")
 
 if (NOT WIN32)

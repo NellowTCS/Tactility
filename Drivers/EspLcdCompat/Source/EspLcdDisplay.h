@@ -16,6 +16,9 @@ class TT_DEPRECATED EspLcdDisplay : public tt::hal::display::DisplayDevice {
     std::shared_ptr<tt::Lock> lock;
     lcd_rgb_element_order_t rgbElementOrder;
 
+    // Column offset applied by the driver (in pixels). Subclasses can set this.
+    int driver_column_offset = 0;
+
 protected:
 
     // Used for sending commands such as setting curves
@@ -30,6 +33,10 @@ protected:
     virtual bool isRgbPanel() const { return false; }
 
     virtual lvgl_port_display_rgb_cfg_t getLvglPortDisplayRgbConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) { tt_crash("Not supported"); }
+
+    // Subclasses can call this to set the column offset that the driver will apply to draws
+    void setDriverColumnOffset(int offset) { driver_column_offset = offset; }
+    int getDriverColumnOffset() const { return driver_column_offset; }
 
 public:
 

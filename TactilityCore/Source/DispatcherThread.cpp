@@ -1,8 +1,20 @@
 #include "Tactility/DispatcherThread.h"
 
+#ifdef __EMSCRIPTEN__
+#include <algorithm>
+#include <vector>
+#endif
+
 namespace tt {
 
+#ifdef __EMSCRIPTEN__
+namespace {
+    std::vector<DispatcherThread*> wasmDispatcherThreads;
+}
+#endif
+
 DispatcherThread::DispatcherThread(const std::string& threadName, size_t threadStackSize) {
+#ifndef __EMSCRIPTEN__
     thread = std::make_unique<Thread>(
         threadName,
         threadStackSize,
@@ -10,12 +22,24 @@ DispatcherThread::DispatcherThread(const std::string& threadName, size_t threadS
             return threadMain();
         }
     );
+#else
+    (void)threadName;
+    (void)threadStackSize;
+    wasmDispatcherThreads.push_back(this);
+#endif
 }
 
 DispatcherThread::~DispatcherThread() {
-    if (thread->getState() != Thread::State::Stopped) {
+#ifndef __EMSCRIPTEN__
+    if (thread && thread->getState() != Thread::State::Stopped) {
         stop();
     }
+#else
+    auto it = std::find(wasmDispatcherThreads.begin(), wasmDispatcherThreads.end(), this);
+    if (it != wasmDispatcherThreads.end()) {
+        wasmDispatcherThreads.erase(it);
+    }
+#endif
 }
 
 int32_t DispatcherThread::threadMain() {
@@ -31,17 +55,37 @@ int32_t DispatcherThread::threadMain() {
 }
 
 bool DispatcherThread::dispatch(Dispatcher::Function function, TickType_t timeout) {
-    return dispatcher.dispatch(function, timeout);
+#ifdef __EMSCRIPTEN__
+    return dispatcher.dispatch(std::move(function), timeout);
+#else
+    return dispatcher.dispatch(std::move(function), timeout);
+#endif
 }
 
 void DispatcherThread::start() {
+#ifdef __EMSCRIPTEN__
+    interruptThread = false;
+#else
     interruptThread = false;
     thread->start();
+#endif
 }
 
 void DispatcherThread::stop() {
     interruptThread = true;
+#ifndef __EMSCRIPTEN__
     thread->join();
+#endif
 }
+
+#ifdef __EMSCRIPTEN__
+void DispatcherThread::pumpAll() {
+    for (auto* instance : wasmDispatcherThreads) {
+        if (instance != nullptr && !instance->interruptThread) {
+            instance->dispatcher.consume(0);
+        }
+    }
+}
+#endif
 
 }
