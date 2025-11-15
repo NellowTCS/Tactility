@@ -25,4 +25,4 @@ dependencies.lock
 sdkconfig.board.*.dev
 
 # Built WASM files
-Boards/WebSimulator/AppSim.*
+Devices/WebSimulator/AppSim.*

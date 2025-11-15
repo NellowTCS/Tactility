@@ -79,7 +79,7 @@ else
     cmake --build build-sim-wasm --target FirmwareSim -j$(nproc)
 fi
 
-echo "Copying built files to Boards/WebSimulator/..."
-cp build-sim-wasm/Firmware/FirmwareSim.* Boards/WebSimulator/
+echo "Copying built files to Devices/WebSimulator/..."
+cp build-sim-wasm/Firmware/FirmwareSim.* Devices/WebSimulator/
 
 echo "Build complete!"

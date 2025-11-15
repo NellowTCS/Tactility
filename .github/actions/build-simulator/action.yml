@@ -67,5 +67,5 @@ runs:
       if: ${{ inputs.publish == 'true' }}
       with:
         name: Simulator-${{ inputs.os_name }}-${{ inputs.platform_name }}
-        path: ${{ inputs.os_name == 'wasm' && 'Boards/WebSimulator/' || format('release/Simulator-{0}-{1}', inputs.os_name, inputs.platform_name) }}
+        path: ${{ inputs.os_name == 'wasm' && 'Devices/WebSimulator/' || format('release/Simulator-{0}-{1}', inputs.os_name, inputs.platform_name) }}
         retention-days: 30
