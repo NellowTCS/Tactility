@@ -1,7 +1,6 @@
 #include <Tactility/app/selectiondialog/SelectionDialog.h>
 
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/service/loader/Loader.h>
 #include <Tactility/StringUtils.h>
 #include <Tactility/TactilityCore.h>
@@ -71,8 +70,7 @@ public:
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
-        lvgl::setFlexGap(parent, 0.0f);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
         std::string title = getTitleParameter(app.getParameters());
         lvgl::toolbar_create(parent, title);

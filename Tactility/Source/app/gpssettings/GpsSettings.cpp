@@ -4,7 +4,6 @@
 #include <Tactility/app/alertdialog/AlertDialog.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/service/gps/GpsService.h>
 #include <Tactility/service/gps/GpsState.h>
 #include <Tactility/service/loader/Loader.h>
@@ -115,7 +114,7 @@ class GpsSettingsApp final : public App {
 
         auto* left_wrapper = lv_obj_create(wrapper);
         lv_obj_set_style_border_width(left_wrapper, 0, 0);
-        lvgl::setContainerPadding(left_wrapper, lvgl::ContainerType::Layout);
+        lv_obj_set_style_pad_all(left_wrapper, 0, 0);
         lv_obj_set_size(left_wrapper, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_flex_grow(left_wrapper, 1);
         lv_obj_set_flex_flow(left_wrapper, LV_FLEX_FLOW_COLUMN);
@@ -136,7 +135,7 @@ class GpsSettingsApp final : public App {
         // Right wrapper
         auto* right_wrapper = lv_obj_create(wrapper);
         lv_obj_set_style_border_width(right_wrapper, 0, 0);
-        lvgl::setContainerPadding(right_wrapper, lvgl::ContainerType::Layout);
+        lv_obj_set_style_pad_all(right_wrapper, 0, 0);
         lv_obj_set_size(right_wrapper, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_flex_flow(right_wrapper, LV_FLEX_FLOW_COLUMN);
 
@@ -277,8 +276,7 @@ public:
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
-        lvgl::setFlexGap(parent, 0.0f);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
         auto* toolbar = lvgl::toolbar_create(parent, app);
 
@@ -293,12 +291,12 @@ public:
         lv_obj_set_width(main_wrapper, LV_PCT(100));
         lv_obj_set_flex_grow(main_wrapper, 1);
         lv_obj_set_style_border_width(main_wrapper, 0, 0);
-        lvgl::setContainerPadding(main_wrapper, lvgl::ContainerType::Layout);
+        lv_obj_set_style_pad_all(main_wrapper, 0, 0);
 
         statusWrapper = lv_obj_create(main_wrapper);
         lv_obj_set_width(statusWrapper, LV_PCT(100));
         lv_obj_set_height(statusWrapper, LV_SIZE_CONTENT);
-        lvgl::setContainerPadding(statusWrapper, lvgl::ContainerType::Layout);
+        lv_obj_set_style_pad_all(statusWrapper, 0, 0);
         lv_obj_set_style_border_width(statusWrapper, 0, 0);
 
         statusLabelWidget = lv_label_create(statusWrapper);
@@ -309,7 +307,7 @@ public:
         lv_obj_set_size(infoContainerWidget, LV_PCT(100), LV_SIZE_CONTENT);
         lv_obj_set_flex_flow(infoContainerWidget, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_border_width(infoContainerWidget, 0, 0);
-        lvgl::setContainerPadding(infoContainerWidget, lvgl::ContainerType::Layout);
+        lv_obj_set_style_pad_all(infoContainerWidget, 0, 0);
         hasSetInfo = false;
 
         serviceStateSubscription = service->getStatePubsub()->subscribe([this](auto) {
@@ -325,7 +323,7 @@ public:
         addGpsWrapper = lv_obj_create(main_wrapper);
         lv_obj_set_size(addGpsWrapper, LV_PCT(100), LV_SIZE_CONTENT);
         lv_obj_set_style_border_width(addGpsWrapper, 0, 0);
-        lvgl::setContainerPadding(addGpsWrapper, lvgl::ContainerType::Layout);
+        lv_obj_set_style_pad_all(addGpsWrapper, 0, 0);
         lv_obj_set_style_margin_top(addGpsWrapper, 0, 0);
         lv_obj_set_style_margin_bottom(addGpsWrapper, 8, 0);
 

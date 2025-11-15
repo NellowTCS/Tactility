@@ -5,7 +5,6 @@
 #include <Tactility/file/File.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/network/Http.h>
 #include <Tactility/Paths.h>
 #include <Tactility/service/loader/Loader.h>
@@ -187,8 +186,7 @@ public:
 
     void onShow(TT_UNUSED AppContext& app, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
-        lvgl::setFlexGap(parent, 0.0f);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
         toolbar = lvgl::toolbar_create(parent, entry.appName.c_str());
         auto* wrapper = lv_obj_create(parent);

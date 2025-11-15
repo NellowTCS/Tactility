@@ -35,5 +35,4 @@ public:
 
     // TODO: Find out why it crashes
     bool supportsDisplayDriver() const override { return false; }
-    
 };

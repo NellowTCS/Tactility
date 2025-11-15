@@ -4,13 +4,6 @@
 #include <Tactility/app/wificonnect/WifiConnect.h>
 #include <Tactility/lvgl/Toolbar.h>
 #include <Tactility/lvgl/Spinner.h>
-#include <Tactility/Tactility.h>
-
-#include <Tactility/app/wificonnect/State.h>
-#include <Tactility/app/wificonnect/Bindings.h>
-#include <Tactility/hal/Configuration.h>
-#include <Tactility/lvgl/Keyboard.h>
-#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/service/wifi/WifiApSettings.h>
 #include <Tactility/service/wifi/WifiGlobals.h>
 
@@ -90,10 +83,8 @@ void View::createBottomButtons(lv_obj_t* parent) {
     auto* button_container = lv_obj_create(parent);
     lv_obj_set_width(button_container, LV_PCT(100));
     lv_obj_set_height(button_container, LV_SIZE_CONTENT);
-    
-    // This is an interactive container holding form controls
-    lvgl::setContainerPadding(button_container, lvgl::ContainerType::Interactive);
-    lvgl::setFlexGap(button_container, 0.0f);
+    lv_obj_set_style_pad_all(button_container, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_gap(button_container, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(button_container, 0, LV_STATE_DEFAULT);
 
     remember_switch = lv_switch_create(button_container);
@@ -119,8 +110,7 @@ void View::createBottomButtons(lv_obj_t* parent) {
 // TODO: Standardize dialogs
 void View::init(AppContext& app, lv_obj_t* parent) {
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-    lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
-    lvgl::setFlexGap(parent, 0.0f);
+    lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
     lvgl::toolbar_create(parent, app);
 
@@ -134,8 +124,8 @@ void View::init(AppContext& app, lv_obj_t* parent) {
     auto* ssid_wrapper = lv_obj_create(wrapper);
     lv_obj_set_width(ssid_wrapper, LV_PCT(100));
     lv_obj_set_height(ssid_wrapper, LV_SIZE_CONTENT);
-    lvgl::setContainerPadding(ssid_wrapper, lvgl::ContainerType::Layout);
-    lvgl::setFlexGap(ssid_wrapper, 0.0f);
+    lv_obj_set_style_pad_all(ssid_wrapper, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_gap(ssid_wrapper, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(ssid_wrapper, 0, LV_STATE_DEFAULT);
 
     auto* ssid_label_wrapper = lv_obj_create(ssid_wrapper);
@@ -163,8 +153,8 @@ void View::init(AppContext& app, lv_obj_t* parent) {
     auto* password_wrapper = lv_obj_create(wrapper);
     lv_obj_set_width(password_wrapper, LV_PCT(100));
     lv_obj_set_height(password_wrapper, LV_SIZE_CONTENT);
-    lvgl::setContainerPadding(password_wrapper, lvgl::ContainerType::Layout);
-    lvgl::setFlexGap(password_wrapper, 0.0f);
+    lv_obj_set_style_pad_all(password_wrapper, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_gap(password_wrapper, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(password_wrapper, 0, LV_STATE_DEFAULT);
 
     auto* password_label_wrapper = lv_obj_create(password_wrapper);
@@ -202,6 +192,10 @@ void View::init(AppContext& app, lv_obj_t* parent) {
         std::string ssid;
         if (optSsidParameter(bundle, ssid)) {
             lv_textarea_set_text(ssid_textarea, ssid.c_str());
+
+            if (!ssid.empty()) {
+                lv_group_focus_obj(password_textarea);
+            }
         }
 
         std::string password;

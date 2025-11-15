@@ -1,7 +1,6 @@
 #include <Tactility/app/AppRegistration.h>
 #include <Tactility/service/loader/Loader.h>
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/lvgl/UiStyle.h>
 
 #include <Tactility/Assets.h>
 

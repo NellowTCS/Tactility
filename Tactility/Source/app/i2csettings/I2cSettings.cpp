@@ -1,6 +1,5 @@
 #include "Tactility/lvgl/Style.h"
 #include "Tactility/lvgl/Toolbar.h"
-#include "Tactility/lvgl/UiStyle.h"
 
 #include <Tactility/Assets.h>
 #include <Tactility/hal/i2c/I2c.h>
@@ -76,16 +75,15 @@ class I2cSettingsApp : public App {
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
-        lvgl::setFlexGap(parent, 0.0f);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
         lvgl::toolbar_create(parent, app);
 
         auto* wrapper = lv_obj_create(parent);
         lv_obj_set_width(wrapper, LV_PCT(100));
         lv_obj_set_flex_grow(wrapper, 1);
         lv_obj_set_flex_flow(wrapper, LV_FLEX_FLOW_COLUMN);
-        lvgl::setContainerPadding(wrapper, lvgl::ContainerType::Layout);
-        lvgl::setFlexGap(wrapper, 0.0f);
+        lv_obj_set_style_pad_all(wrapper, LV_STATE_DEFAULT, 0);
+        lv_obj_set_style_pad_gap(wrapper, LV_STATE_DEFAULT, 0);
         lvgl::obj_set_style_bg_invisible(wrapper);
 
         for (const auto& configuration: getConfiguration()->hardware->i2c) {

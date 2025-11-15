@@ -8,7 +8,6 @@
 #include <Tactility/app/ElfApp.h>
 #include <Tactility/lvgl/Toolbar.h>
 #include <Tactility/lvgl/LvglSync.h>
-#include <Tactility/lvgl/UiStyle.h>
 
 #include <Tactility/Tactility.h>
 #include <Tactility/file/File.h>
@@ -259,7 +258,7 @@ void View::update() {
 
 void View::init(const AppContext& appContext, lv_obj_t* parent) {
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-    lvgl::setFlexGap(parent, 0.0f);
+    lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
     auto* toolbar = lvgl::toolbar_create(parent, appContext);
     navigate_up_button = lvgl::toolbar_add_image_button_action(toolbar, LV_SYMBOL_UP, &onNavigateUpPressedCallback, this);
@@ -267,9 +266,7 @@ void View::init(const AppContext& appContext, lv_obj_t* parent) {
     auto* wrapper = lv_obj_create(parent);
     lv_obj_set_width(wrapper, LV_PCT(100));
     lv_obj_set_style_border_width(wrapper, 0, 0);
-    
-    // This is a full-screen app layout container - needs zero padding
-    lvgl::setContainerPadding(wrapper, lvgl::ContainerType::FullScreen);
+    lv_obj_set_style_pad_all(wrapper, 0, 0);
     lv_obj_set_flex_grow(wrapper, 1);
     lv_obj_set_flex_flow(wrapper, LV_FLEX_FLOW_ROW);
 

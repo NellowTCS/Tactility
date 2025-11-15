@@ -6,7 +6,6 @@
 #include <Tactility/hal/i2c/I2cDevice.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/service/loader/Loader.h>
 
 #include <Tactility/Assets.h>
@@ -95,8 +94,7 @@ int32_t I2cScannerApp::getLastBusIndex() {
 
 void I2cScannerApp::onShow(AppContext& app, lv_obj_t* parent) {
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-    lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
-    lvgl::setFlexGap(parent, 0.0f);
+    lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
     lvgl::toolbar_create(parent, app);
 
@@ -108,7 +106,7 @@ void I2cScannerApp::onShow(AppContext& app, lv_obj_t* parent) {
     auto* wrapper = lv_obj_create(main_wrapper);
     lv_obj_set_width(wrapper, LV_PCT(100));
     lv_obj_set_height(wrapper, LV_SIZE_CONTENT);
-    lvgl::setContainerPadding(wrapper, lvgl::ContainerType::Layout);
+    lv_obj_set_style_pad_all(wrapper, 0, 0);
     lv_obj_set_style_border_width(wrapper, 0, 0);
 
     auto* scan_button = lv_button_create(wrapper);

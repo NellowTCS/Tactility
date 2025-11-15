@@ -7,7 +7,6 @@
 
 #include <Tactility/lvgl/Style.h>
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/lvgl/UiStyle.h>
 
 #include <Tactility/Log.h>
 #include <Tactility/service/wifi/Wifi.h>
@@ -154,7 +153,7 @@ void View::updateNetworkList() {
 
     auto* enable_on_boot_wrapper = lv_obj_create(networks_list);
     lv_obj_set_size(enable_on_boot_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
-    lvgl::setContainerPadding(enable_on_boot_wrapper, lvgl::ContainerType::Layout);
+    lv_obj_set_style_pad_all(enable_on_boot_wrapper, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(enable_on_boot_wrapper, 0, LV_STATE_DEFAULT);
 
     auto* enable_label = lv_label_create(enable_on_boot_wrapper);
@@ -166,8 +165,11 @@ void View::updateNetworkList() {
     lv_obj_add_event_cb(enable_on_boot_switch, onEnableOnBootSwitchChanged, LV_EVENT_VALUE_CHANGED, bindings);
     lv_obj_add_event_cb(enable_on_boot_wrapper, onEnableOnBootParentClicked, LV_EVENT_SHORT_CLICKED, enable_on_boot_switch);
 
-    const auto& metrics = hal::getConfiguration()->uiMetrics;
-    lv_obj_set_style_pad_ver(enable_on_boot_wrapper, metrics.wifiManageScrollbarWidth, LV_STATE_DEFAULT);
+    if (hal::getConfiguration()->uiScale == hal::UiScale::Smallest) {
+        lv_obj_set_style_pad_ver(enable_on_boot_wrapper, 2, LV_STATE_DEFAULT);
+    } else {
+        lv_obj_set_style_pad_ver(enable_on_boot_wrapper, 8, LV_STATE_DEFAULT);
+    }
 
     updateEnableOnBootToggle();
 
@@ -290,8 +292,7 @@ void View::updateEnableOnBootToggle() {
 void View::init(const AppContext& app, lv_obj_t* parent) {
 
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-    lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
-    lvgl::setFlexGap(parent, 0.0f);
+    lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
     root = parent;
 

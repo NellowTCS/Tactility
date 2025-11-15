@@ -11,11 +11,8 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         DISPLAY_HORIZONTAL_RESOLUTION,
         DISPLAY_VERTICAL_RESOLUTION,
         nullptr, // no touch
-        false, // invert
-        0.96f // 0.96" display
+        false // invert
     );
-
-    configuration->gapX = -4;
 
     auto display = std::make_shared<Ssd1306Display>(std::move(configuration));
     return std::static_pointer_cast<tt::hal::display::DisplayDevice>(display);

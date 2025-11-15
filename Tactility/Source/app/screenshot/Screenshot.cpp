@@ -11,7 +11,6 @@
 #include <Tactility/lvgl/Lvgl.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/service/screenshot/Screenshot.h>
 
 constexpr auto* TAG = "Screenshot";
@@ -157,7 +156,7 @@ void ScreenshotApp::createModeSettingWidgets(lv_obj_t* parent) {
 
     auto* mode_wrapper = lv_obj_create(parent);
     lv_obj_set_size(mode_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
-    lvgl::setContainerPadding(mode_wrapper, lvgl::ContainerType::Layout);
+    lv_obj_set_style_pad_all(mode_wrapper, 0, 0);
     lv_obj_set_style_border_width(mode_wrapper, 0, 0);
 
     auto* mode_label = lv_label_create(mode_wrapper);
@@ -185,13 +184,13 @@ void ScreenshotApp::createModeSettingWidgets(lv_obj_t* parent) {
 void ScreenshotApp::createFilePathWidgets(lv_obj_t* parent) {
     auto* path_wrapper = lv_obj_create(parent);
     lv_obj_set_size(path_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
-    lvgl::setContainerPadding(path_wrapper, lvgl::ContainerType::Layout);
+    lv_obj_set_style_pad_all(path_wrapper, 0, 0);
     lv_obj_set_style_border_width(path_wrapper, 0, 0);
     lv_obj_set_flex_flow(path_wrapper, LV_FLEX_FLOW_ROW);
 
     auto* label_wrapper = lv_obj_create(path_wrapper);
     lv_obj_set_style_border_width(label_wrapper, 0, 0);
-    lvgl::setContainerPadding(label_wrapper, lvgl::ContainerType::Layout);
+    lv_obj_set_style_pad_all(label_wrapper, 0, 0);
     lv_obj_set_size(label_wrapper, 44, 36);
     auto* path_label = lv_label_create(label_wrapper);
     lv_label_set_text(path_label, "Path:");
@@ -219,18 +218,18 @@ void ScreenshotApp::createFilePathWidgets(lv_obj_t* parent) {
 void ScreenshotApp::createTimerSettingsWidgets(lv_obj_t* parent) {
     timerWrapper = lv_obj_create(parent);
     lv_obj_set_size(timerWrapper, LV_PCT(100), LV_SIZE_CONTENT);
-    lvgl::setContainerPadding(timerWrapper, lvgl::ContainerType::Layout);
+    lv_obj_set_style_pad_all(timerWrapper, 0, 0);
     lv_obj_set_style_border_width(timerWrapper, 0, 0);
 
     auto* delay_wrapper = lv_obj_create(timerWrapper);
     lv_obj_set_size(delay_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
-    lvgl::setContainerPadding(delay_wrapper, lvgl::ContainerType::Layout);
+    lv_obj_set_style_pad_all(delay_wrapper, 0, 0);
     lv_obj_set_style_border_width(delay_wrapper, 0, 0);
     lv_obj_set_flex_flow(delay_wrapper, LV_FLEX_FLOW_ROW);
 
     auto* delay_label_wrapper = lv_obj_create(delay_wrapper);
     lv_obj_set_style_border_width(delay_label_wrapper, 0, 0);
-    lvgl::setContainerPadding(delay_label_wrapper, lvgl::ContainerType::Layout);
+    lv_obj_set_style_pad_all(delay_label_wrapper, 0, 0);
     lv_obj_set_size(delay_label_wrapper, 44, 36);
     auto* delay_label = lv_label_create(delay_label_wrapper);
     lv_label_set_text(delay_label, "Delay:");
@@ -244,7 +243,7 @@ void ScreenshotApp::createTimerSettingsWidgets(lv_obj_t* parent) {
 
     auto* delay_unit_label_wrapper = lv_obj_create(delay_wrapper);
     lv_obj_set_style_border_width(delay_unit_label_wrapper, 0, 0);
-    lvgl::setContainerPadding(delay_unit_label_wrapper, lvgl::ContainerType::Layout);
+    lv_obj_set_style_pad_all(delay_unit_label_wrapper, 0, 0);
     lv_obj_set_size(delay_unit_label_wrapper, LV_SIZE_CONTENT, 36);
     auto* delay_unit_label = lv_label_create(delay_unit_label_wrapper);
     lv_obj_align(delay_unit_label, LV_ALIGN_LEFT_MID, 0, 0);
@@ -257,8 +256,7 @@ void ScreenshotApp::onShow(AppContext& appContext, lv_obj_t* parent) {
     }
 
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-    lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
-    lvgl::setFlexGap(parent, 0.0f);
+    lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
     auto* toolbar = lvgl::toolbar_create(parent, appContext);
     lv_obj_align(toolbar, LV_ALIGN_TOP_MID, 0, 0);

@@ -4,7 +4,6 @@
 #include <Tactility/app/timezone/TimeZone.h>
 #include <Tactility/lvgl/Lvgl.h>
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/service/loader/Loader.h>
 
@@ -186,8 +185,7 @@ public:
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
-        lvgl::setFlexGap(parent, 0.0f);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
         lvgl::toolbar_create(parent, app);
 
@@ -195,7 +193,7 @@ public:
         lv_obj_set_size(search_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
         lv_obj_set_flex_flow(search_wrapper, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(search_wrapper, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
-        lvgl::setContainerPadding(search_wrapper, lvgl::ContainerType::Layout);
+        lv_obj_set_style_pad_all(search_wrapper, 0, 0);
         lv_obj_set_style_border_width(search_wrapper, 0, 0);
 
         auto* icon = lv_image_create(search_wrapper);

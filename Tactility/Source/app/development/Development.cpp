@@ -5,7 +5,6 @@
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/lvgl/Style.h>
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/service/development/DevelopmentService.h>
 #include <Tactility/service/development/DevelopmentSettings.h>
 #include <Tactility/service/loader/Loader.h>
@@ -92,8 +91,7 @@ public:
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
-        lvgl::setFlexGap(parent, 0.0f);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
         lv_obj_t* toolbar = lvgl::toolbar_create(parent, app);
 
@@ -121,7 +119,7 @@ public:
         lv_obj_set_size(enable_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
         lvgl::obj_set_style_bg_invisible(enable_wrapper);
         lv_obj_set_style_border_width(enable_wrapper, 0, LV_STATE_DEFAULT);
-        lvgl::setContainerPadding(enable_wrapper, lvgl::ContainerType::Layout);
+        lv_obj_set_style_pad_all(enable_wrapper, 0, LV_STATE_DEFAULT);
 
         lv_obj_t* enable_label = lv_label_create(enable_wrapper);
         lv_label_set_text(enable_label, "Enable on boot");

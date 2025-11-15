@@ -1,6 +1,5 @@
 #include <Tactility/app/AppRegistration.h>
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/service/loader/Loader.h>
 
 #include <Tactility/Assets.h>
@@ -28,7 +27,7 @@ class SettingsApp final : public App {
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lvgl::setFlexGap(parent, 0.0f);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
         lvgl::toolbar_create(parent, app);
 

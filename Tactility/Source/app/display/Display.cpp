@@ -4,7 +4,6 @@
 #include <Tactility/Assets.h>
 #include <Tactility/hal/display/DisplayDevice.h>
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/lvgl/UiStyle.h>
 
 #include <lvgl.h>
 
@@ -66,11 +65,10 @@ public:
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         displaySettings = settings::display::loadOrGetDefault();
-        const auto& metrics = hal::getConfiguration()->uiMetrics;
+        auto ui_scale = hal::getConfiguration()->uiScale;
 
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
-        lvgl::setFlexGap(parent, 0.0f);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
         auto hal_display = getHalDisplay();
         assert(hal_display != nullptr);
@@ -89,7 +87,9 @@ public:
             lv_obj_set_size(brightness_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
             lv_obj_set_style_pad_hor(brightness_wrapper, 0, LV_STATE_DEFAULT);
             lv_obj_set_style_border_width(brightness_wrapper, 0, LV_STATE_DEFAULT);
-            lv_obj_set_style_pad_ver(brightness_wrapper, metrics.generalVerticalPadding, LV_STATE_DEFAULT);
+            if (ui_scale != hal::UiScale::Smallest) {
+                lv_obj_set_style_pad_ver(brightness_wrapper, 4, LV_STATE_DEFAULT);
+            }
 
             auto* brightness_label = lv_label_create(brightness_wrapper);
             lv_label_set_text(brightness_label, "Brightness");
@@ -111,7 +111,9 @@ public:
             lv_obj_set_size(gamma_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
             lv_obj_set_style_pad_hor(gamma_wrapper, 0, LV_STATE_DEFAULT);
             lv_obj_set_style_border_width(gamma_wrapper, 0, LV_STATE_DEFAULT);
-            lv_obj_set_style_pad_ver(gamma_wrapper, metrics.generalVerticalPadding, LV_STATE_DEFAULT);
+            if (ui_scale != hal::UiScale::Smallest) {
+                lv_obj_set_style_pad_ver(gamma_wrapper, 4, LV_STATE_DEFAULT);
+            }
 
             auto* gamma_label = lv_label_create(gamma_wrapper);
             lv_label_set_text(gamma_label, "Gamma");
@@ -132,7 +134,7 @@ public:
 
         auto* orientation_wrapper = lv_obj_create(main_wrapper);
         lv_obj_set_size(orientation_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
-        lvgl::setContainerPadding(orientation_wrapper, lvgl::ContainerType::Layout);
+        lv_obj_set_style_pad_all(orientation_wrapper, 0, LV_STATE_DEFAULT);
         lv_obj_set_style_border_width(orientation_wrapper, 0, LV_STATE_DEFAULT);
 
         auto* orientation_label = lv_label_create(orientation_wrapper);
@@ -146,8 +148,8 @@ public:
         lv_obj_set_style_border_color(orientation_dropdown, lv_color_hex(0xFAFAFA), LV_PART_MAIN);
         lv_obj_set_style_border_width(orientation_dropdown, 1, LV_PART_MAIN);
         lv_obj_add_event_cb(orientation_dropdown, onOrientationSet, LV_EVENT_VALUE_CHANGED, this);
-        // Set the dropdown to match current orientation enum (not LVGL rotation value)
-        lv_dropdown_set_selected(orientation_dropdown, static_cast<uint16_t>(displaySettings.orientation));
+        auto orientation = settings::display::toLvglDisplayRotation(displaySettings.orientation);
+        lv_dropdown_set_selected(orientation_dropdown, orientation);
     }
 
     void onHide(TT_UNUSED AppContext& app) override {

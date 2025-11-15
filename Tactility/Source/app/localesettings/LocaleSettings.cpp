@@ -2,7 +2,6 @@
 #include <Tactility/app/timezone/TimeZone.h>
 #include <Tactility/app/localesettings/TextResources.h>
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/service/loader/Loader.h>
 #include <Tactility/settings/Time.h>
@@ -89,13 +88,12 @@ class LocaleSettingsApp final : public App {
 public:
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
-        const auto& metrics = hal::getConfiguration()->uiMetrics;
+        auto ui_scale = hal::getConfiguration()->uiScale;
 
         textResources.load();
 
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
-        lvgl::setFlexGap(parent, 0.0f);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
         lvgl::toolbar_create(parent, app);
 
@@ -109,7 +107,7 @@ public:
         auto* region_wrapper = lv_obj_create(main_wrapper);
         lv_obj_set_width(region_wrapper, LV_PCT(100));
         lv_obj_set_height(region_wrapper, LV_SIZE_CONTENT);
-        lvgl::setContainerPadding(region_wrapper, lvgl::ContainerType::Layout);
+        lv_obj_set_style_pad_all(region_wrapper, 0, 0);
         lv_obj_set_style_border_width(region_wrapper, 0, 0);
 
         regionLabel = lv_label_create(region_wrapper);
@@ -129,14 +127,15 @@ public:
         }
 
         lv_label_set_text(timeZoneLabel, timeZoneName.c_str());
-        lv_obj_align_to(timeZoneLabel, region_button, LV_ALIGN_OUT_LEFT_MID, metrics.localeSettingsOffset, 0);
+        const int offset = ui_scale == hal::UiScale::Smallest ? -2 : -10;
+        lv_obj_align_to(timeZoneLabel, region_button, LV_ALIGN_OUT_LEFT_MID, offset, 0);
 
         // Language
 
         auto* language_wrapper = lv_obj_create(main_wrapper);
         lv_obj_set_width(language_wrapper, LV_PCT(100));
         lv_obj_set_height(language_wrapper, LV_SIZE_CONTENT);
-        lvgl::setContainerPadding(language_wrapper, lvgl::ContainerType::Layout);
+        lv_obj_set_style_pad_all(language_wrapper, 0, 0);
         lv_obj_set_style_border_width(language_wrapper, 0, 0);
 
         languageLabel = lv_label_create(language_wrapper);

@@ -1,7 +1,6 @@
 #include <Tactility/Assets.h>
 #include <Tactility/app/AppManifest.h>
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/lvgl/UiStyle.h>
 #include <Tactility/service/loader/Loader.h>
 #include <Tactility/settings/Time.h>
 
@@ -27,8 +26,7 @@ public:
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-        lvgl::setContainerPadding(parent, lvgl::ContainerType::FullScreen);
-        lvgl::setFlexGap(parent, 0.0f);
+        lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
         lvgl::toolbar_create(parent, app);
 
@@ -40,7 +38,7 @@ public:
         auto* time_format_wrapper = lv_obj_create(main_wrapper);
         lv_obj_set_width(time_format_wrapper, LV_PCT(100));
         lv_obj_set_height(time_format_wrapper, LV_SIZE_CONTENT);
-        lvgl::setContainerPadding(time_format_wrapper, lvgl::ContainerType::Layout);
+        lv_obj_set_style_pad_all(time_format_wrapper, 0, 0);
         lv_obj_set_style_border_width(time_format_wrapper, 0, 0);
 
         auto* time_24h_label = lv_label_create(time_format_wrapper);
