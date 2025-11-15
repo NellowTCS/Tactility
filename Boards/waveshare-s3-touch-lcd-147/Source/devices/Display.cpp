@@ -44,8 +44,7 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         false,
         true,
         0, // Default buffer size
-        LCD_RGB_ELEMENT_ORDER_RGB,
-        1.47f // Physical diagonal size in inches
+        LCD_RGB_ELEMENT_ORDER_RGB
     );
 
     configuration->backlightDutyFunction = setBacklightDuty;
