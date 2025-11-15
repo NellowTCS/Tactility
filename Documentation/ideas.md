@@ -8,9 +8,6 @@
 - Elecrow Basic & Advance 3.5" memory issue: not enough memory for App Hub
 - App Hub crashes if you close it while an app is being installed
 - Fix glitches when installing app via App Hub with 4.3" Waveshare
-- Wi-Fi should connect to the access point with the strongest signal over similarly named APs
-- Wi-Fi connect app should focus on password field when SSID was passed on
-- Auto-select the close button of an app by default on non-touch devices?
 - Calculator bugs (see GitHub issue)
 - Try out speed optimizations: https://docs.espressif.com/projects/esp-faq/en/latest/software-framework/peripherals/lcd.html
   (relates to CONFIG_ESP32S3_DATA_CACHE_LINE_64B that is in use for RGB displays via the `device.properties` fix/workaround)
@@ -42,10 +39,9 @@
 ## Medium Priority
 
 - Diceware app has large "+" and "-' buttons on Cardputer. It should be smaller.
-- Create PwmRgbLedDevice class and implement it for all CYD boards
+- Create PwmRgbLedDevice class and implement it for all CYD devices
 - TactilityTool: Make API compatibility table (and check for compatibility in the tool itself)
 - Improve EspLcdDisplay to contain all the standard configuration options, and implement a default init function. Add a configuration class.
-- Statusbar icon that shows low/critical memory warnings
 - Make WiFi setup app that starts an access point and hosts a webpage to set up the device.
   This will be useful for devices without a screen, a small screen or a non-touch screen.
 - Unify the way displays are dimmed. Some implementations turn off the display when it's fully dimmed. Make this a separate functionality.
@@ -91,7 +87,7 @@
 - Audio player app
 - Audio recording app
 - OTA updates
-- T-Deck Plus: Create separate board config?
+- T-Deck Plus: Create separate device config?
 - Support for displays with different DPI. Consider the layer-based system like on Android.
 - If present, use LED to show boot/wifi status
 - Capacity based on voltage: estimation for various devices uses a linear voltage curve, but it should use a battery discharge curve.
