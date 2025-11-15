@@ -133,6 +133,9 @@ bool EspLcdDisplayV2::startLvgl() {
         lvglDisplay = lvgl_port_add_disp(&lvgl_port_config );
     }
 
+    // Set the driver data to point to this DisplayDevice instance for physical size detection
+    lv_display_set_user_data(lvglDisplay, this);
+
     auto touch_device = getTouchDevice();
     if (touch_device != nullptr && touch_device->supportsLvgl()) {
         touch_device->startLvgl(lvglDisplay);

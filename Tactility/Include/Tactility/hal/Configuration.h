@@ -3,6 +3,8 @@
 #include <Tactility/hal/sdcard/SdCardDevice.h>
 #include <Tactility/hal/spi/Spi.h>
 #include <Tactility/hal/uart/Uart.h>
+#include <Tactility/hal/UiMetrics.h>
+
 #include "i2c/I2c.h"
 
 namespace tt::hal {
@@ -18,7 +20,10 @@ enum class LvglInit {
     None
 };
 
-/** Affects LVGL widget style */
+/** Affects LVGL widget style
+ * @deprecated Use UiMetrics instead - this enum is kept for backwards compatibility only.
+ * The system now automatically calculates UI scaling based on screen resolution.
+ */
 enum class UiScale {
     /** Ideal for very small non-touch screen devices (e.g. Waveshare S3 LCD 1.3") */
     Smallest,
@@ -36,8 +41,15 @@ struct Configuration {
     /** Init behaviour: default (esp_lvgl_port for ESP32, nothing for PC) or None (nothing on any platform). Only used in Tactility, not in TactilityHeadless. */
     const LvglInit lvglInit = LvglInit::Default;
 
-    /** Modify LVGL widget size */
+    /** @deprecated Use uiMetrics instead. This field is ignored and kept only for backwards compatibility. */
     const UiScale uiScale = UiScale::Default;
+    
+    /** Dynamic UI scaling metrics - automatically calculated from screen resolution at runtime.
+     * This replaces the old binary uiScale enum with a continuous scaling system.
+     * Do not set this manually - it will be calculated automatically after display initialization.
+     * Marked mutable so it can be calculated even when Configuration is const.
+     */
+    mutable UiMetrics uiMetrics;
 
     std::function<DeviceVector()> createDevices = [] { return std::vector<std::shared_ptr<Device>>(); };
 

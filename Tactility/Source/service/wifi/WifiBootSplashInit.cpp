@@ -2,6 +2,7 @@
 #include "Tactility/file/PropertiesFile.h"
 
 #include <Tactility/file/File.h>
+#include <Tactility/MountPoints.h>
 #include <Tactility/Log.h>
 #include <Tactility/service/wifi/WifiApSettings.h>
 

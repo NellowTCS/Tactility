@@ -11,8 +11,9 @@ extern lv_obj_t* __real_lv_switch_create(lv_obj_t* parent);
 lv_obj_t* __wrap_lv_switch_create(lv_obj_t* parent) {
     auto widget = __real_lv_switch_create(parent);
 
-    if (tt::hal::getConfiguration()->uiScale == tt::hal::UiScale::Smallest) {
-        lv_obj_set_style_size(widget, 25, 15, LV_STATE_DEFAULT);
+    const auto& metrics = tt::hal::getConfiguration()->uiMetrics;
+    if (metrics.switchWidth >= 0 && metrics.switchHeight >= 0) {
+        lv_obj_set_style_size(widget, metrics.switchWidth, metrics.switchHeight, LV_STATE_DEFAULT);
     }
 
     return widget;

@@ -42,7 +42,9 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         false,
         false,
         false,
-        true
+        true,
+        0, // Default buffer size
+        LCD_RGB_ELEMENT_ORDER_RGB
     );
 
     configuration->backlightDutyFunction = setBacklightDuty;

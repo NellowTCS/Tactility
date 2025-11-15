@@ -11,8 +11,10 @@ extern lv_obj_t* __real_lv_dropdown_create(lv_obj_t* parent);
 lv_obj_t* __wrap_lv_dropdown_create(lv_obj_t* parent) {
     auto dropdown = __real_lv_dropdown_create(parent);
 
-    if (tt::hal::getConfiguration()->uiScale == tt::hal::UiScale::Smallest) {
-        lv_obj_set_style_pad_all(dropdown, 2, LV_STATE_DEFAULT);
+    const auto& metrics = tt::hal::getConfiguration()->uiMetrics;
+    if (metrics.dropdownHeight >= 0) {
+        lv_dropdown_set_options_static(dropdown, "");
+        lv_obj_set_height(lv_dropdown_get_list(dropdown), metrics.dropdownHeight);
     }
 
     return dropdown;

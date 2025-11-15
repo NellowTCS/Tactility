@@ -20,6 +20,6 @@ To add new translations or edit existing ones, please follow these steps:
 - Do not commit the CSV files
 - When editing the ODS file, make sure you don't paste in formatted data (use CTRL+Shift+V instead of CTRL+V)
 - ODS export settings:
-    - Field delimiter: `,`
-    - String delimiter: `"`
-    - Encoding: `UTF-8`
+  - Field delimiter: `,`
+  - String delimiter: `"`
+  - Encoding: `UTF-8`

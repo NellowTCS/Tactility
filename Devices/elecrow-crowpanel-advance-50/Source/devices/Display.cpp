@@ -96,7 +96,8 @@ std::shared_ptr<tt::hal::display::DisplayDevice> createDisplay() {
         false,
         false,
         false,
-        false
+        false,
+        nullptr // backlightDutyFunction
     );
 
     return std::make_shared<RgbDisplay>(std::move(configuration));

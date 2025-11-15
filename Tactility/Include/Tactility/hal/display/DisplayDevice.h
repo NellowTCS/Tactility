@@ -27,7 +27,7 @@ public:
     virtual bool supportsPowerControl() const { return false; }
 
     virtual std::shared_ptr<touch::TouchDevice> _Nullable getTouchDevice() = 0;
-
+    
     /** Set a value in the range [0, 255] */
     virtual void setBacklightDuty(uint8_t backlightDuty) { /* NO-OP */ }
     virtual bool supportsBacklightDuty() const { return false; }

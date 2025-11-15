@@ -250,4 +250,3 @@ extern const AppManifest manifest = {
 };
 
 } // namespace
-

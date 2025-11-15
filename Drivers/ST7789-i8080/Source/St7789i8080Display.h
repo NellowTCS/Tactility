@@ -104,7 +104,7 @@ public:
     lv_display_t* getLvglDisplay() const override { return lvglDisplay; }
     std::string getName() const override { return "I8080 ST7789"; }
     std::string getDescription() const override { return "I8080-based ST7789 display"; }
-    
+        
     // Lifecycle
     bool start() override;
     bool stop() override;
