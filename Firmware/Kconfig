@@ -13,6 +13,8 @@ menu "Tactility App"
             bool "Custom"
         config TT_DEVICE_BTT_PANDA_TOUCH
             bool "BigTreeTech Panda Touch"
+        config TT_BOARD_CL_32
+            bool "CL-32"
         config TT_DEVICE_CYD_2432S024C
             bool "CYD 2432S024C"
         config TT_DEVICE_CYD_2432S028R
