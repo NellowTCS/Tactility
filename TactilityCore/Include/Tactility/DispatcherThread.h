@@ -30,7 +30,18 @@ public:
     void stop();
 
     /** @return true of the thread is started */
-    bool isStarted() const { return thread != nullptr && !interruptThread; }
+    bool isStarted() const {
+#ifndef __EMSCRIPTEN__
+    return thread != nullptr && !interruptThread;
+#else
+    return !interruptThread;
+#endif
+    }
+
+#ifdef __EMSCRIPTEN__
+    /** Pump all dispatcher threads (used for WASM single-threaded runtime). */
+    static void pumpAll();
+#endif
 };
 
 }
