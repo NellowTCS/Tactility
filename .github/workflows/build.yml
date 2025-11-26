@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+      - cl-32-only-ssd1680
     tags:
       - v*
   pull_request:
@@ -33,6 +34,7 @@ jobs:
       matrix:
         board: [
           { id: btt-panda-touch, arch: esp32s3 },
+          { id: cl-32, arch esp32s3 },
           { id: cyd-2432s024c, arch: esp32 },
           { id: cyd-2432s028r, arch: esp32 },
           { id: cyd-2432s028rv3, arch: esp32 },
