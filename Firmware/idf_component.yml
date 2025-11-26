@@ -1,4 +1,5 @@
 dependencies:
+  fasani/adafruit_gfx: "1.7.8"
   espressif/esp_lcd_ili9341:
     version: "2.0.1"
     rules:
