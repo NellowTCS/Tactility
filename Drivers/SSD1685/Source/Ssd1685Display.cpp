@@ -62,11 +62,13 @@ bool Ssd1685Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
-    // Configure the vendor-specific config
-    vendorConfig.busy_gpio = configuration->busyPin;
-    vendorConfig.full_refresh = false;
-    vendorConfig.width = configuration->width;
-    vendorConfig.height = configuration->height;
+    // Allocate and configure the vendor-specific config
+    vendorConfig = new esp_lcd_ssd1685_config_t();
+    vendorConfig->busy_gpio = configuration->busyPin;
+    vendorConfig->refresh_mode = SSD1685_REFRESH_FULL;
+    vendorConfig->swap_axes = false;
+    vendorConfig->mirror_x = false;
+    vendorConfig->mirror_y = false;
 
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = GPIO_NUM_NC, // We handle reset manually above
@@ -75,11 +77,13 @@ bool Ssd1685Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         .flags = {
             .reset_active_high = 0,
         },
-        .vendor_config = &vendorConfig,
+        .vendor_config = vendorConfig,
     };
 
-    if (esp_lcd_new_panel_ssd1685(ioHandle, &panel_config, &vendorConfig, &panelHandle) != ESP_OK) {
+    if (esp_lcd_new_panel_ssd1685(ioHandle, &panel_config, vendorConfig, &panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to create SSD1685 panel");
+        delete vendorConfig;
+        vendorConfig = nullptr;
         return false;
     }
 

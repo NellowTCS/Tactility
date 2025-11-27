@@ -12,12 +12,7 @@
 #define TAG "ssd1685_display"
 
 // Forward declare the config struct from the C driver
-typedef struct {
-    int busy_gpio;
-    bool full_refresh;
-    int width;
-    int height;
-} esp_lcd_ssd1685_config_t;
+struct esp_lcd_ssd1685_config_t;
 
 class Ssd1685Display final : public EspLcdDisplay {
 
@@ -69,7 +64,7 @@ public:
 private:
 
     std::unique_ptr<Configuration> configuration;
-    esp_lcd_ssd1685_config_t vendorConfig;
+    esp_lcd_ssd1685_config_t* vendorConfig;
 
     bool createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) override;
 
@@ -82,12 +77,7 @@ public:
     explicit Ssd1685Display(std::unique_ptr<Configuration> inConfiguration) :
         EspLcdDisplay(tt::hal::spi::getLock(inConfiguration->spiHost)),
         configuration(std::move(inConfiguration)),
-        vendorConfig{
-            .busy_gpio = configuration->busyPin,
-            .full_refresh = false,
-            .width = static_cast<int>(configuration->width),
-            .height = static_cast<int>(configuration->height)
-        }
+        vendorConfig(nullptr)
     {
         assert(configuration != nullptr);
         

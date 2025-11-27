@@ -17,7 +17,7 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_check.h"
-#include "esp_lcd_ssd1685.h"
+#include "esp_lcd_panel_ssd1685.h"
 
 static const char *TAG = "lcd_ssd1685";
 
