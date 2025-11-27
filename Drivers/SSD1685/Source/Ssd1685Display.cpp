@@ -3,7 +3,6 @@
 #include <Tactility/Log.h>
 #include <esp_lcd_panel_commands.h>
 #include <esp_lcd_panel_dev.h>
-#include <esp_lcd_panel_ssd1685.h>
 #include <esp_lvgl_port.h>
 #include <esp_lcd_panel_ops.h>
 #include <driver/spi_master.h>
@@ -11,6 +10,11 @@
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+
+// Include the C driver header
+extern "C" {
+#include "esp_lcd_panel_ssd1685.h"
+}
 
 bool Ssd1685Display::createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) {
     const esp_lcd_panel_io_spi_config_t io_config = {
@@ -41,6 +45,7 @@ bool Ssd1685Display::createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) {
 }
 
 bool Ssd1685Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t& panelHandle) {
+    // Handle reset pin manually if provided
     if (configuration->resetPin != GPIO_NUM_NC) {
         gpio_config_t reset_gpio_config = {
             .pin_bit_mask = 1ULL << configuration->resetPin,
@@ -57,8 +62,14 @@ bool Ssd1685Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
+    // Configure the vendor-specific config
+    vendorConfig.busy_gpio = configuration->busyPin;
+    vendorConfig.full_refresh = false;
+    vendorConfig.width = configuration->width;
+    vendorConfig.height = configuration->height;
+
     esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = GPIO_NUM_NC,
+        .reset_gpio_num = GPIO_NUM_NC, // We handle reset manually above
         .color_space = ESP_LCD_COLOR_SPACE_MONOCHROME,
         .bits_per_pixel = 1,
         .flags = {
@@ -67,7 +78,7 @@ bool Ssd1685Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         .vendor_config = &vendorConfig,
     };
 
-    if (esp_lcd_new_panel_ssd1685(ioHandle, &panel_config, &panelHandle) != ESP_OK) {
+    if (esp_lcd_new_panel_ssd1685(ioHandle, &panel_config, &vendorConfig, &panelHandle) != ESP_OK) {
         TT_LOG_E(TAG, "Failed to create SSD1685 panel");
         return false;
     }
@@ -87,26 +98,16 @@ bool Ssd1685Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         return false;
     }
 
-    // Initial clear - just white fill
+    // Initial clear - fill with white
     TT_LOG_I(TAG, "Issuing initial full-screen clear (white) for SSD1685 panel");
     const size_t clear_size = configuration->width * configuration->height / 8;
     uint8_t *white_buffer = (uint8_t *)heap_caps_malloc(clear_size, MALLOC_CAP_DMA);
     if (white_buffer) {
-        memset(white_buffer, 0xFF, clear_size); // 0xFF = white
+        memset(white_buffer, 0xFF, clear_size); // 0xFF = white in monochrome
         
-        // Write white to black VRAM
-        epaper_panel_set_bitmap_color(panelHandle, SSD1685_EPAPER_BITMAP_BLACK);
         esp_err_t r = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, configuration->width, configuration->height, white_buffer);
         if (r != ESP_OK) {
             TT_LOG_W(TAG, "Initial draw_bitmap returned %d", r);
-        }
-        
-        // Clear red VRAM to prevent ghosting
-        memset(white_buffer, 0x00, clear_size);
-        epaper_panel_set_bitmap_color(panelHandle, SSD1685_EPAPER_BITMAP_RED);
-        r = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, configuration->width, configuration->height, white_buffer);
-        if (r != ESP_OK) {
-            TT_LOG_W(TAG, "Initial red VRAM clear returned %d", r);
         }
         
         // Wait for BUSY to finish
