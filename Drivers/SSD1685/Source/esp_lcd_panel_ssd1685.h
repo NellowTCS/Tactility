@@ -1,136 +1,68 @@
-/*
- * SPDX-FileCopyrightText: 2023 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Apache-2.0
+/**
+ * @file esp_lcd_ssd1685.h
+ * @brief ESP LCD driver for SSD1685 e-paper display controller
+ * 
+ * Specifically designed for GDEY029T71H (168x384 monochrome e-paper)
  */
+
 #pragma once
 
-#include <stdbool.h>
 #include "esp_lcd_panel_vendor.h"
-#include "esp_lcd_panel_interface.h"
 #include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_ops.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
-* @brief Prototype of ssd1685 driver event callback
-*
-* @param[in] handle    esp_lcd_panel_handle_t esp_lcd driver handle
-* @param[in] edata     reserved
-* @param[in] user_data User registered context, registered in `epaper_panel_register_event_callbacks()`
-*
-* @return Whether a high priority task is woken up by this function
-*/
-typedef bool (*esp_lcd_epaper_panel_cb_t)(const esp_lcd_panel_handle_t handle, const void *edata, void *user_data);
+ * @brief SSD1685 refresh modes
+ */
+typedef enum {
+    SSD1685_REFRESH_FULL = 0,    /*!< Full refresh - slow but complete update */
+    SSD1685_REFRESH_FAST,        /*!< Fast full refresh - uses temperature trick */
+    SSD1685_REFRESH_PARTIAL,     /*!< Partial refresh - fast but may ghost */
+} ssd1685_refresh_mode_t;
 
 /**
- * @brief Type of ssd1685 e-paper callbacks
+ * @brief SSD1685 panel configuration
  */
 typedef struct {
-    esp_lcd_epaper_panel_cb_t on_epaper_refresh_done;  /*!< Callback invoked when e-paper refresh finishes */
-} epaper_panel_callbacks_t;
-
-/**
- * @brief Type of additional configuration needed by ssd1685 e-paper panel
- *        Please set the object of this struct to esp_lcd_panel_dev_config_t->vendor_config
- */
-typedef struct {
-    int busy_gpio_num;         /*!< GPIO num of the BUSY pin */
-    bool non_copy_mode;        /*!< If the bitmap would be copied or not.
-                                *   Image rotation and mirror is limited when enabling. */
-    int width;                 /*!< Panel width in pixels */
-    int height;                /*!< Panel height in pixels */
+    int busy_gpio;                      /*!< BUSY signal GPIO, -1 if not used */
+    ssd1685_refresh_mode_t refresh_mode; /*!< Default refresh mode */
+    bool swap_axes;                     /*!< Swap X and Y axes */
+    bool mirror_x;                      /*!< Mirror X axis */
+    bool mirror_y;                      /*!< Mirror Y axis */
 } esp_lcd_ssd1685_config_t;
 
 /**
- * @brief Enum of colors available of ssd1685 e-paper
- *        Some of the ssd1685 e-paper panels support not only black pixels but also red pixels.
- *        Use this enum to select the color of the bitmap you want to display.
- *        Need be set using `epaper_panel_set_bitmap_color()` before calling `epaper_panel_draw_bitmap()`.
- * @note Default to `SSD1685_EPAPER_BITMAP_BLACK` if not set.
- */
-typedef enum {
-    SSD1685_EPAPER_BITMAP_BLACK, /*!< Draw the bitmap in black */
-    SSD1685_EPAPER_BITMAP_RED    /*!< Draw the bitmap in red */
-} esp_lcd_ssd1685_bitmap_color_t;
-
-/**
- * @brief Create LCD panel for model ssd1685 e-Paper
- * @attention
- *        Need to call `gpio_install_isr_service()` before calling this function.
+ * @brief Create LCD panel for SSD1685 (GDEY029T71H)
+ *
  * @param[in] io LCD panel IO handle
- * @param[in] panel_dev_config general panel device configuration
+ * @param[in] panel_dev_config General panel device configuration
+ * @param[in] ssd1685_config SSD1685 specific configuration
  * @param[out] ret_panel Returned LCD panel handle
  * @return
- *          - ESP_ERR_INVALID_ARG   if parameter is invalid
- *          - ESP_ERR_NO_MEM        if out of memory
- *          - ESP_OK                on success
+ *      - ESP_OK on success
+ *      - ESP_ERR_INVALID_ARG if parameter is invalid
+ *      - ESP_ERR_NO_MEM if out of memory
  */
-esp_err_t esp_lcd_new_panel_ssd1685(const esp_lcd_panel_io_handle_t io, const esp_lcd_panel_dev_config_t *panel_dev_config,
-                                    esp_lcd_panel_handle_t *ret_panel);
+esp_err_t esp_lcd_new_panel_ssd1685(const esp_lcd_panel_io_handle_t io,
+                                     const esp_lcd_panel_dev_config_t *panel_dev_config,
+                                     const esp_lcd_ssd1685_config_t *ssd1685_config,
+                                     esp_lcd_panel_handle_t *ret_panel);
 
 /**
- * @brief Refresh the e-Paper
- *
- * @note This function is called automatically in `draw_bitmap()` function.
- *       This function will return right after the refresh commands finish transmitting.
- * @attention
- *       If you want to call this function, you have to wait manually until the BUSY pin goes LOW
- *       before calling other functions that interacts with the e-paper.
+ * @brief Set refresh mode for SSD1685 panel
  *
  * @param[in] panel LCD panel handle
+ * @param[in] mode Refresh mode to set
  * @return
- *          - ESP_ERR_INVALID_ARG   if parameter is invalid
- *          - ESP_OK                on success
+ *      - ESP_OK on success
+ *      - ESP_ERR_INVALID_ARG if parameter is invalid
  */
-esp_err_t epaper_panel_refresh_screen(esp_lcd_panel_t *panel);
-
-/**
- * @brief Set the color of the next bitmap
- *
- * @note The SSD1685 has two separate vrams. One for black and the other for red(or maybe some other color).
- *       Call this function to set which vram the next bitmap would write into.
- *       If you set `epaper_panel_invert_color()` to false, then 0 means WHITE.
- *
- * @param[in] panel LCD panel handle
- * @param[in] color a enum value, SSD1685_EPAPER_BITMAP_BLACK or SSD1685_EPAPER_BITMAP_RED
- * @return ESP_OK                on success
- */
-esp_err_t epaper_panel_set_bitmap_color(esp_lcd_panel_t *panel, esp_lcd_ssd1685_bitmap_color_t color);
-
-/**
- * @brief Set the callback function
- *
- * @note The callback function `on_epaper_refresh_done` will only be called right after a `draw_bitmap()` caused refresh finishes.
- * @note You could set the `epaper_panel_callbacks_t->esp_lcd_epaper_panel_cb_t` to NULL to unregister the callback.
- * @attention
- *       The callback function `on_epaper_refresh_done` will be called in isr context, so please keep it as neat as possible.
- *
- * @param[in] panel LCD panel handle
- * @param[in] cbs callback functions
- * @param[in] user_ctx arg to be passed to your callback function
- * @return ESP_OK                on success
- *         ESP_ERR_INVALID_ARG   if parameter is invalid
- */
-esp_err_t epaper_panel_register_event_callbacks(esp_lcd_panel_t *panel, epaper_panel_callbacks_t *cbs, void *user_ctx);
-
-/**
- * @brief Set a custom waveform lut
- *
- * @note Set a custom waveform lut for your e-paper panel.
- * @note You do not have to call this function because e-paper panels usually have waveform lut built-in.
- * @note You could call `disp_on_off(panel_handle, true)` to reset the waveform LUT to the built-in one
- *
- * @param[in] panel LCD panel handle
- * @param[in] lut your custom lut array
- * @param[in] size size of your lut array, make sure it is SSD1685_LUT_SIZE bytes
- * @return  ESP_OK                on success
- *          ESP_ERR_INVALID_ARG   if parameter is invalid
- */
-esp_err_t epaper_panel_set_custom_lut(esp_lcd_panel_t *panel, uint8_t *lut, size_t size);
-
+esp_err_t esp_lcd_ssd1685_set_refresh_mode(esp_lcd_panel_handle_t panel, 
+                                            ssd1685_refresh_mode_t mode);
 
 #ifdef __cplusplus
 }
