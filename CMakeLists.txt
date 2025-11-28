@@ -24,15 +24,15 @@ if (DEFINED ENV{ESP_IDF_VERSION})
     message("Using ESP-IDF ${Cyan}v$ENV{ESP_IDF_VERSION}${ColorReset}")
     include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-    include("Buildscripts/board.cmake")
+    include("Buildscripts/device.cmake")
 
     init_tactility_globals("sdkconfig")
-    get_property(TACTILITY_BOARD_PROJECT GLOBAL PROPERTY TACTILITY_BOARD_PROJECT)
+    get_property(TACTILITY_DEVICE_PROJECT GLOBAL PROPERTY TACTILITY_DEVICE_PROJECT)
 
     set(COMPONENTS Firmware)
     set(EXTRA_COMPONENT_DIRS
         "Firmware"
-        "Boards/${TACTILITY_BOARD_PROJECT}"
+        "Devices/${TACTILITY_DEVICE_PROJECT}"
         "Drivers"
         "Tactility"
         "TactilityC"
@@ -48,7 +48,11 @@ if (DEFINED ENV{ESP_IDF_VERSION})
 
     set(EXCLUDE_COMPONENTS "Simulator")
 
-    idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=esp_panic_handler" APPEND)
+    # Panic handler wrapping is only available on Xtensa architecture
+    if (CONFIG_IDF_TARGET_ARCH_XTENSA)
+        idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=esp_panic_handler" APPEND)
+    endif ()
+
     idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_button_create" APPEND)
     idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_dropdown_create" APPEND)
     idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_list_create" APPEND)
@@ -60,8 +64,8 @@ if (DEFINED ENV{ESP_IDF_VERSION})
 
 else ()
     message("Building for sim target")
-    add_compile_definitions(CONFIG_TT_BOARD_ID="simulator")
-    add_compile_definitions(CONFIG_TT_BOARD_NAME="Simulator")
+    add_compile_definitions(CONFIG_TT_DEVICE_ID="simulator")
+    add_compile_definitions(CONFIG_TT_DEVICE_NAME="Simulator")
 endif ()
 
 project(Tactility)
