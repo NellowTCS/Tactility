@@ -140,7 +140,7 @@ std::unique_ptr<Uart> open(std::string name) {
         return nullptr;
     }
 
-    return open(*result.begin());
+    return open(*it);
 }
 
 void close(uint32_t uartId) {
