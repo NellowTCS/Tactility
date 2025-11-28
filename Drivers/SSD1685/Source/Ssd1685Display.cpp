@@ -11,11 +11,6 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-// Include the C driver header
-extern "C" {
-#include "esp_lcd_panel_ssd1685.h"
-}
-
 bool Ssd1685Display::createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) {
     const esp_lcd_panel_io_spi_config_t io_config = {
         .cs_gpio_num = configuration->csPin,

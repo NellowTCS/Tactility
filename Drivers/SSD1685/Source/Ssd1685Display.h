@@ -11,8 +11,14 @@
 
 #define TAG "ssd1685_display"
 
-// Forward declare the config struct from the C driver
-struct esp_lcd_ssd1685_config_t;
+// Include the C driver header for the config struct
+#ifdef __cplusplus
+extern "C" {
+#endif
+#include "esp_lcd_panel_ssd1685.h"
+#ifdef __cplusplus
+}
+#endif
 
 class Ssd1685Display final : public EspLcdDisplay {
 
