@@ -85,12 +85,12 @@ if (NOT DEFINED ENV{ESP_IDF_VERSION})
     endif()
     add_subdirectory(Tactility)
     add_subdirectory(TactilityCore)
-    add_subdirectory(Devices${BOARD_DIR})
+    add_subdirectory(Devices/${BOARD_DIR})
 endif ()
 
 if (NOT DEFINED ENV{ESP_IDF_VERSION})
     # FreeRTOS
-    set(FREERTOS_CONFIG_FILE_DIRECTORY ${PROJECT_SOURCE_DIR}/Devices${BOARD_DIR}/Source CACHE STRING "")
+    set(FREERTOS_CONFIG_FILE_DIRECTORY ${PROJECT_SOURCE_DIR}/Devices/${BOARD_DIR}/Source CACHE STRING "")
     set(FREERTOS_PORT GCC_POSIX CACHE STRING "")
 
     add_subdirectory(Libraries/cJSON)
@@ -101,7 +101,7 @@ if (NOT DEFINED ENV{ESP_IDF_VERSION})
     add_subdirectory(Libraries/minmea)
     target_compile_definitions(freertos_kernel PUBLIC "projCOVERAGE_TEST=0")
     target_include_directories(freertos_kernel
-        PUBLIC Devices${BOARD_DIR}/Source # for FreeRTOSConfig.h
+        PUBLIC Devices/${BOARD_DIR}/Source # for FreeRTOSConfig.h
     )
 
     # EmbedTLS
