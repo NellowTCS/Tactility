@@ -1,0 +1,131 @@
+#include "LvglTask.h"
+
+#include <Tactility/Log.h>
+#include <Tactility/lvgl/LvglSync.h>
+#include <Tactility/Mutex.h>
+#include <Tactility/Thread.h>
+
+#include <lvgl.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
+#define TAG "lvgl_task"
+
+// Mutex for LVGL drawing
+static tt::Mutex lvgl_mutex(tt::Mutex::Type::Recursive);
+static tt::Mutex task_mutex(tt::Mutex::Type::Recursive);
+
+static uint32_t task_max_sleep_ms = 10;
+// Mutex for LVGL task state (to modify task_running state)
+static bool task_running = false;
+
+lv_disp_t* displayHandle = nullptr;
+
+static void lvgl_task(void* arg);
+
+static bool task_lock(TickType_t timeout) {
+    return task_mutex.lock(timeout);
+}
+
+static void task_unlock() {
+    task_mutex.unlock();
+}
+
+static void task_set_running(bool running) {
+    assert(task_lock(configTICK_RATE_HZ / 100));
+    task_running = running;
+    task_unlock();
+}
+
+bool lvgl_task_is_running() {
+    assert(task_lock(configTICK_RATE_HZ / 100));
+    bool result = task_running;
+    task_unlock();
+    return result;
+}
+
+static bool lvgl_lock(uint32_t timeoutMillis) {
+    return lvgl_mutex.lock(pdMS_TO_TICKS(timeoutMillis));
+}
+
+static void lvgl_unlock() {
+    lvgl_mutex.unlock();
+}
+
+void lvgl_task_interrupt() {
+    tt_check(task_lock(portMAX_DELAY));
+    task_set_running(false); // interrupt task with boolean as flag
+    task_unlock();
+}
+
+#ifdef __EMSCRIPTEN__
+static void lvgl_loop() {
+    if (lvgl_lock(10)) {
+        uint32_t task_delay_ms = lv_timer_handler();
+        lvgl_unlock();
+        if ((task_delay_ms > task_max_sleep_ms) || (1 == task_delay_ms)) {
+            task_delay_ms = task_max_sleep_ms;
+        } else if (task_delay_ms < 1) {
+            task_delay_ms = 1;
+        }
+        // Delay handled by Emscripten's loop
+    }
+}
+#endif
+
+void lvgl_task_start() {
+    TT_LOG_I(TAG, "lvgl task starting");
+
+    tt::lvgl::syncSet(&lvgl_lock, &lvgl_unlock);
+
+#ifdef __EMSCRIPTEN__
+    // Create display in main thread for Emscripten
+    displayHandle = lv_sdl_window_create(320, 240);
+    lv_sdl_window_set_title(displayHandle, "Tactility Web");
+
+    task_set_running(true);
+    emscripten_set_main_loop(lvgl_loop, 0, 1);  // 0 FPS for event-driven, infinite loop
+#else
+    // Original task-based approach for non-Emscripten
+    BaseType_t task_result = xTaskCreate(
+        lvgl_task,
+        "lvgl",
+        8192,
+        nullptr,
+        static_cast<UBaseType_t>(tt::Thread::Priority::High), // Should be higher than main app task
+        nullptr
+    );
+    assert(task_result == pdTRUE);
+#endif
+}
+
+#ifndef __EMSCRIPTEN__
+static void lvgl_task(TT_UNUSED void* arg) {
+    TT_LOG_I(TAG, "lvgl task started");
+
+    displayHandle = lv_sdl_window_create(320, 240);
+    lv_sdl_window_set_title(displayHandle, "Tactility");
+
+    uint32_t task_delay_ms = task_max_sleep_ms;
+
+    task_set_running(true);
+
+    while (lvgl_task_is_running()) {
+        if (lvgl_lock(10)) {
+            task_delay_ms = lv_timer_handler();
+            lvgl_unlock();
+        }
+        if ((task_delay_ms > task_max_sleep_ms) || (1 == task_delay_ms)) {
+            task_delay_ms = task_max_sleep_ms;
+        } else if (task_delay_ms < 1) {
+            task_delay_ms = 1;
+        }
+        vTaskDelay(pdMS_TO_TICKS(task_delay_ms));
+    }
+
+    lv_disp_remove(displayHandle);
+    displayHandle = nullptr;
+    vTaskDelete(nullptr);
+}
+#endif

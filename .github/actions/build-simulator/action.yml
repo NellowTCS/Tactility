@@ -2,10 +2,10 @@ name: Build
 
 inputs:
   os_name:
-    description: A descriptive name for the operating system (e.g. linux, windows)
+    description: A descriptive name for the operating system (e.g. linux, windows, web)
     required: true
   platform_name:
-    description: A descriptive name for the target platform (e.g. amd64, aarch64, etc.)
+    description: A descriptive name for the target platform (e.g. amd64, aarch64, wasm)
     required: true
   publish:
     description: A boolean that enables publishing of artifacts
@@ -19,9 +19,8 @@ runs:
       with:
         submodules: recursive
     - name: Install Linux Dependencies for SDL
-      if: ${{ runner.os == 'Linux' }}
+      if: ${{ runner.os == 'Linux' && inputs.os_name != 'web' }}
       shell: bash
-      # See Libraries/SDL/docs/README-linux.md
       run: >
         sudo apt-get update && 
         sudo apt-get install build-essential git make
@@ -36,19 +35,40 @@ runs:
         WLR_LIBINPUT_NO_DEVICES: 1
         WAYLAND_DISPLAY: wayland-1
         GTK_USE_PORTAL: 0
+    - name: Setup Emscripten
+      if: ${{ inputs.os_name == 'web' }}
+      uses: mymindstorm/setup-emsdk@v14
+      with:
+        version: latest
+        actions-cache-folder: 'emsdk-cache'
     - name: Setup cmake
       uses: jwlawson/actions-setup-cmake@v2
       with:
         cmake-version: '3.31.x'
     - name: "Prepare Project"
       shell: bash
-      run: cmake -S ./ -B buildsim
+      run: >
+        if [ "${{ inputs.os_name }}" == "web" ]; then
+          emcmake cmake -S ./ -B buildweb -DTACTILITY_BOARD=websimulator -DCMAKE_CXX_STANDARD=20
+        else
+          cmake -S ./ -B buildsim
+        fi
     - name: "Build Tests"
       shell: bash
-      run: cmake --build buildsim --target FirmwareSim
+      run: >
+        if [ "${{ inputs.os_name }}" == "web" ]; then
+          emmake cmake --build buildweb --target WebSimulator
+        else
+          cmake --build buildsim --target FirmwareSim
+        fi
     - name: 'Release'
       shell: bash
-      run: Buildscripts/release-simulator.sh buildsim release/Simulator-${{ inputs.os_name }}-${{ inputs.platform_name }}
+      run: >
+        if [ "${{ inputs.os_name }}" == "web" ]; then
+          Buildscripts/release-simulator.sh buildweb release/Simulator-${{ inputs.os_name }}-${{ inputs.platform_name }}
+        else
+          Buildscripts/release-simulator.sh buildsim release/Simulator-${{ inputs.os_name }}-${{ inputs.platform_name }}
+        fi
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v4
       if: ${{ inputs.publish == 'true' }}

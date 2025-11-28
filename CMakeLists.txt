@@ -70,16 +70,27 @@ endif ()
 
 project(Tactility)
 
+if (EMSCRIPTEN)
+    # Add Emscripten-specific flags globally
+    add_compile_options(-sUSE_SDL=2 -pthread)
+    add_link_options(-sUSE_SDL=2 -pthread -sALLOW_MEMORY_GROWTH=1)
+endif()
+
 # Defined as regular project for PC and component for ESP
 if (NOT DEFINED ENV{ESP_IDF_VERSION})
+    if (DEFINED TACTILITY_BOARD)
+        set(BOARD_DIR ${TACTILITY_BOARD})
+    else()
+        set(BOARD_DIR simulator)
+    endif()
     add_subdirectory(Tactility)
     add_subdirectory(TactilityCore)
-    add_subdirectory(Devices/simulator)
+    add_subdirectory(Boards/${BOARD_DIR})
 endif ()
 
 if (NOT DEFINED ENV{ESP_IDF_VERSION})
     # FreeRTOS
-    set(FREERTOS_CONFIG_FILE_DIRECTORY ${PROJECT_SOURCE_DIR}/Devices/simulator/Source CACHE STRING "")
+    set(FREERTOS_CONFIG_FILE_DIRECTORY ${PROJECT_SOURCE_DIR}/Boards/${BOARD_DIR}/Source CACHE STRING "")
     set(FREERTOS_PORT GCC_POSIX CACHE STRING "")
 
     add_subdirectory(Libraries/cJSON)
@@ -90,7 +101,7 @@ if (NOT DEFINED ENV{ESP_IDF_VERSION})
     add_subdirectory(Libraries/minmea)
     target_compile_definitions(freertos_kernel PUBLIC "projCOVERAGE_TEST=0")
     target_include_directories(freertos_kernel
-        PUBLIC Devices/Simulator/Source # for FreeRTOSConfig.h
+        PUBLIC Boards/${BOARD_DIR}/Source # for FreeRTOSConfig.h
     )
 
     # EmbedTLS
