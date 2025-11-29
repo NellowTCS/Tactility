@@ -8,32 +8,8 @@
 #include <driver/spi_master.h>
 #include <driver/gpio.h>
 #include <esp_heap_caps.h>
-#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <cstring>
-#include <algorithm>
-
-// Bayer 4x4 dithering for monochrome conversion
-static inline bool bayer4x4Dither(uint16_t rgb565_pixel, int x, int y) {
-    // Extract RGB565 components
-    uint8_t r = ((rgb565_pixel >> 11) & 0x1F) << 3; // 5 bits -> 8 bits
-    uint8_t g = ((rgb565_pixel >> 5) & 0x3F) << 2;  // 6 bits -> 8 bits
-    uint8_t b = (rgb565_pixel & 0x1F) << 3;         // 5 bits -> 8 bits
-    
-    // Calculate brightness (weighted average)
-    uint8_t brightness = (r * 77 + g * 151 + b * 28) >> 8;
-
-    static const uint8_t bayer4[4][4] = {
-        { 0,  8,  2, 10},
-        {12,  4, 14,  6},
-        { 3, 11,  1,  9},
-        {15,  7, 13,  5}
-    };
-
-    uint8_t thresh = (uint8_t)(bayer4[y & 3][x & 3] * 16 + 8);
-    return brightness > thresh; // true = white, false = black
-}
 
 bool Ssd1685Display::createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) {
     const esp_lcd_panel_io_spi_config_t io_config = {
@@ -171,8 +147,8 @@ lvgl_port_display_cfg_t Ssd1685Display::getLvglPortDisplayConfig(esp_lcd_panel_i
     TT_LOG_I(TAG, "LVGL rotation: swap_xy=%d, mirror_x=%d, mirror_y=%d",
              swap_xy, mirror_x, mirror_y);
 
-    // Set up custom flush callback that handles RGB565->monochrome conversion
-    lvgl_port_display_cfg_t disp_cfg = {
+    // set monochrome=true and let ESP-LVGL-PORT handle the conversion
+    return {
         .io_handle = ioHandle,
         .panel_handle = panelHandle,
         .control_handle = nullptr,
@@ -197,97 +173,4 @@ lvgl_port_display_cfg_t Ssd1685Display::getLvglPortDisplayConfig(esp_lcd_panel_i
             .direct_mode = false
         }
     };
-
-    return disp_cfg;
-}
-
-bool Ssd1685Display::startLvgl() {
-    // Call base class to create the LVGL display
-    if (!EspLcdDisplay::startLvgl()) {
-        return false;
-    }
-
-    // Now override the flush callback with our custom one
-    lv_display_t* lvglDisplay = getLvglDisplay();
-    if (lvglDisplay) {
-        lv_display_set_flush_cb(lvglDisplay, customFlushCallback);
-        lv_display_set_user_data(lvglDisplay, this);
-        TT_LOG_I(TAG, "Set custom flush callback for monochrome conversion");
-    }
-
-    return true;
-}
-
-void Ssd1685Display::customFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
-    auto* self = static_cast<Ssd1685Display*>(lv_display_get_user_data(disp));
-    if (!self) {
-        lv_display_flush_ready(disp);
-        return;
-    }
-
-    int32_t hor_res = lv_display_get_horizontal_resolution(disp);
-    int32_t ver_res = lv_display_get_vertical_resolution(disp);
-
-    TT_LOG_I(TAG, "Flush callback: logical=%dx%d physical=%dx%d", 
-             hor_res, ver_res, self->configuration->width, self->configuration->height);
-
-    // Convert RGB565 buffer to 1-bit monochrome with dithering
-    const size_t mono_size = (hor_res * ver_res + 7) / 8;
-    uint8_t* mono_buffer = (uint8_t*)heap_caps_malloc(mono_size, MALLOC_CAP_DMA);
-    if (!mono_buffer) {
-        TT_LOG_E(TAG, "Failed to allocate monochrome buffer");
-        lv_display_flush_ready(disp);
-        return;
-    }
-
-    memset(mono_buffer, 0xFF, mono_size); // Start with all white
-
-    // Convert with dithering
-    uint16_t* rgb_pixels = (uint16_t*)px_map;
-    for (int32_t y = 0; y < ver_res; y++) {
-        for (int32_t x = 0; x < hor_res; x++) {
-            uint16_t pixel = rgb_pixels[y * hor_res + x];
-            bool is_white = bayer4x4Dither(pixel, x, y);
-
-            uint32_t pixel_idx = y * hor_res + x;
-            uint32_t byte_idx = pixel_idx / 8;
-            uint8_t bit_idx = 7 - (pixel_idx % 8);
-
-            if (!is_white) {
-                mono_buffer[byte_idx] &= ~(1 << bit_idx);
-            }
-        }
-    }
-
-    // Send to display
-    esp_err_t err = esp_lcd_panel_draw_bitmap(
-        self->panelHandle,
-        0, 0,
-        self->configuration->width,
-        self->configuration->height,
-        mono_buffer
-    );
-
-    if (err != ESP_OK) {
-        TT_LOG_E(TAG, "draw_bitmap failed: %d", err);
-    }
-
-    heap_caps_free(mono_buffer);
-
-    // Wait for busy if pin is configured
-    if (self->configuration->busyPin != GPIO_NUM_NC) {
-        int timeout = 0;
-        while (gpio_get_level((gpio_num_t)self->configuration->busyPin) && timeout < 100) {
-            vTaskDelay(pdMS_TO_TICKS(50));
-            timeout++;
-        }
-        if (timeout >= 100) {
-            TT_LOG_W(TAG, "BUSY timeout after flush");
-        }
-    } else {
-        // Conservative delay if no busy pin
-        vTaskDelay(pdMS_TO_TICKS(2000));
-    }
-
-    lv_display_flush_ready(disp);
 }

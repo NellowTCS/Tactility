@@ -8,7 +8,6 @@
 #include <driver/spi_master.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_types.h>
-#include <lvgl.h>
 
 #define TAG "ssd1685_display"
 
@@ -72,7 +71,6 @@ private:
 
     std::unique_ptr<Configuration> configuration;
     esp_lcd_ssd1685_config_t* vendorConfig;
-    esp_lcd_panel_handle_t panelHandle;
 
     bool createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) override;
 
@@ -80,16 +78,12 @@ private:
 
     lvgl_port_display_cfg_t getLvglPortDisplayConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) override;
 
-    // Custom flush callback that handles RGB565->monochrome conversion with dithering
-    static void customFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
-
 public:
 
     explicit Ssd1685Display(std::unique_ptr<Configuration> inConfiguration) :
         EspLcdDisplay(tt::hal::spi::getLock(inConfiguration->spiHost)),
         configuration(std::move(inConfiguration)),
-        vendorConfig(nullptr),
-        panelHandle(nullptr)
+        vendorConfig(nullptr)
     {
         assert(configuration != nullptr);
         
