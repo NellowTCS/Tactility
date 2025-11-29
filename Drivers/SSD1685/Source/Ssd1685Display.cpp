@@ -201,10 +201,21 @@ lvgl_port_display_cfg_t Ssd1685Display::getLvglPortDisplayConfig(esp_lcd_panel_i
     return disp_cfg;
 }
 
-void Ssd1685Display::setLvglFlushCallback(lv_display_t* lvglDisplay) {
-    // Override the default flush callback with our custom one that does dithering
-    lv_display_set_flush_cb(lvglDisplay, customFlushCallback);
-    lv_display_set_user_data(lvglDisplay, this);
+bool Ssd1685Display::startLvgl() {
+    // Call base class to create the LVGL display
+    if (!EspLcdDisplay::startLvgl()) {
+        return false;
+    }
+
+    // Now override the flush callback with our custom one
+    lv_display_t* lvglDisplay = getLvglDisplay();
+    if (lvglDisplay) {
+        lv_display_set_flush_cb(lvglDisplay, customFlushCallback);
+        lv_display_set_user_data(lvglDisplay, this);
+        TT_LOG_I(TAG, "Set custom flush callback for monochrome conversion");
+    }
+
+    return true;
 }
 
 void Ssd1685Display::customFlushCallback(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
