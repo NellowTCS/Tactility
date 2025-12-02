@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Simulator.js</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #fff;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        h1 {
+            margin: 0 0 20px 0;
+        }
+
+        #canvas {
+            border: 2px solid #333;
+            display: block;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+</head>
+
+<body>
+    <h1>Simulator.js</h1>
+    <canvas id="canvas"></canvas>
+    <div id="output"></div>
+    <script>
+        // Configure Emscripten Module before loading FirmwareSim.js
+        // Keep Module global so Emscripten's generated code can pick it up.
+        var Module = Module || {};
+        var initStartTime = Date.now();
+
+        // Set a friendly console-based output and error handlers, but also
+        // fill the #output element for easier debugging in a browser.
+        Module.print = function (text) {
+            console.log(text);
+            var o = document.getElementById('output');
+            if (o) o.innerText += text + "\n";
+        };
+        Module.printErr = function (text) {
+            console.error(text);
+            var o = document.getElementById('output');
+            if (o) o.innerText += text + "\n";
+        };
+
+        // Ensure the runtime knows where to find auxiliary files (wasm, worker).
+        // This helps both main-thread and pthread worker instantiation.
+        Module.locateFile = function (path, prefix) {
+            // Always load from the current folder where index.html is located
+            return './' + path;
+        };
+        // Tell worker creation code where to load the main script from.
+        Module.mainScriptUrlOrBlob = './FirmwareSim.js';
+
+        // Expose helpful hooks for runtime init and errors.
+        Module.onRuntimeInitialized = function () {
+            console.log('Emscripten runtime initialized in ' + (Date.now() - initStartTime) + 'ms');
+            var canvas = document.getElementById('canvas');
+            if (canvas) {
+                canvas.width = 640;
+                canvas.height = 480;
+                canvas.style.width = '640px';
+                canvas.style.height = '480px';
+            }
+        };
+        Module.onAbort = function (msg) {
+            console.error('WASM aborted:', msg);
+            var o = document.getElementById('output');
+            if (o) o.innerText += 'WASM aborted: ' + msg + '\n';
+        };
+
+        // Global error handlers so we can capture worker errors / runtime crashes
+        window.addEventListener('error', function(e) {
+            console.error('Window error:', e);
+            var o = document.getElementById('output');
+            if (o) o.innerText += 'Window error: ' + (e.message || e) + '\n';
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+            console.error('Unhandled rejection:', e.reason);
+            var o = document.getElementById('output');
+            if (o) o.innerText += 'Unhandled promise rejection: ' + (e.reason || e) + '\n';
+        });
+
+        // Defer WASM load and check for SharedArrayBuffer availability
+        function initSimulator() {
+            // Check SharedArrayBuffer availability
+            if (typeof SharedArrayBuffer === 'undefined') {
+                console.warn('SharedArrayBuffer is not available. Pthreads/OffscreenCanvas will not function.');
+                var warn = document.createElement('div');
+                warn.style.background = '#f44336';
+                warn.style.color = 'white';
+                warn.style.padding = '10px';
+                warn.style.marginTop = '10px';
+                warn.style.borderRadius = '4px';
+                warn.innerText = 'Warning: SharedArrayBuffer not available!\n\nPlease run with cross-origin isolation (COOP/COEP).\nUse: python3 Frontend/serve.py';
+                var body = document.body;
+                if (body) body.insertBefore(warn, body.firstChild);
+            }
+
+            // Load WASM module with a timeout guard
+            var initTimeout = setTimeout(function() {
+                console.error('WASM initialization appears to be stalled (>5s)');
+                var o = document.getElementById('output');
+                if (o) o.innerText += 'ERROR: WASM initialization timeout. Check console for details.\n';
+            }, 5000);
+
+            var origOnInit = Module.onRuntimeInitialized;
+            Module.onRuntimeInitialized = function() {
+                clearTimeout(initTimeout);
+                if (origOnInit) origOnInit();
+            };
+
+            // Now load the WebAssembly module
+            var script = document.createElement('script');
+            script.src = './FirmwareSim.js';
+            script.onerror = function() {
+                clearTimeout(initTimeout);
+                console.error('Failed to load FirmwareSim.js');
+                var o = document.getElementById('output');
+                if (o) o.innerText += 'ERROR: Failed to load FirmwareSim.js\n';
+            };
+            document.body.appendChild(script);
+        }
+
+        // Load eruda after page is ready
+        function initEruda() {
+            if (typeof eruda !== 'undefined') {
+                try {
+                    eruda.init();
+                    console.log('Eruda debug console initialized');
+                } catch (e) {
+                    console.warn('Failed to init eruda:', e);
+                }
+            }
+        }
+
+        // Defer initialization until DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                console.log('DOM ready, initializing simulator...');
+                initEruda();
+                initSimulator();
+            });
+        } else {
+            console.log('DOM already ready, initializing simulator...');
+            initEruda();
+            initSimulator();
+        }
+    </script>
+</body>
+
+</html>

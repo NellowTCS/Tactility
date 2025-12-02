@@ -1,5 +1,6 @@
 #include "Main.h"
 #include <Tactility/TactilityCore.h>
+#include <Tactility/Tactility.h>
 #include <Tactility/Thread.h>
 
 #include "FreeRTOS.h"
@@ -48,6 +49,28 @@ extern "C" void vApplicationIdleHook(void) {
 }
 
 } // namespace websimulator
+
+/**
+ * Emscripten main function - called when WASM module loads
+ */
+extern "C" int main(int argc, char* argv[]) {
+    // Each board project declares this variable
+    extern const tt::hal::Configuration hardwareConfiguration;
+
+    static const tt::Configuration config = {
+        .hardware = &hardwareConfiguration
+    };
+
+    // Set the main function for FreeRTOS
+    websimulator::setMain([]() {
+        tt::run(config);
+    });
+
+    // Start FreeRTOS (this will call our main function)
+    websimulator::freertosMain();
+
+    return 0;
+}
 
 /**
  * Assert implementation as defined in the FreeRTOSConfig.h

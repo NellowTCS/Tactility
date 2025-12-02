@@ -3,7 +3,10 @@
 
 build/
 buildsim/
-build-sim/
+build-sim-wasm/
+
+Devices/websimulator/Frontend/FirmwareSim.*
+
 cmake-build-*/
 CMakeCache.txt
 *.cbp
