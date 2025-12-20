@@ -1,4 +1,5 @@
 file(GLOB SOURCES "cJSON/*.c")
+list(FILTER SOURCES EXCLUDE REGEX ".*/test\.c$")
 
 add_library(cJSON STATIC)
 target_sources(cJSON PRIVATE ${SOURCES})
