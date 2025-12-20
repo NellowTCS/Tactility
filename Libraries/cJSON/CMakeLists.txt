@@ -1,5 +1,8 @@
 file(GLOB SOURCES "cJSON/*.c")
-list(FILTER SOURCES EXCLUDE REGEX ".*/test\.c$")
+
+if (EMSCRIPTEN)
+    list(FILTER SOURCES EXCLUDE REGEX ".*/test\.c$")
+endif()
 
 add_library(cJSON STATIC)
 target_sources(cJSON PRIVATE ${SOURCES})
