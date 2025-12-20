@@ -1,5 +1,5 @@
 file(GLOB SOURCES "cJSON/*.c")
-'
+
 if (EMSCRIPTEN)
     list(FILTER SOURCES EXCLUDE REGEX ".*/test\.c$")
 endif()
