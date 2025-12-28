@@ -107,14 +107,14 @@ def write_tactility_variables(output_file, device_properties: ConfigParser, devi
     output_file.write(f"CONFIG_TT_DEVICE_ID=\"{device_id}\"\n")
 
 def write_core_variables(output_file, device_properties: ConfigParser):
-    idf_target = get_property_or_exit(device_properties, "hardware", "target")
+    idf_target = get_property_or_exit(device_properties, "hardware", "target").lower()
     output_file.write("# Target\n")
-    output_file.write(f"CONFIG_IDF_TARGET=\"{idf_target.lower()}\"\n")
+    output_file.write(f"CONFIG_IDF_TARGET=\"{idf_target}\"\n")
     output_file.write("# CPU\n")
     output_file.write(f"CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y\n")
     output_file.write(f"CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240\n")
-    output_file.write(f"CONFIG_{idf_target}_DEFAULT_CPU_FREQ_240=y\n")
-    output_file.write(f"CONFIG_{idf_target}_DEFAULT_CPU_FREQ_MHZ=240\n")
+    output_file.write(f"CONFIG_{idf_target.upper()}_DEFAULT_CPU_FREQ_240=y\n")
+    output_file.write(f"CONFIG_{idf_target.upper()}_DEFAULT_CPU_FREQ_MHZ=240\n")
 
 def write_flash_variables(output_file, device_properties: ConfigParser):
     flash_size = get_property_or_exit(device_properties, "hardware", "flashSize")
@@ -133,14 +133,16 @@ def write_flash_variables(output_file, device_properties: ConfigParser):
         output_file.write(f"CONFIG_ESPTOOLPY_FLASHFREQ_{esptool_flash_freq}=y\n")
 
 def write_spiram_variables(output_file, device_properties: ConfigParser):
-    idf_target = get_property_or_exit(device_properties, "hardware", "target")
+    idf_target = get_property_or_exit(device_properties, "hardware", "target").lower()
     has_spiram = get_property_or_exit(device_properties, "hardware", "spiRam")
     if has_spiram != "true":
         return
     output_file.write("# SPIRAM\n")
+    # Boot speed optimization
+    output_file.write("CONFIG_SPIRAM_MEMTEST=n\n")
     # Enable
     output_file.write("CONFIG_SPIRAM=y\n")
-    output_file.write(f"CONFIG_{idf_target}_SPIRAM_SUPPORT=y\n")
+    output_file.write(f"CONFIG_{idf_target.upper()}_SPIRAM_SUPPORT=y\n")
     mode = get_property_or_exit(device_properties, "hardware", "spiRamMode")
     # Mode
     if mode != "AUTO":
@@ -161,14 +163,7 @@ def write_spiram_variables(output_file, device_properties: ConfigParser):
         output_file.write("CONFIG_SPIRAM_XIP_FROM_PSRAM=y\n")
 
 def write_performance_improvements(output_file, device_properties: ConfigParser):
-    idf_target = get_property_or_exit(device_properties, "hardware", "target")
-    output_file.write("# Free up IRAM\n")
-    output_file.write("CONFIG_FREERTOS_PLACE_FUNCTIONS_INTO_FLASH=y\n")
-    output_file.write("CONFIG_FREERTOS_PLACE_SNAPSHOT_FUNS_INTO_FLASH=y\n")
-    output_file.write("CONFIG_HEAP_PLACE_FUNCTION_INTO_FLASH=y\n")
-    output_file.write("CONFIG_RINGBUF_PLACE_FUNCTIONS_INTO_FLASH=y\n")
-    output_file.write("# Boot speed optimization\n")
-    output_file.write("CONFIG_SPIRAM_MEMTEST=n\n")
+    idf_target = get_property_or_exit(device_properties, "hardware", "target").lower()
     if idf_target == "esp32s3":
         output_file.write("# Performance improvement: Fixes glitches in the RGB display driver when rendering new screens/apps\n")
         output_file.write("CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y\n")
