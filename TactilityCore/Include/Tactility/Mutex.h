@@ -1,33 +1,24 @@
 /**
- * @file mutex.h
+ * @file Mutex.h
  * Mutex
  */
 #pragma once
 
-#include "Check.h"
 #include "Lock.h"
 #include "RtosCompatSemaphore.h"
 #include "Thread.h"
 #include "kernel/Kernel.h"
+
 #include <memory>
+#include <cassert>
 
 namespace tt {
 
 /**
- * Wrapper for FreeRTOS xSemaphoreCreateMutex and xSemaphoreCreateRecursiveMutex
+ * Wrapper for FreeRTOS xSemaphoreCreateMutex
  * Cannot be used in IRQ mode (within ISR context)
  */
 class Mutex final : public Lock {
-
-public:
-    /**
-     * A "Normal" mutex can only be locked once. Even from within the same task/thread.
-     * A "Recursive" mutex can be locked again from the same task/thread.
-     */
-    enum class Type {
-        Normal,
-        Recursive,
-    };
 
 private:
 
@@ -38,29 +29,40 @@ private:
         }
     };
 
-    std::unique_ptr<std::remove_pointer_t<QueueHandle_t>, SemaphoreHandleDeleter> handle;
-    Type type;
+    std::unique_ptr<std::remove_pointer_t<QueueHandle_t>, SemaphoreHandleDeleter> handle = std::unique_ptr<std::remove_pointer_t<QueueHandle_t>, SemaphoreHandleDeleter>(xSemaphoreCreateMutex());
 
 public:
 
     using Lock::lock;
 
-    explicit Mutex(Type type = Type::Normal);
+    explicit Mutex() {
+        assert(handle != nullptr);
+    }
+
     ~Mutex() override = default;
 
     /** Attempt to lock the mutex. Blocks until timeout passes or lock is acquired.
      * @param[in] timeout
      * @return success result
      */
-    bool lock(TickType_t timeout) const override;
+    bool lock(TickType_t timeout) const override {
+        assert(!kernel::isIsr());
+        return xSemaphoreTake(handle.get(), timeout) == pdPASS;
+    }
 
     /** Attempt to unlock the mutex.
      * @return success result
      */
-    bool unlock() const override;
+    bool unlock() const override {
+        assert(!kernel::isIsr());
+        return xSemaphoreGive(handle.get()) == pdPASS;
+    }
 
     /** @return the owner of the thread */
-    ThreadId getOwner() const;
+    ThreadId getOwner() const {
+        assert(!kernel::isIsr());
+        return xSemaphoreGetMutexHolder(handle.get());
+    }
 };
 
-} // namespace
+} // namespace tt
