@@ -11,7 +11,7 @@
 
 	gpio0 {
 		compatible = "espressif,esp32-gpio";
-		gpio-count = <49>; // ESP32-S3
+		gpio-count = <49>;
 	};
 
 	i2c0 {
