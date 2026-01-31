@@ -1,7 +1,7 @@
 #include "Keyboard.h"
 #include <Tactility/hal/i2c/I2c.h>
 #include <lvgl.h>
-#include <tactility/Log.h>
+#include <tactility/log.h>
 
 constexpr auto* TAG = "CL32Keyboard";
 
