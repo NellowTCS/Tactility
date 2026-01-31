@@ -36,25 +36,6 @@ static DeviceVector createDevices() {
 extern const Configuration hardwareConfiguration = {
     .initBoot = initBoot,
     .createDevices = createDevices,
-    .i2c = {
-        i2c::Configuration {
-            .name = "Keyboard",
-            .port = I2C_NUM_0,
-            .initMode = i2c::InitMode::ByTactility,
-            .isMutable = true,
-            .config = (i2c_config_t) {
-                .mode = I2C_MODE_MASTER,
-                .sda_io_num = GPIO_NUM_1,
-                .scl_io_num = GPIO_NUM_2,
-                .sda_pullup_en = true,
-                .scl_pullup_en = true,
-                .master = {
-                    .clk_speed = 100000
-                },
-                .clk_flags = 0
-            }
-        }
-    },
     .spi {
         // E-Paper Display
         spi::Configuration {

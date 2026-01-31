@@ -1,0 +1,34 @@
+/dts-v1/;
+
+#include <tactility/bindings/root.h>
+#include <tactility/bindings/esp32_gpio.h>
+#include <tactility/bindings/esp32_i2c.h>
+
+/ {
+	compatible = "root";
+	model = "CL-32";
+	vendor = "CL-32";
+
+	gpio0 {
+		compatible = "espressif,esp32-gpio";
+		gpio-count = <49>; // ESP32-S3
+	};
+
+	i2c0 {
+		compatible = "espressif,esp32-i2c";
+		port = <I2C_NUM_0>;
+		clock-frequency = <100000>;
+		pin-sda = <1>;
+		pin-scl = <2>;
+		
+		// TCA8418 Keyboard Controller
+		tca8418@34 {
+			compatible = "ti,tca8418";
+			reg = <0x34>;
+			interrupt-parent = <&gpio0>;
+			interrupts = <3 IRQ_TYPE_EDGE_FALLING>;
+			keypad,num-rows = <8>;
+			keypad,num-columns = <10>;
+		};
+	};
+};
