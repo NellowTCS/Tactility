@@ -20,14 +20,5 @@
 		clock-frequency = <100000>;
 		pin-sda = <1>;
 		pin-scl = <2>;
-		
-		tca8418@34 {
-			compatible = "ti,tca8418";
-			reg = <0x34>;
-			interrupt-parent = <&gpio0>;
-			interrupts = <3 IRQ_TYPE_EDGE_FALLING>;
-			keypad,num-rows = <8>;
-			keypad,num-columns = <10>;
-		};
 	};
 };
