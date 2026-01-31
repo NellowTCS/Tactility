@@ -1,8 +1,8 @@
 #include "Tactility/lvgl/Keyboard.h"
-#include "Tactility/Check.h"
 #include "Tactility/lvgl/LvglSync.h"
 #include "Tactility/service/gui/GuiService.h"
 
+#include <tactility/check.h>
 #include <Tactility/TactilityConfig.h>
 #include <Tactility/service/espnow/EspNowService.h>
 
@@ -17,7 +17,7 @@ static void show_keyboard(lv_event_t* event) {
     }
 }
 
-static void hide_keyboard(TT_UNUSED lv_event_t* event) {
+static void hide_keyboard(lv_event_t* event) {
     auto service = findService();
     if (service != nullptr) {
         service->softwareKeyboardHide();
@@ -53,7 +53,7 @@ void GuiService::keyboardAddTextArea(lv_obj_t* textarea) {
     lock();
 
     if (isStarted) {
-        tt_check(lvgl::lock(0), "lvgl should already be locked before calling this method");
+        check(lvgl::lock(0), "lvgl should already be locked before calling this method");
 
         if (softwareKeyboardIsEnabled()) {
             lv_obj_add_event_cb(textarea, show_keyboard, LV_EVENT_FOCUSED, nullptr);

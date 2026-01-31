@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Tactility/app/AppContext.h>
 #include <Tactility/MessageQueue.h>
-#include <Tactility/Mutex.h>
 #include <Tactility/PubSub.h>
+#include <Tactility/RecursiveMutex.h>
+#include <Tactility/app/AppContext.h>
 #include <Tactility/service/Service.h>
 #include <Tactility/service/loader/Loader.h>
 
@@ -17,11 +17,19 @@ constexpr auto GUI_THREAD_FLAG_INPUT = (1 << 1);
 constexpr auto GUI_THREAD_FLAG_EXIT = (1 << 2);
 constexpr auto GUI_THREAD_FLAG_ALL = (GUI_THREAD_FLAG_DRAW | GUI_THREAD_FLAG_INPUT | GUI_THREAD_FLAG_EXIT);
 
+/**
+ * Output a log warning if the current task is the GUI task.
+ * This is meant for code that should either create their own task or use a different task to execute on.
+ * @param[in] context a descriptive name or label that refers to the caller of this function
+ */
+void warnIfRunningOnGuiTask(const char* context);
+
 class GuiService final : public Service {
 
     // Thread and lock
     Thread* thread = nullptr;
-    Mutex mutex = Mutex(Mutex::Type::Recursive);
+    EventGroup threadFlags;
+    RecursiveMutex mutex;
     PubSub<loader::LoaderService::Event>::SubscriptionHandle loader_pubsub_subscription = nullptr;
 
     // Layers and Canvas
@@ -45,11 +53,11 @@ class GuiService final : public Service {
     void redraw();
 
     void lock() const {
-        tt_check(mutex.lock(pdMS_TO_TICKS(1000)));
+        check(mutex.lock(pdMS_TO_TICKS(1000)));
     }
 
     void unlock() const {
-        tt_check(mutex.unlock());
+        mutex.unlock();
     }
 
     void showApp(std::shared_ptr<app::AppInstance> app);
@@ -58,9 +66,9 @@ class GuiService final : public Service {
 
 public:
 
-    bool onStart(TT_UNUSED ServiceContext& service) override;
+    bool onStart(ServiceContext& service) override;
 
-    void onStop(TT_UNUSED ServiceContext& service) override;
+    void onStop(ServiceContext& service) override;
 
     void requestDraw();
 

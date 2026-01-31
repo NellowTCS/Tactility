@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
 
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 if (DEFINED ENV{ESP_IDF_VERSION})
     file(GLOB_RECURSE SOURCE_FILES Source/*.c*)
 
@@ -11,7 +8,7 @@ if (DEFINED ENV{ESP_IDF_VERSION})
         INCLUDE_DIRS "Include/"
         PRIV_INCLUDE_DIRS "Private/"
         REQUIRES lvgl
-        PRIV_REQUIRES Tactility TactilityCore elf_loader
+        PRIV_REQUIRES Tactility TactilityCore elf_loader TactilityKernel
     )
 
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -31,6 +28,7 @@ else()
     target_link_libraries(TactilityC
         PRIVATE Tactility
         PRIVATE TactilityCore
+        PRIVATE TactilityKernel
         PUBLIC lvgl
     )
 endif()

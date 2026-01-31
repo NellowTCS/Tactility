@@ -1,9 +1,9 @@
 #pragma once
 
-#include <esp_lcd_panel_dev.h>
-#include <Tactility/Check.h>
 #include <Tactility/Lock.h>
+#include <tactility/check.h>
 #include <Tactility/hal/display/DisplayDevice.h>
+#include <esp_lcd_panel_dev.h>
 
 #include <esp_lcd_types.h>
 #include <esp_lvgl_port_disp.h>
@@ -53,7 +53,14 @@ protected:
 
     virtual bool isRgbPanel() const { return false; }
 
-    virtual lvgl_port_display_rgb_cfg_t getLvglPortDisplayRgbConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) { tt_crash("Not supported"); }
+    virtual lvgl_port_display_rgb_cfg_t getLvglPortDisplayRgbConfig(esp_lcd_panel_io_handle_t ioHandle, esp_lcd_panel_handle_t panelHandle) { check(false, "Not supported"); }
+
+    // Hook for MIPI-DSI DPI panels to let LVGL port use DSI-specific path
+    virtual bool useDsiPanel() const { return false; }
+
+    virtual lvgl_port_display_dsi_cfg_t getLvglPortDisplayDsiConfig(esp_lcd_panel_io_handle_t /*ioHandle*/, esp_lcd_panel_handle_t /*panelHandle*/) {
+        return lvgl_port_display_dsi_cfg_t{ .flags = { .avoid_tearing = 0 } };
+    }
 
     // Used for sending commands such as setting curves
     esp_lcd_panel_io_handle_t getIoHandle() const { return ioHandle; }

@@ -1,5 +1,6 @@
 #include <Tactility/network/HttpdReq.h>
-#include <Tactility/Log.h>
+#include <Tactility/Logger.h>
+#include <Tactility/LogMessages.h>
 #include <Tactility/StringUtils.h>
 #include <Tactility/file/File.h>
 
@@ -11,7 +12,7 @@
 
 namespace tt::network {
 
-constexpr auto* TAG = "HttpdReq";
+static const auto LOGGER = Logger("HttpdReq");
 
 bool getHeaderOrSendError(httpd_req_t* request, const std::string& name, std::string& value) {
     size_t header_size = httpd_req_get_hdr_value_len(request, name.c_str());
@@ -22,7 +23,7 @@ bool getHeaderOrSendError(httpd_req_t* request, const std::string& name, std::st
 
     auto header_buffer = std::make_unique<char[]>(header_size + 1);
     if (header_buffer == nullptr) {
-        TT_LOG_E(TAG, LOG_MESSAGE_MUTEX_LOCK_FAILED);
+        LOGGER.error( LOG_MESSAGE_ALLOC_FAILED);
         httpd_resp_send_500(request);
         return false;
     }
@@ -78,22 +79,39 @@ std::unique_ptr<char[]> receiveByteArray(httpd_req_t* request, size_t length, si
     // and we don't have exceptions enabled in the compiler settings
     auto* buffer = static_cast<char*>(malloc(length));
     if (buffer == nullptr) {
-        TT_LOG_E(TAG, LOG_MESSAGE_ALLOC_FAILED_FMT, length);
+        LOGGER.error(LOG_MESSAGE_ALLOC_FAILED_FMT, length);
         return nullptr;
     }
 
+    constexpr int MAX_TIMEOUT_RETRIES = 5;
+    int timeout_retries = 0;
     while (bytesRead < length) {
         size_t read_size = length - bytesRead;
-        size_t bytes_received = httpd_req_recv(request, buffer + bytesRead, read_size);
+        int bytes_received = httpd_req_recv(request, buffer + bytesRead, read_size);
+        if (bytes_received == HTTPD_SOCK_ERR_TIMEOUT) {
+            // Timeout - retry with backoff
+            timeout_retries++;
+            if (timeout_retries >= MAX_TIMEOUT_RETRIES) {
+                LOGGER.warn("Recv timeout after {} retries, read {}/{} bytes", timeout_retries, bytesRead, length);
+                free(buffer);
+                return nullptr;
+            }
+            LOGGER.warn("Recv timeout, retry {}/{}", timeout_retries, MAX_TIMEOUT_RETRIES);
+            vTaskDelay(pdMS_TO_TICKS(100 * timeout_retries)); // Exponential backoff
+            continue;
+        }
         if (bytes_received <= 0) {
-            TT_LOG_W(TAG, "Received %zu / %zu", bytesRead + bytes_received, length);
+            LOGGER.warn("Received error {} after reading {}/{} bytes", bytes_received, bytesRead, length);
+            free(buffer);
             return nullptr;
         }
 
+        // Successful read - reset timeout counter
+        timeout_retries = 0;
         bytesRead += bytes_received;
     }
 
-    return std::unique_ptr<char[]>(std::move(buffer));
+    return std::unique_ptr<char[]>(buffer);
 }
 
 std::string receiveTextUntil(httpd_req_t* request, const std::string& terminator) {
@@ -130,7 +148,7 @@ std::map<std::string, std::string> parseContentDisposition(const std::vector<std
 
     auto parseable = content_disposition_header->substr(prefix.size());
     auto parts = string::split(parseable, "; ");
-    for (auto part : parts) {
+    for (const auto& part : parts) {
         auto key_value = string::split(part, "=");
         if (key_value.size() == 2) {
             // Trim trailing newlines
@@ -149,7 +167,7 @@ std::map<std::string, std::string> parseContentDisposition(const std::vector<std
 bool readAndDiscardOrSendError(httpd_req_t* request, const std::string& toRead) {
     size_t bytes_read;
     auto buffer = receiveByteArray(request, toRead.length(), bytes_read);
-    if (bytes_read != toRead.length()) {
+    if (buffer == nullptr || bytes_read != toRead.length()) {
         httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "failed to read discardable data");
         return false;
     }
@@ -172,7 +190,7 @@ size_t receiveFile(httpd_req_t* request, size_t length, const std::string& fileP
 
     auto* file = fopen(filePath.c_str(), "wb");
     if (file == nullptr) {
-        TT_LOG_E(TAG, "Failed to open file for writing: %s", filePath.c_str());
+        LOGGER.error("Failed to open file for writing: {}", filePath);
         return 0;
     }
 
@@ -180,11 +198,11 @@ size_t receiveFile(httpd_req_t* request, size_t length, const std::string& fileP
         auto expected_chunk_size = std::min<size_t>(BUFFER_SIZE, length - bytes_received);
         size_t receive_chunk_size = httpd_req_recv(request, buffer, expected_chunk_size);
         if (receive_chunk_size <= 0) {
-            TT_LOG_E(TAG, "Receive failed");
+            LOGGER.error("Receive failed");
             break;
         }
-        if (fwrite(buffer, 1, receive_chunk_size, file) != receive_chunk_size) {
-            TT_LOG_E(TAG, "Failed to write all bytes");
+        if (fwrite(buffer, 1, receive_chunk_size, file) != (size_t)receive_chunk_size) {
+            LOGGER.error("Failed to write all bytes");
             break;
         }
         bytes_received += receive_chunk_size;

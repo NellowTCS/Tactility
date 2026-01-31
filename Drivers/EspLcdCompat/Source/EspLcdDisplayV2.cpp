@@ -1,13 +1,13 @@
 #include "EspLcdDisplayV2.h"
 #include "EspLcdDisplayDriver.h"
 
-#include <assert.h>
-#include <esp_lvgl_port_disp.h>
-#include <Tactility/Check.h>
-#include <Tactility/LogEsp.h>
+#include <Tactility/Logger.h>
+#include <tactility/check.h>
 #include <Tactility/hal/touch/TouchDevice.h>
+#include <cassert>
+#include <esp_lvgl_port_disp.h>
 
-constexpr auto* TAG = "EspLcdDispV2";
+static const auto LOGGER = tt::Logger("EspLcdDispV2");
 
 inline unsigned int getBufferSize(const std::shared_ptr<EspLcdConfiguration>& configuration) {
     if (configuration->bufferSize != DEFAULT_BUFFER_SIZE) {
@@ -18,52 +18,55 @@ inline unsigned int getBufferSize(const std::shared_ptr<EspLcdConfiguration>& co
 }
 
 EspLcdDisplayV2::~EspLcdDisplayV2() {
-    if (displayDriver != nullptr && displayDriver.use_count() > 1) {
-        tt_crash("DisplayDriver is still in use. This will cause memory access violations.");
-    }
+    check(
+        displayDriver == nullptr || displayDriver.use_count() < 2, // 1 reference is held by this class
+        "DisplayDriver is still in use. This will cause memory access violations."
+    );
 }
 
 bool EspLcdDisplayV2::applyConfiguration() const {
     if (esp_lcd_panel_reset(panelHandle) != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to reset panel");
+        LOGGER.error("Failed to reset panel");
         return false;
     }
 
     if (esp_lcd_panel_init(panelHandle) != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to init panel");
+        LOGGER.error("Failed to init panel");
         return false;
     }
 
-    if (esp_lcd_panel_invert_color(panelHandle, configuration->invertColor) != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to set panel to invert");
+    if (configuration->invertColor && esp_lcd_panel_invert_color(panelHandle, configuration->invertColor) != ESP_OK) {
+        LOGGER.error("Failed to set panel to invert");
         return false;
     }
 
     // Warning: it looks like LVGL rotation is broken when "gap" is set and the screen is moved to a non-default orientation
     int gap_x = configuration->swapXY ? configuration->gapY : configuration->gapX;
     int gap_y = configuration->swapXY ? configuration->gapX : configuration->gapY;
-    if (esp_lcd_panel_set_gap(panelHandle, gap_x, gap_y) != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to set panel gap");
+    bool should_set_gap = gap_x != 0 || gap_y != 0;
+    if (should_set_gap && esp_lcd_panel_set_gap(panelHandle, gap_x, gap_y) != ESP_OK) {
+        LOGGER.error("Failed to set panel gap");
         return false;
     }
 
-    if (esp_lcd_panel_swap_xy(panelHandle, configuration->swapXY) != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to swap XY ");
+    if (configuration->swapXY && esp_lcd_panel_swap_xy(panelHandle, configuration->swapXY) != ESP_OK) {
+        LOGGER.error("Failed to swap XY ");
         return false;
     }
 
-    if (esp_lcd_panel_mirror(panelHandle, configuration->mirrorX, configuration->mirrorY) != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to set panel to mirror");
+    bool should_set_mirror = configuration->mirrorX || configuration->mirrorY;
+    if (should_set_mirror && esp_lcd_panel_mirror(panelHandle, configuration->mirrorX, configuration->mirrorY) != ESP_OK) {
+        LOGGER.error("Failed to set panel to mirror");
         return false;
     }
 
-    if (esp_lcd_panel_invert_color(panelHandle, configuration->invertColor) != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to set panel to invert");
+    if (configuration->invertColor && esp_lcd_panel_invert_color(panelHandle, configuration->invertColor) != ESP_OK) {
+        LOGGER.error("Failed to set panel to invert");
         return false;
     }
 
     if (esp_lcd_panel_disp_on_off(panelHandle, true) != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to turn display on");
+        LOGGER.error("Failed to turn display on");
         return false;
     }
 
@@ -72,14 +75,14 @@ bool EspLcdDisplayV2::applyConfiguration() const {
 
 bool EspLcdDisplayV2::start() {
     if (!createIoHandle(ioHandle)) {
-        TT_LOG_E(TAG, "Failed to create IO handle");
+        LOGGER.error("Failed to create IO handle");
         return false;
     }
 
     esp_lcd_panel_dev_config_t panel_config = createPanelConfig(configuration, configuration->resetPin);
 
     if (!createPanelHandle(ioHandle, panel_config, panelHandle)) {
-        TT_LOG_E(TAG, "Failed to create panel handle");
+        LOGGER.error("Failed to create panel handle");
         esp_lcd_panel_io_del(ioHandle);
         ioHandle = nullptr;
         return false;
@@ -111,7 +114,7 @@ bool EspLcdDisplayV2::stop() {
     }
 
     if (displayDriver != nullptr && displayDriver.use_count() > 1) {
-        TT_LOG_W(TAG, "DisplayDriver is still in use.");
+        LOGGER.warn("DisplayDriver is still in use.");
     }
 
     return true;
@@ -121,16 +124,19 @@ bool EspLcdDisplayV2::startLvgl() {
     assert(lvglDisplay == nullptr);
 
     if (displayDriver != nullptr && displayDriver.use_count() > 1) {
-        TT_LOG_W(TAG, "DisplayDriver is still in use.");
+        LOGGER.warn("DisplayDriver is still in use.");
     }
 
     auto lvgl_port_config  = getLvglPortDisplayConfig(configuration, ioHandle, panelHandle);
 
-    if (isRgbPanel()) {
+    if (useDsiPanel()) {
+        auto dsi_config = getLvglPortDisplayDsiConfig(ioHandle, panelHandle);
+        lvglDisplay = lvgl_port_add_disp_dsi(&lvgl_port_config, &dsi_config);
+    } else if (isRgbPanel()) {
         auto rgb_config = getLvglPortDisplayRgbConfig(ioHandle, panelHandle);
-        lvglDisplay = lvgl_port_add_disp_rgb(&lvgl_port_config , &rgb_config);
+        lvglDisplay = lvgl_port_add_disp_rgb(&lvgl_port_config, &rgb_config);
     } else {
-        lvglDisplay = lvgl_port_add_disp(&lvgl_port_config );
+        lvglDisplay = lvgl_port_add_disp(&lvgl_port_config);
     }
 
     auto touch_device = getTouchDevice();
@@ -210,7 +216,7 @@ std::shared_ptr<tt::hal::display::DisplayDriver> EspLcdDisplayV2::getDisplayDriv
         } else if (lvgl_port_config.color_format == LV_COLOR_FORMAT_RGB888) {
             color_format = tt::hal::display::ColorFormat::RGB888;
         } else {
-            tt_crash("unsupported driver");
+            check(false, "unsupported driver");
         }
 
         displayDriver = std::make_shared<EspLcdDisplayDriver>(

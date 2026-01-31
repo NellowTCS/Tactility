@@ -1,21 +1,22 @@
-#ifndef CONFIG_ESP_WIFI_ENABLED
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
+
+#if not defined(CONFIG_SOC_WIFI_SUPPORTED) && not defined(CONFIG_SLAVE_SOC_WIFI_SUPPORTED)
 
 #include <Tactility/service/wifi/Wifi.h>
 
-#include <Tactility/Check.h>
-#include <Tactility/Log.h>
-#include <Tactility/Mutex.h>
 #include <Tactility/PubSub.h>
+#include <Tactility/RecursiveMutex.h>
+#include <tactility/check.h>
 #include <Tactility/service/Service.h>
 #include <Tactility/service/ServiceManifest.h>
 
 namespace tt::service::wifi {
 
-constexpr auto* TAG = "Wifi";
-
 struct Wifi {
     /** @brief Locking mechanism for modifying the Wifi instance */
-    Mutex mutex = Mutex(Mutex::Type::Recursive);
+    RecursiveMutex mutex;
     /** @brief The public event bus */
     std::shared_ptr<PubSub<WifiEvent>> pubsub = std::make_shared<PubSub<WifiEvent>>();
     /** @brief The internal message queue */
@@ -75,32 +76,37 @@ void setScanRecords(uint16_t records) {
 }
 
 std::vector<ApRecord> getScanResults() {
-    tt_check(wifi);
+    check(wifi);
 
     std::vector<ApRecord> records;
     records.push_back((ApRecord) {
         .ssid = "Home Wifi",
         .rssi = -30,
+        .channel = 0,
         .auth_mode = WIFI_AUTH_WPA2_PSK
     });
     records.push_back((ApRecord) {
         .ssid = "No place like 127.0.0.1",
         .rssi = -67,
+        .channel = 0,
         .auth_mode = WIFI_AUTH_WPA2_PSK
     });
     records.push_back((ApRecord) {
         .ssid = "Pretty fly for a Wi-Fi",
         .rssi = -70,
+        .channel = 0,
         .auth_mode = WIFI_AUTH_WPA2_PSK
     });
     records.push_back((ApRecord) {
         .ssid = "An AP with a really, really long name",
         .rssi = -80,
+        .channel = 0,
         .auth_mode = WIFI_AUTH_WPA2_PSK
     });
     records.push_back((ApRecord) {
         .ssid = "Bad Reception",
         .rssi = -90,
+        .channel = 0,
         .auth_mode = WIFI_AUTH_OPEN
     });
 
@@ -139,14 +145,14 @@ class WifiService final : public Service {
 
 public:
 
-    bool onStart(TT_UNUSED ServiceContext& service) override {
-        tt_check(wifi == nullptr);
+    bool onStart(ServiceContext& service) override {
+        check(wifi == nullptr);
         wifi = new Wifi();
         return true;
     }
 
-    void onStop(TT_UNUSED ServiceContext& service) override {
-        tt_check(wifi != nullptr);
+    void onStop(ServiceContext& service) override {
+        check(wifi != nullptr);
         delete wifi;
         wifi = nullptr;
     }

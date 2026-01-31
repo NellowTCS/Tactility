@@ -1,0 +1,3 @@
+dependencies:
+  - Platforms/PlatformEsp32
+dts: heltec,wifi-lora-32-v3.dts

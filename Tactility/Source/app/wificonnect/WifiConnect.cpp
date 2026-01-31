@@ -1,19 +1,21 @@
 #include <Tactility/app/wificonnect/WifiConnect.h>
 
+#include <Tactility/Logger.h>
+#include <Tactility/LogMessages.h>
 #include <Tactility/app/AppContext.h>
+#include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/service/loader/Loader.h>
 #include <Tactility/service/wifi/Wifi.h>
-#include <Tactility/lvgl/LvglSync.h>
 
 namespace tt::app::wificonnect {
 
-constexpr auto* TAG = "WifiConnect";
+static const auto LOGGER = Logger("WifiConnect");
 constexpr auto* WIFI_CONNECT_PARAM_SSID = "ssid"; // String
 constexpr auto* WIFI_CONNECT_PARAM_PASSWORD = "password"; // String
 
 extern const AppManifest manifest;
 
-static void onConnect(const service::wifi::settings::WifiApSettings& ap_settings, bool remember, TT_UNUSED void* parameter) {
+static void onConnect(const service::wifi::settings::WifiApSettings& ap_settings, bool remember, void* parameter) {
     auto* wifi = static_cast<WifiConnect*>(parameter);
     wifi->getState().setApSettings(ap_settings);
     wifi->getState().setConnecting(true);
@@ -72,7 +74,7 @@ void WifiConnect::requestViewUpdate() {
             view.update();
             lvgl::unlock();
         } else {
-            TT_LOG_E(TAG, LOG_MESSAGE_MUTEX_LOCK_FAILED_FMT, "LVGL");
+            LOGGER.error(LOG_MESSAGE_MUTEX_LOCK_FAILED_FMT, "LVGL");
         }
     }
     unlock();
@@ -86,7 +88,7 @@ void WifiConnect::onShow(AppContext& app, lv_obj_t* parent) {
     unlock();
 }
 
-void WifiConnect::onHide(TT_UNUSED AppContext& app) {
+void WifiConnect::onHide(AppContext& app) {
     // No need to lock view, as this is called from within Gui's LVGL context
     lock();
     viewEnabled = false;

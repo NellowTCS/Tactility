@@ -1,3 +1,4 @@
+#include <sdkconfig.h>
 #ifndef CONFIG_IDF_TARGET_ESP32P4
 
 #include <private/elf_symbol.h>

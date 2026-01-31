@@ -1,0 +1,3 @@
+dependencies:
+  - Platforms/PlatformEsp32
+dts: waveshare,s3-touch-lcd-128.dts

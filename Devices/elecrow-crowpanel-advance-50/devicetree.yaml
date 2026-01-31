@@ -1,0 +1,3 @@
+dependencies:
+  - Platforms/PlatformEsp32
+dts: elecrow,crowpanel-advance-50.dts

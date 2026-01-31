@@ -27,8 +27,12 @@ public:
         view->init(appContext, parent);
     }
 
-    void onResult(AppContext& appContext, TT_UNUSED LaunchId launchId, Result result, std::unique_ptr<Bundle> bundle) override {
+    void onResult(AppContext& appContext, LaunchId launchId, Result result, std::unique_ptr<Bundle> bundle) override {
         view->onResult(launchId, result, std::move(bundle));
+    }
+
+    void onHide(AppContext& appContext) override {
+        view->deinit(appContext);
     }
 };
 

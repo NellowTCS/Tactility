@@ -1,10 +1,11 @@
 #pragma once
 
+#include <Tactility/DispatcherThread.h>
+#include <Tactility/Bundle.h>
+#include <Tactility/PubSub.h>
+#include <Tactility/RecursiveMutex.h>
 #include <Tactility/app/AppInstance.h>
 #include <Tactility/app/AppManifest.h>
-#include <Tactility/Bundle.h>
-#include <Tactility/DispatcherThread.h>
-#include <Tactility/PubSub.h>
 #include <Tactility/service/Service.h>
 
 #include <memory>
@@ -26,7 +27,7 @@ public:
 private:
 
     std::shared_ptr<PubSub<Event>> pubsubExternal = std::make_shared<PubSub<Event>>();
-    Mutex mutex = Mutex(Mutex::Type::Recursive);
+    RecursiveMutex mutex;
     std::vector<std::shared_ptr<app::AppInstance>> appStack;
     app::LaunchId nextLaunchId = 0;
 
@@ -45,12 +46,12 @@ private:
 
     int findAppInStack(const std::string& id) const;
 
-    bool onStart(TT_UNUSED ServiceContext& service) override {
+    bool onStart(ServiceContext& service) override {
         dispatcherThread->start();
         return true;
     }
 
-    void onStop(TT_UNUSED ServiceContext& service) override {
+    void onStop(ServiceContext& service) override {
         // Send stop signal to thread and wait for thread to finish
         mutex.withLock([this] {
             dispatcherThread->stop();

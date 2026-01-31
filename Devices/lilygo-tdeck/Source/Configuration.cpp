@@ -1,7 +1,9 @@
 #include "devices/Display.h"
+#include "devices/KeyboardBacklight.h"
 #include "devices/Power.h"
 #include "devices/Sdcard.h"
 #include "devices/TdeckKeyboard.h"
+#include "devices/TrackballDevice.h"
 
 #include <Tactility/hal/Configuration.h>
 #include <Tactility/lvgl/LvglSync.h>
@@ -15,6 +17,8 @@ static std::vector<std::shared_ptr<Device>> createDevices() {
         createPower(),
         createDisplay(),
         std::make_shared<TdeckKeyboard>(),
+        std::make_shared<KeyboardBacklightDevice>(),
+        std::make_shared<TrackballDevice>(),
         createSdCard()
     };
 }
@@ -22,42 +26,6 @@ static std::vector<std::shared_ptr<Device>> createDevices() {
 extern const Configuration hardwareConfiguration = {
     .initBoot = initBoot,
     .createDevices = createDevices,
-    .i2c = {
-        i2c::Configuration {
-            .name = "Internal",
-            .port = I2C_NUM_0,
-            .initMode = i2c::InitMode::ByTactility,
-            .isMutable = false,
-            .config = (i2c_config_t) {
-                .mode = I2C_MODE_MASTER,
-                .sda_io_num = GPIO_NUM_18,
-                .scl_io_num = GPIO_NUM_8,
-                .sda_pullup_en = true,
-                .scl_pullup_en = true,
-                .master = {
-                    .clk_speed = 400000
-                },
-                .clk_flags = 0
-            }
-        },
-        i2c::Configuration {
-            .name = "External",
-            .port = I2C_NUM_1,
-            .initMode = i2c::InitMode::Disabled,
-            .isMutable = true,
-            .config = (i2c_config_t) {
-                .mode = I2C_MODE_MASTER,
-                .sda_io_num = GPIO_NUM_43,
-                .scl_io_num = GPIO_NUM_44,
-                .sda_pullup_en = false,
-                .scl_pullup_en = false,
-                .master = {
-                    .clk_speed = 400000
-                },
-                .clk_flags = 0
-            }
-        }
-    },
     .spi {
         spi::Configuration {
             .device = SPI2_HOST,

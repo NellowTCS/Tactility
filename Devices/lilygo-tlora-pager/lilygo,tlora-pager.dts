@@ -1,0 +1,23 @@
+/dts-v1/;
+
+#include <bindings/tlora_pager.h>
+#include <tactility/bindings/esp32_gpio.h>
+#include <tactility/bindings/esp32_i2c.h>
+
+/ {
+	compatible = "lilygo,tlora-pager";
+	model = "LilyGO T-Lora Pager";
+
+	gpio0 {
+		compatible = "espressif,esp32-gpio";
+		gpio-count = <49>;
+	};
+
+	i2c0 {
+		compatible = "espressif,esp32-i2c";
+		port = <I2C_NUM_0>;
+		clock-frequency = <100000>;
+		pin-sda = <3>;
+		pin-scl = <2>;
+	};
+};

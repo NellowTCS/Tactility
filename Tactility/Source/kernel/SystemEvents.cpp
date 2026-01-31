@@ -1,11 +1,15 @@
-#include "Tactility/kernel/SystemEvents.h"
+#include <Tactility/kernel/SystemEvents.h>
 
+#include <Tactility/Logger.h>
 #include <Tactility/Mutex.h>
+#include <tactility/check.h>
+
+#include <Tactility/CoreDefines.h>
 #include <list>
 
 namespace tt::kernel {
 
-constexpr auto* TAG = "SystemEvents";
+static const auto LOGGER = Logger("SystemEvents");
 
 struct SubscriptionData {
     SystemEventSubscription id;
@@ -24,18 +28,6 @@ static const char* getEventName(SystemEvent event) {
             return TT_STRINGIFY(BootInitHalBegin);
         case BootInitHalEnd:
             return TT_STRINGIFY(BootInitHalEnd);
-        case BootInitI2cBegin:
-            return TT_STRINGIFY(BootInitI2cBegin);
-        case BootInitI2cEnd:
-            return TT_STRINGIFY(BootInitI2cEnd);
-        case BootInitSpiBegin:
-            return TT_STRINGIFY(BootInitSpiBegin);
-        case BootInitSpiEnd:
-            return TT_STRINGIFY(BootInitSpiEnd);
-        case BootInitUartBegin:
-            return TT_STRINGIFY(BootInitUartBegin);
-        case BootInitUartEnd:
-            return TT_STRINGIFY(BootInitUartEnd);
         case BootSplash:
             return TT_STRINGIFY(BootSplash);
         case NetworkConnected:
@@ -50,13 +42,13 @@ static const char* getEventName(SystemEvent event) {
             return TT_STRINGIFY(Time);
     }
 
-    tt_crash(); // Missing case above
+    check(false); // Missing case above
 }
 
 void publishSystemEvent(SystemEvent event) {
-    TT_LOG_I(TAG, "%s", getEventName(event));
+    LOGGER.info("{}", getEventName(event));
 
-    if (mutex.lock(portMAX_DELAY)) {
+    if (mutex.lock(MAX_TICKS)) {
         for (auto& subscription : subscriptions) {
             if (subscription.event == event) {
                 subscription.handler(event);
@@ -68,7 +60,7 @@ void publishSystemEvent(SystemEvent event) {
 }
 
 SystemEventSubscription subscribeSystemEvent(SystemEvent event, OnSystemEvent handler) {
-    if (mutex.lock(portMAX_DELAY)) {
+    if (mutex.lock(MAX_TICKS)) {
         auto id = ++subscriptionCounter;
 
         subscriptions.push_back({
@@ -80,12 +72,12 @@ SystemEventSubscription subscribeSystemEvent(SystemEvent event, OnSystemEvent ha
         mutex.unlock();
         return id;
     } else {
-        tt_crash();
+        check(false);
     }
 }
 
 void unsubscribeSystemEvent(SystemEventSubscription subscription) {
-    if (mutex.lock(portMAX_DELAY)) {
+    if (mutex.lock(MAX_TICKS)) {
         std::erase_if(subscriptions, [subscription](auto& item) {
             return (item.id == subscription);
         });

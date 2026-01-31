@@ -1,9 +1,10 @@
 #include "tt_hal_display.h"
 
-#include "Tactility/Check.h"
-#include "Tactility/hal/Device.h"
-#include "Tactility/hal/display/DisplayDevice.h"
-#include "Tactility/hal/display/DisplayDriver.h"
+#include <tactility/check.h>
+
+#include <Tactility/hal/Device.h>
+#include <Tactility/hal/display/DisplayDevice.h>
+#include <Tactility/hal/display/DisplayDriver.h>
 
 static ColorFormat toColorFormat(tt::hal::display::ColorFormat format) {
     switch (format) {
@@ -20,7 +21,7 @@ static ColorFormat toColorFormat(tt::hal::display::ColorFormat format) {
         case tt::hal::display::ColorFormat::RGB888:
             return COLOR_FORMAT_RGB888;
         default:
-            tt_crash("ColorFormat not supported");
+            check(false, "ColorFormat not supported");
     }
 }
 
@@ -55,7 +56,7 @@ void tt_hal_display_driver_free(DisplayDriverHandle handle) {
     delete wrapper;
 }
 
-bool tt_hal_display_driver_lock(DisplayDriverHandle handle, TickType timeout) {
+bool tt_hal_display_driver_lock(DisplayDriverHandle handle, TickType_t timeout) {
     auto wrapper = static_cast<DriverWrapper*>(handle);
     return wrapper->driver->getLock()->lock(timeout);
 }

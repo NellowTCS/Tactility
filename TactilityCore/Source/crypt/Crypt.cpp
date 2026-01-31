@@ -1,7 +1,7 @@
-#include "Tactility/crypt/Crypt.h"
+#include <Tactility/crypt/Crypt.h>
 
-#include "Tactility/Check.h"
-#include "Tactility/Log.h"
+#include <Tactility/Logger.h>
+#include <tactility/check.h>
 
 #include <mbedtls/aes.h>
 #include <cstring>
@@ -15,7 +15,8 @@
 
 namespace tt::crypt {
 
-#define TAG "secure"
+static const auto LOGGER = Logger("Crypt");
+
 #define TT_NVS_NAMESPACE "tt_secure"
 
 #ifdef ESP_PLATFORM
@@ -27,8 +28,8 @@ static void get_hardware_key(uint8_t key[32]) {
     uint8_t mac[8];
     // MAC can be 6 or 8 bytes
     size_t mac_length = esp_mac_addr_len_get(ESP_MAC_EFUSE_FACTORY);
-    TT_LOG_I(TAG, "Using MAC with length %u", mac_length);
-    tt_check(mac_length <= 8);
+    LOGGER.info("Using MAC with length {}", mac_length);
+    check(mac_length <= 8);
     ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_EFUSE_FACTORY));
 
     // Fill buffer with repeating MAC
@@ -66,14 +67,14 @@ static void get_nvs_key(uint8_t key[32]) {
     esp_err_t result = nvs_open(TT_NVS_NAMESPACE, NVS_READWRITE, &handle);
 
     if (result != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to get key from NVS (%s)", esp_err_to_name(result));
-        tt_crash("NVS error");
+        LOGGER.error("Failed to get key from NVS ({})", esp_err_to_name(result));
+        check(false, "NVS error");
     }
 
     size_t length = 32;
     if (nvs_get_blob(handle, "key", key, &length) == ESP_OK) {
-        TT_LOG_I(TAG, "Fetched key from NVS (%d bytes)", length);
-        tt_check(length == 32);
+        LOGGER.info("Fetched key from NVS ({} bytes)", length);
+        check(length == 32);
     } else {
         // TODO: Improved randomness
         esp_cpu_cycle_count_t cycle_count = esp_cpu_get_cycle_count();
@@ -83,7 +84,7 @@ static void get_nvs_key(uint8_t key[32]) {
             key[i] = (uint8_t)(rand());
         }
         ESP_ERROR_CHECK(nvs_set_blob(handle, "key", key, 32));
-        TT_LOG_I(TAG, "Stored new key in NVS");
+        LOGGER.info("Stored new key in NVS");
     }
 
     nvs_close(handle);
@@ -109,8 +110,8 @@ static void xorKey(const uint8_t* inLeft, const uint8_t* inRight, uint8_t* out, 
  */
 static void getKey(uint8_t key[32]) {
 #if !defined(CONFIG_SECURE_BOOT) || !defined(CONFIG_SECURE_FLASH_ENC_ENABLED)
-    TT_LOG_W(TAG, "Using tt_secure_* code with secure boot and/or flash encryption disabled.");
-    TT_LOG_W(TAG, "An attacker with physical access to your ESP32 can decrypt your secure data.");
+    LOGGER.warn("Using tt_secure_* code with secure boot and/or flash encryption disabled.");
+    LOGGER.warn("An attacker with physical access to your ESP32 can decrypt your secure data.");
 #endif
 
 #ifdef ESP_PLATFORM
@@ -121,7 +122,7 @@ static void getKey(uint8_t key[32]) {
     get_nvs_key(nvs_key);
     xorKey(hardware_key, nvs_key, key, 32);
 #else
-    TT_LOG_W(TAG, "Using unsafe key for debugging purposes.");
+    LOGGER.warn("Using unsafe key for debugging purposes.");
     memset(key, 0, 32);
 #endif
 }
@@ -143,7 +144,7 @@ static int aes256CryptCbc(
     const unsigned char* input,
     unsigned char* output
 ) {
-    tt_check(key && iv && input && output);
+    check(key && iv && input && output);
 
     if ((length % 16) || (length == 0)) {
         return -1; // TODO: Proper error code from mbed lib?
@@ -162,7 +163,7 @@ static int aes256CryptCbc(
 }
 
 int encrypt(const uint8_t iv[16], const uint8_t* inData, uint8_t* outData, size_t dataLength) {
-    tt_check(dataLength % 16 == 0, "Length is not a multiple of 16 bytes (for AES 256");
+    check(dataLength % 16 == 0, "Length is not a multiple of 16 bytes (for AES 256)");
     uint8_t key[32];
     getKey(key);
 
@@ -174,7 +175,7 @@ int encrypt(const uint8_t iv[16], const uint8_t* inData, uint8_t* outData, size_
 }
 
 int decrypt(const uint8_t iv[16], const uint8_t* inData, uint8_t* outData, size_t dataLength) {
-    tt_check(dataLength % 16 == 0, "Length is not a multiple of 16 bytes (for AES 256");
+    check(dataLength % 16 == 0, "Length is not a multiple of 16 bytes (for AES 256)");
     uint8_t key[32];
     getKey(key);
 

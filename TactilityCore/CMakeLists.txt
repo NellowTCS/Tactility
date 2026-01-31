@@ -1,15 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 if (DEFINED ENV{ESP_IDF_VERSION})
     file(GLOB_RECURSE SOURCE_FILES Source/*.c*)
 
     idf_component_register(
         SRCS ${SOURCE_FILES}
         INCLUDE_DIRS "Include/"
-        REQUIRES mbedtls nvs_flash esp_rom esp_timer
+        REQUIRES TactilityFreeRtos TactilityKernel mbedtls nvs_flash esp_rom
     )
 
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -24,15 +21,14 @@ else()
         PRIVATE ${SOURCES}
     )
 
-    target_include_directories(TactilityCore SYSTEM
-        PUBLIC Include/
-    )
+    target_include_directories(TactilityCore PUBLIC Include/)
 
     add_definitions(-D_Nullable=)
     add_definitions(-D_Nonnull=)
 
-    target_link_libraries(TactilityCore
-        PUBLIC mbedtls
-        PUBLIC freertos_kernel
+    target_link_libraries(TactilityCore PUBLIC
+        TactilityFreeRtos
+        TactilityKernel
+        mbedtls
     )
 endif()

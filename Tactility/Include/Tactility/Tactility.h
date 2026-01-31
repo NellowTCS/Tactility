@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Tactility/app/AppManifest.h>
+#include "tactility/device.h"
+#include "tactility/module.h"
 #include <Tactility/Dispatcher.h>
+#include <Tactility/app/AppManifest.h>
 #include <Tactility/hal/Configuration.h>
 #include <Tactility/service/ServiceManifest.h>
 
 namespace tt {
-
-namespace app::launcher { extern const AppManifest manifest; }
 
 /** @brief The configuration for the operating system
  * It contains the hardware configuration, apps and services
@@ -18,10 +18,12 @@ struct Configuration {
 };
 
 /**
- * Attempts to initialize Tactility and all configured hardware.
- * @param[in] config
+ * @brief Main entry point for Tactility.
+ * @param platformModule Platform module to start (non-null).
+ * @param deviceModule Device module to start (non-null).
+ * @param devicetreeDevices Null-terminated array where an entry { NULL, NULL } marks the end of the list.
  */
-void run(const Configuration& config);
+void run(const Configuration& config, Module* platformModule, Module* deviceModule, CompatibleDevice devicetreeDevices[]);
 
 /**
  * While technically nullable, this instance is always set if tt_init() succeeds.

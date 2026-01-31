@@ -4,11 +4,11 @@
 
 #include <Tactility/hal/Configuration.h>
 #include <Tactility/lvgl/LvglSync.h>
+#include <Tactility/Logger.h>
 #include <ButtonControl.h>
 
 #include "driver/gpio.h"
 #include "driver/i2c.h"
-#include <Tactility/Log.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -24,7 +24,7 @@ static void enableOledPower() {
     gpio_set_level(DISPLAY_PIN_POWER, 0); // Active low
 
     vTaskDelay(pdMS_TO_TICKS(500)); // Add a small delay for power to stabilize
-    TT_LOG_I("OLED_POWER", "OLED power enabled");
+    tt::Logger("HeltecV3").info("OLED power enabled");
 }
 
 static bool initBoot() {
@@ -48,24 +48,5 @@ extern const Configuration hardwareConfiguration = {
     .initBoot = initBoot,
     .uiScale = UiScale::Smallest,
     .createDevices = createDevices,
-    .i2c = {
-        tt::hal::i2c::Configuration {
-            .name = "Internal",
-            .port = DISPLAY_I2C_PORT,
-            .initMode = tt::hal::i2c::InitMode::ByTactility,
-            .isMutable = true,
-            .config = (i2c_config_t) {
-                .mode = I2C_MODE_MASTER,
-                .sda_io_num = DISPLAY_PIN_SDA,
-                .scl_io_num = DISPLAY_PIN_SCL,
-                .sda_pullup_en = GPIO_PULLUP_ENABLE,
-                .scl_pullup_en = GPIO_PULLUP_ENABLE,
-                .master = {
-                    .clk_speed = DISPLAY_I2C_SPEED
-                },
-                .clk_flags = 0
-            }
-        }
-    },
     .spi {},
 };

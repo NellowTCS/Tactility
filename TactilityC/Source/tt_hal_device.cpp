@@ -1,6 +1,6 @@
 #include "tt_hal_device.h"
 
-#include "Tactility/Check.h"
+#include <tactility/check.h>
 
 #include <Tactility/hal/Device.h>
 
@@ -21,7 +21,7 @@ static tt::hal::Device::Type toTactilityDeviceType(DeviceType type) {
         case DEVICE_TYPE_GPS:
             return tt::hal::Device::Type::Gps;
         default:
-            tt_crash("Device::Type not supported");
+            check(false, "Device::Type not supported");
     }
 }
 

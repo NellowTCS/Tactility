@@ -1,0 +1,3 @@
+dependencies:
+  - Platforms/PlatformEsp32
+dts: cyd,e32r28t.dts

@@ -1,5 +1,13 @@
 #include <Tactility/Tactility.h>
 
+#include <tactility/driver.h>
+#include <devicetree.h>
+
+// From the relevant platform
+extern struct Module platform_module;
+// From the relevant device
+extern struct Module device_module;
+
 #ifdef ESP_PLATFORM
 #include <tt_init.h>
 #else
@@ -24,7 +32,7 @@ void app_main() {
     tt_init_tactility_c(); // ELF bindings for side-loading on ESP32
 #endif
 
-    tt::run(config);
+    tt::run(config, &platform_module, &device_module, devicetree_devices);
 }
 
 } // extern

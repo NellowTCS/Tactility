@@ -3,7 +3,7 @@
 #include "./I2cCompat.h"
 #include "Tactility/Lock.h"
 
-#include <Tactility/RtosCompat.h>
+#include <Tactility/freertoscompat/RTOS.h>
 
 #include <climits>
 #include <string>
@@ -12,46 +12,13 @@ namespace tt::hal::i2c {
 
 constexpr TickType_t defaultTimeout = 10 / portTICK_PERIOD_MS;
 
-enum class InitMode {
-    ByTactility, // Tactility will initialize it in the correct bootup phase
-    ByExternal, // The device is already initialized and Tactility should assume it works
-    Disabled // Not initialized by default
-};
-
-struct Configuration {
-    std::string name;
-    /** The port to operate on */
-    i2c_port_t port;
-    /** Whether this bus should be initialized when device starts up */
-    InitMode initMode;
-    /**
-     * Whether this bus can be changed after booting.
-     * If the bus is internal and/or used for core features like touch screen, then it can be declared static.
-     */
-    bool isMutable;
-    /** Configuration that must be valid when initAtBoot is set to true. */
-    i2c_config_t config;
-};
-
 enum class Status {
     Started,
     Stopped,
     Unknown
 };
 
-/**
- * Reconfigure a port with the provided settings.
- * @warning This fails when the HAL Configuration is not mutable.
- * @param[in] port the port to reconfigure
- * @param[in] configuration the new configuration
- * @return true on success
- */
-bool configure(i2c_port_t port, const i2c_config_t& configuration);
-
-/**
- * Start the bus for the specified port.
- * Devices might be started automatically at boot if their HAL configuration requires it.
- */
+/** Start the bus for the specified port. */
 bool start(i2c_port_t port);
 
 /** Stop the bus for the specified port. */
@@ -59,6 +26,9 @@ bool stop(i2c_port_t port);
 
 /** @return true if the bus is started */
 bool isStarted(i2c_port_t port);
+
+/** @return name or nullptr */
+const char* getName(i2c_port_t port);
 
 /** Read bytes in master mode. */
 bool masterRead(i2c_port_t port, uint8_t address, uint8_t* data, size_t dataSize, TickType_t timeout = defaultTimeout);

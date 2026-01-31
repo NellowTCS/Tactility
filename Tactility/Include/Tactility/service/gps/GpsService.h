@@ -1,11 +1,12 @@
 #pragma once
 
-#include "Tactility/Mutex.h"
-#include "Tactility/PubSub.h"
-#include "Tactility/hal/gps/GpsDevice.h"
-#include "Tactility/service/Service.h"
-#include "Tactility/service/ServiceContext.h"
-#include "Tactility/service/gps/GpsState.h"
+#include <Tactility/PubSub.h>
+#include <Tactility/Mutex.h>
+#include <Tactility/RecursiveMutex.h>
+#include <Tactility/hal/gps/GpsDevice.h>
+#include <Tactility/service/Service.h>
+#include <Tactility/service/ServiceContext.h>
+#include <Tactility/service/gps/GpsState.h>
 
 namespace tt::service::gps {
 
@@ -20,7 +21,10 @@ class GpsService final : public Service {
     minmea_sentence_rmc rmcRecord;
     TickType_t rmcTime = 0;
 
-    Mutex mutex = Mutex(Mutex::Type::Recursive);
+    minmea_sentence_gga ggaRecord;
+    TickType_t ggaTime = 0;
+
+    RecursiveMutex mutex;
     Mutex stateMutex;
     std::vector<GpsDeviceRecord> deviceRecords;
     std::shared_ptr<PubSub<State>> statePubSub = std::make_shared<PubSub<State>>();
@@ -57,6 +61,7 @@ public:
 
     bool hasCoordinates() const;
     bool getCoordinates(minmea_sentence_rmc& rmc) const;
+    bool getGga(minmea_sentence_gga& gga) const;
 
     /** @return GPS service pubsub that broadcasts State* objects */
     std::shared_ptr<PubSub<State>> getStatePubsub() const { return statePubSub; }

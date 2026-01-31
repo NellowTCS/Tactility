@@ -1,0 +1,3 @@
+dependencies:
+  - Platforms/PlatformEsp32
+dts: guition,jc1060p470ciwy.dts

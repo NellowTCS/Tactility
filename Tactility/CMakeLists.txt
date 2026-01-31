@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 if (DEFINED ENV{ESP_IDF_VERSION})
     file(GLOB_RECURSE SOURCE_FILES Source/*.c*)
 
     list(APPEND REQUIRES_LIST
+        TactilityKernel
+        PlatformEsp32
         TactilityCore
+        TactilityFreeRtos
         lvgl
         driver
         elf_loader
@@ -26,7 +26,9 @@ if (DEFINED ENV{ESP_IDF_VERSION})
         vfs
         fatfs
         lwip
+        spi_flash
     )
+
     if ("${IDF_TARGET}" STREQUAL "esp32s3")
         list(APPEND REQUIRES_LIST esp_tinyusb)
     endif ()
@@ -48,35 +50,32 @@ if (DEFINED ENV{ESP_IDF_VERSION})
         # Read-write
         fatfs_create_spiflash_image(data "${CMAKE_CURRENT_SOURCE_DIR}/../Data/data" FLASH_IN_PROJECT PRESERVE_TIME)
     endif ()
-
 else()
     file(GLOB_RECURSE SOURCES "Source/*.c*")
 
     add_library(Tactility OBJECT)
 
-    target_sources(Tactility
-        PRIVATE ${SOURCES}
-    )
-
-    include_directories(
-        PRIVATE Private/
-    )
+    target_sources(Tactility PRIVATE ${SOURCES})
 
     target_include_directories(Tactility
+        PRIVATE Private/
         PUBLIC Include/
     )
 
     add_definitions(-D_Nullable=)
     add_definitions(-D_Nonnull=)
 
-    target_link_libraries(Tactility
-        PUBLIC cJSON
-        PUBLIC TactilityCore
-        PUBLIC freertos_kernel
-        PUBLIC lvgl
-        PUBLIC lv_screenshot
-        PUBLIC minmea
-        PUBLIC minitar
+    target_link_libraries(Tactility PUBLIC
+        cJSON
+        TactilityFreeRtos
+        TactilityCore
+        TactilityKernel
+        PlatformPosix
+        freertos_kernel
+        lvgl
+        lv_screenshot
+        minmea
+        minitar
     )
 endif()
 

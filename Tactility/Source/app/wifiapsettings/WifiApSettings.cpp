@@ -1,20 +1,22 @@
 #include "Tactility/lvgl/LvglSync.h"
 
-#include <Tactility/service/wifi/WifiApSettings.h>
-#include <Tactility/service/wifi/Wifi.h>
+#include <Tactility/LogMessages.h>
+#include <Tactility/Logger.h>
 #include <Tactility/app/App.h>
 #include <Tactility/app/AppContext.h>
 #include <Tactility/app/AppManifest.h>
 #include <Tactility/app/alertdialog/AlertDialog.h>
+#include <tactility/check.h>
 #include <Tactility/lvgl/Style.h>
 #include <Tactility/lvgl/Toolbar.h>
-#include <Tactility/TactilityCore.h>
+#include <Tactility/service/wifi/Wifi.h>
+#include <Tactility/service/wifi/WifiApSettings.h>
 
 #include <lvgl.h>
 
 namespace tt::app::wifiapsettings {
 
-constexpr auto* TAG = "WifiApSettings";
+static const auto LOGGER = Logger("WifiApSettings");
 
 extern const AppManifest manifest;
 
@@ -33,7 +35,7 @@ class WifiApSettings : public App {
     std::string ssid;
     PubSub<service::wifi::WifiEvent>::SubscriptionHandle wifiSubscription = nullptr;
 
-    static void onPressForget(TT_UNUSED lv_event_t* event) {
+    static void onPressForget(lv_event_t* event) {
         std::vector<std::string> choices = {
             "Yes",
             "No"
@@ -50,17 +52,17 @@ class WifiApSettings : public App {
         if (service::wifi::settings::load(self->ssid.c_str(), settings)) {
             settings.autoConnect = is_on;
             if (!service::wifi::settings::save(settings)) {
-                TT_LOG_E(TAG, "Failed to save settings");
+                LOGGER.error("Failed to save settings");
             }
         } else {
-            TT_LOG_E(TAG, "Failed to load settings");
+            LOGGER.error("Failed to load settings");
         }
     }
 
     static void onPressConnect(lv_event_t* event) {
         auto app = getCurrentAppContext();
         auto parameters = app->getParameters();
-        tt_check(parameters != nullptr, "Parameters missing");
+        check(parameters != nullptr, "Parameters missing");
 
         std::string ssid = parameters->getString("ssid");
         service::wifi::settings::WifiApSettings settings;
@@ -89,7 +91,7 @@ class WifiApSettings : public App {
                 updateViews();
                 lvgl::unlock();
             } else {
-                TT_LOG_E(TAG, LOG_MESSAGE_MUTEX_LOCK_FAILED_FMT, "LVGL");
+                LOGGER.error(LOG_MESSAGE_MUTEX_LOCK_FAILED_FMT, "LVGL");
             }
         }
     }
@@ -123,7 +125,7 @@ public:
 
     void onCreate(AppContext& app) override {
         const auto parameters = app.getParameters();
-        tt_check(parameters != nullptr, "Parameters missing");
+        check(parameters != nullptr, "Parameters missing");
         ssid = parameters->getString("ssid");
     }
 
@@ -192,7 +194,7 @@ public:
                 lv_obj_remove_state(auto_connect_switch, LV_STATE_CHECKED);
             }
         } else {
-            TT_LOG_W(TAG, "No settings found");
+            LOGGER.warn("No settings found");
             lv_obj_add_flag(forget_button, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(auto_connect_wrapper, LV_OBJ_FLAG_HIDDEN);
         }
@@ -208,7 +210,7 @@ public:
         viewEnabled = false;
     }
 
-    void onResult(TT_UNUSED AppContext& appContext, TT_UNUSED LaunchId launchId, TT_UNUSED Result result, std::unique_ptr<Bundle> bundle) override {
+    void onResult(AppContext& appContext, LaunchId launchId, Result result, std::unique_ptr<Bundle> bundle) override {
         if (result != Result::Ok || bundle == nullptr) {
             return;
         }
@@ -219,15 +221,15 @@ public:
         }
 
         auto parameters = appContext.getParameters();
-        tt_check(parameters != nullptr, "Parameters missing");
+        check(parameters != nullptr, "Parameters missing");
 
         std::string ssid = parameters->getString("ssid");
         if (!service::wifi::settings::remove(ssid.c_str())) {
-            TT_LOG_E(TAG, "Failed to remove SSID");
+            LOGGER.error("Failed to remove SSID");
             return;
         }
 
-        TT_LOG_I(TAG, "Removed SSID");
+        LOGGER.info("Removed SSID");
         if (
             service::wifi::getRadioState() == service::wifi::RadioState::ConnectionActive &&
             service::wifi::getConnectionTarget() == ssid

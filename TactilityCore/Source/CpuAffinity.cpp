@@ -4,7 +4,7 @@
 
 #include "Tactility/CpuAffinity.h"
 
-#include <Tactility/Check.h>
+#include <tactility/check.h>
 
 namespace tt {
 
@@ -35,7 +35,8 @@ static CpuAffinity getEspMainSchedulerAffinity() {
 #elif defined(CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_1)
     return 1;
 #else
-    return None;
+    // Default to core 0 when no explicit WiFi pinning is configured
+    return 0;
 #endif
 }
 
