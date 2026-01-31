@@ -1,6 +1,6 @@
 #include "Ssd1685Display.h"
 
-#include <Tactility/Log.h>
+#include <tactility/Log.h>
 #include <esp_lcd_panel_commands.h>
 #include <esp_lcd_panel_dev.h>
 #include <esp_lvgl_port.h>
