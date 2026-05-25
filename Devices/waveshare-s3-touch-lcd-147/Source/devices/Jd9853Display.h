@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Tactility/hal/display/DisplayDevice.h>
-#include <Tactility/hal/spi/Spi.h>
 
 #include <EspLcdDisplay.h>
 
 #include <driver/gpio.h>
+#include <driver/spi_common.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_types.h>
 #include <functional>
@@ -67,7 +67,7 @@ public:
         uint32_t bufferSize; // Size in pixel count. 0 means default, which is 1/10 of the screen size
         lcd_rgb_element_order_t rgbElementOrder;
         std::shared_ptr<tt::hal::touch::TouchDevice> touch;
-        std::function<void(uint8_t)> _Nullable backlightDutyFunction = nullptr;
+        std::function<void(uint8_t)> backlightDutyFunction = nullptr;
     };
 
 private:
@@ -83,17 +83,14 @@ private:
 public:
 
     explicit Jd9853Display(std::unique_ptr<Configuration> inConfiguration) :
-        EspLcdDisplay(tt::hal::spi::getLock(inConfiguration->spiHostDevice)),
         configuration(std::move(inConfiguration)
-    ) {
-        assert(configuration != nullptr);
-    }
+    ) {}
 
     std::string getName() const override { return "JD9853"; }
 
     std::string getDescription() const override { return "JD9853 display"; }
 
-    std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable getTouchDevice() override { return configuration->touch; }
+    std::shared_ptr<tt::hal::touch::TouchDevice> getTouchDevice() override { return configuration->touch; }
 
     void setBacklightDuty(uint8_t backlightDuty) override {
         if (configuration->backlightDutyFunction != nullptr) {

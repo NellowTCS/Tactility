@@ -1,5 +1,10 @@
-#include <Tactility/network/HttpdReq.h>
+#include <format>
+#include <string>
+#include <set>
 
+#include <tactility/lvgl_module.h>
+
+#include <Tactility/network/HttpdReq.h>
 #include <Tactility/app/wifimanage/View.h>
 #include <Tactility/app/wifimanage/WifiManagePrivate.h>
 #include <Tactility/Logger.h>
@@ -7,16 +12,13 @@
 #include <Tactility/lvgl/Toolbar.h>
 #include <Tactility/service/wifi/Wifi.h>
 #include <Tactility/service/wifi/WifiSettings.h>
-
-#include <format>
-#include <string>
-#include <set>
+#include <Tactility/Tactility.h>
 
 namespace tt::app::wifimanage {
 
 static const auto LOGGER = Logger("WifiManageView");
 
-std::shared_ptr<WifiManage> _Nullable optWifiManage();
+std::shared_ptr<WifiManage> optWifiManage();
 
 static uint8_t mapRssiToPercentage(int rssi) {
     auto abs_rssi = std::abs(rssi);
@@ -161,7 +163,7 @@ void View::updateNetworkList() {
     lv_obj_add_event_cb(enable_on_boot_switch, onEnableOnBootSwitchChanged, LV_EVENT_VALUE_CHANGED, bindings);
     lv_obj_add_event_cb(enable_on_boot_wrapper, onEnableOnBootParentClicked, LV_EVENT_SHORT_CLICKED, enable_on_boot_switch);
 
-    if (hal::getConfiguration()->uiScale == hal::UiScale::Smallest) {
+    if (lvgl_get_ui_density() == LVGL_UI_DENSITY_COMPACT) {
         lv_obj_set_style_pad_ver(enable_on_boot_wrapper, 2, LV_STATE_DEFAULT);
     } else {
         lv_obj_set_style_pad_ver(enable_on_boot_wrapper, 8, LV_STATE_DEFAULT);
@@ -258,10 +260,12 @@ void View::updateWifiToggle() {
             lv_obj_add_state(enable_switch, LV_STATE_CHECKED);
             break;
         case OnPending:
-            lv_obj_add_state(enable_switch, LV_STATE_CHECKED | LV_STATE_DISABLED);
+            lv_obj_add_state(enable_switch, LV_STATE_CHECKED);
+            lv_obj_add_state(enable_switch, LV_STATE_DISABLED);
             break;
         case Off:
-            lv_obj_remove_state(enable_switch, LV_STATE_CHECKED | LV_STATE_DISABLED);
+            lv_obj_remove_state(enable_switch, LV_STATE_CHECKED);
+            lv_obj_remove_state(enable_switch, LV_STATE_DISABLED);
             break;
         case OffPending:
             lv_obj_remove_state(enable_switch, LV_STATE_CHECKED);

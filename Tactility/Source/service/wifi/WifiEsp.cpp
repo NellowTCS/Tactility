@@ -19,6 +19,7 @@
 #include <Tactility/service/wifi/WifiGlobals.h>
 #include <Tactility/service/wifi/WifiSettings.h>
 
+#include <esp_wifi_default.h>
 #include <lwip/esp_netif_net_stack.h>
 #include <freertos/FreeRTOS.h>
 #include <atomic>
@@ -47,8 +48,8 @@ static void dispatchDisconnectButKeepActive(std::shared_ptr<Wifi> wifi);
 class Wifi {
 
     std::atomic<RadioState> radio_state = RadioState::Off;
-    bool scan_active = false;
-    bool secure_connection = false;
+    std::atomic<bool> scan_active = false;
+    std::atomic<bool> secure_connection = false;
 
 public:
 
@@ -62,9 +63,9 @@ public:
     // for example: when scanning and you turn off the radio, the scan should probably stop or turning off
     // the radio should disable the on/off button in the app as it is pending.
     /** @brief The network interface when wifi is started */
-    esp_netif_t* _Nullable netif = nullptr;
+    esp_netif_t* netif = nullptr;
     /** @brief Scanning results */
-    wifi_ap_record_t* _Nullable scan_list = nullptr;
+    wifi_ap_record_t* scan_list = nullptr;
     /** @brief The current item count in scan_list (-1 when scan_list is NULL) */
     uint16_t scan_list_count = 0;
     /** @brief Maximum amount of records to scan (value > 0) */
@@ -81,54 +82,34 @@ public:
     kernel::SystemEventSubscription bootEventSubscription = kernel::NoSystemEventSubscription;
 
     RadioState getRadioState() const {
-        auto lock = dataMutex.asScopedLock();
-        lock.lock();
-        // TODO: Handle lock failure
         return radio_state;
     }
 
     void setRadioState(RadioState newState) {
-        auto lock = dataMutex.asScopedLock();
-        lock.lock();
-        // TODO: Handle lock failure
         radio_state = newState;
     }
 
     bool isScanning() const {
-        auto lock = dataMutex.asScopedLock();
-        lock.lock();
-        // TODO: Handle lock failure
         return scan_active;
     }
 
     void setScanning(bool newState) {
-        auto lock = dataMutex.asScopedLock();
-        lock.lock();
-        // TODO: Handle lock failure
         scan_active = newState;
     }
 
     bool isScanActive() const {
-        auto lock = dataMutex.asScopedLock();
-        lock.lock();
         return scan_active;
     }
 
     void setScanActive(bool newState) {
-        auto lock = dataMutex.asScopedLock();
-        lock.lock();
         scan_active = newState;
     }
 
     bool isSecureConnection() const {
-        auto lock = dataMutex.asScopedLock();
-        lock.lock();
         return secure_connection;
     }
 
     void setSecureConnection(bool newState) {
-        auto lock = dataMutex.asScopedLock();
-        lock.lock();
         secure_connection = newState;
     }
 };
@@ -321,11 +302,6 @@ void setEnabled(bool enabled) {
 bool isConnectionSecure() {
     auto wifi = wifi_singleton;
     if (wifi == nullptr) {
-        return false;
-    }
-
-    auto lock = wifi->dataMutex.asScopedLock();
-    if (!lock.lock(10 / portTICK_PERIOD_MS)) {
         return false;
     }
 
@@ -562,6 +538,7 @@ static void dispatchEnable(std::shared_ptr<Wifi> wifi) {
         publish_event(wifi, WifiEvent::RadioStateOnPending);
 
         if (wifi->netif != nullptr) {
+            esp_wifi_clear_default_wifi_driver_and_handlers(wifi->netif);
             esp_netif_destroy(wifi->netif);
         }
         wifi->netif = esp_netif_create_default_wifi_sta();
@@ -658,11 +635,21 @@ static void dispatchDisable(std::shared_ptr<Wifi> wifi) {
     // Free up scan list memory
     scan_list_free_safely(wifi_singleton);
 
+    // Detach netif from the internal WiFi event handlers before stopping.
+    // Those handlers call esp_netif_action_stop on WIFI_EVENT_STA_STOP, which
+    // queues esp_netif_stop_api to the lwIP thread. esp_netif_destroy later
+    // queues a second one; the first zeroes lwip_netif, and the second then
+    // crashes in netif_ip6_addr_set_parts (null pointer + 0x263 offset).
+    if (wifi->netif != nullptr) {
+        esp_wifi_clear_default_wifi_driver_and_handlers(wifi->netif);
+    }
+
+    // Note: handlers are already detached above, so we cannot safely return to
+    // RadioState::On from here — the netif would be missing its default WiFi
+    // event handlers and subsequent disable attempts would behave incorrectly.
+    // If stop fails, continue the teardown anyway so we end in a clean Off state.
     if (esp_wifi_stop() != ESP_OK) {
-        LOGGER.error("Failed to stop radio");
-        wifi->setRadioState(RadioState::On);
-        publish_event(wifi, WifiEvent::RadioStateOn);
-        return;
+        LOGGER.error("Failed to stop radio - continuing teardown");
     }
 
     if (esp_wifi_set_mode(WIFI_MODE_NULL) != ESP_OK) {
@@ -878,7 +865,7 @@ static void dispatchDisconnectButKeepActive(std::shared_ptr<Wifi> wifi) {
 
 static bool shouldScanForAutoConnect(std::shared_ptr<Wifi> wifi) {
     auto lock = wifi->dataMutex.asScopedLock();
-    if (!lock.lock(100)) {
+    if (!lock.lock(100 / portTICK_PERIOD_MS)) {
         return false;
     }
 
@@ -912,8 +899,12 @@ void onAutoConnectTimer() {
 std::string getIp() {
     auto wifi = std::static_pointer_cast<Wifi>(wifi_singleton);
 
+    if (wifi == nullptr) return "127.0.0.1";
+
     auto lock = wifi->dataMutex.asScopedLock();
-    lock.lock();
+    if (!lock.lock(100 / portTICK_PERIOD_MS)) {
+        return "127.0.0.1";
+    }
 
     return std::format("{}.{}.{}.{}", IP2STR(&wifi->ip_info.ip));
 }

@@ -12,11 +12,12 @@ static error_t stop() {
     return ERROR_NONE;
 }
 
-/** @warning The variable name must be exactly "device_module" */
-struct Module device_module = {
+struct Module cyd_2432s024c_module = {
     .name = "cyd-2432s024c",
     .start = start,
-    .stop = stop
+    .stop = stop,
+    .symbols = nullptr,
+    .internal = nullptr
 };
 
 }

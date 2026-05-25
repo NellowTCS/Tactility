@@ -8,17 +8,17 @@
 #include <Tactility/MountPoints.h>
 #include <Tactility/file/File.h>
 #include <Tactility/Logger.h>
-#include <Tactility/kernel/SystemEvents.h>
 #include <Tactility/lvgl/Statusbar.h>
 #include <Tactility/Mutex.h>
 
-#include <Tactility/Tactility.h>
 #include <Tactility/TactilityConfig.h>
-#include <Tactility/hal/Device.h>
+#include <tactility/hal/Device.h>
 #include <Tactility/app/AppRegistration.h>
 #include <Tactility/app/AppManifest.h>
 #include <Tactility/app/App.h>
+#include <Tactility/hal/sdcard/SdCardDevice.h>
 #include <Tactility/service/wifi/Wifi.h>
+#include <esp_wifi_default.h>
 #include <Tactility/network/HttpdReq.h>
 #include <Tactility/network/Url.h>
 #include <Tactility/Paths.h>
@@ -27,28 +27,31 @@
 #include <Tactility/StringUtils.h>
 
 #include <ranges>
+#include <tactility/filesystem/file_system.h>
 
 #if TT_FEATURE_SCREENSHOT_ENABLED
 #include <lv_screenshot.h>
 #endif
 
-#include <esp_system.h>
-#include <esp_heap_caps.h>
-#include <esp_chip_info.h>
-#include <esp_vfs_fat.h>
-#include <esp_flash.h>
-#include <esp_wifi.h>
-#include <esp_netif.h>
-#include <lwip/ip4_addr.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <sstream>
+#include <tactility/lvgl_icon_statusbar.h>
+
 #include <atomic>
+#include <cctype>
 #include <cerrno>
 #include <cstring>
+#include <esp_chip_info.h>
+#include <esp_flash.h>
+#include <esp_heap_caps.h>
+#include <esp_netif.h>
+#include <esp_system.h>
+#include <esp_vfs_fat.h>
+#include <esp_wifi.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <iomanip>
-#include <cctype>
+#include <lwip/ip4_addr.h>
 #include <mbedtls/base64.h>
+#include <sstream>
 
 namespace tt::service::webserver {
 
@@ -399,6 +402,9 @@ bool WebServerService::startApMode() {
 void WebServerService::stopApMode() {
     if (apWifiInitialized) {
         esp_err_t err;
+        if (apNetif != nullptr) {
+            esp_wifi_clear_default_wifi_driver_and_handlers(apNetif);
+        }
         err = esp_wifi_stop();
         if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) {
             LOGGER.warn("esp_wifi_stop() in cleanup: {}", esp_err_to_name(err));
@@ -519,13 +525,9 @@ bool WebServerService::startServer() {
     LOGGER.info("HTTP server started successfully on port {}", settings.webServerPort);
     publish_event(this, WebServerEvent::WebServerStarted);
 
-    // Show statusbar icon (different icon for AP vs Station mode)
+    // Show statusbar icon
     if (statusbarIconId >= 0) {
-        const char* icon_name = (settings.wifiMode == settings::webserver::WiFiMode::AccessPoint)
-            ? "webserver_ap_white.png"
-            : "webserver_station_white.png";
-        auto icon_path = std::string("A:/system/service/Statusbar/assets/") + icon_name;
-        lvgl::statusbar_icon_set_image(statusbarIconId, icon_path);
+        lvgl::statusbar_icon_set_image(statusbarIconId, LVGL_ICON_STATUSBAR_CLOUD);
         lvgl::statusbar_icon_set_visibility(statusbarIconId, true);
         LOGGER.info("WebServer statusbar icon shown ({} mode)",
                  settings.wifiMode == settings::webserver::WiFiMode::AccessPoint ? "AP" : "Station");
@@ -763,20 +765,24 @@ esp_err_t WebServerService::handleFsList(httpd_req_t* request) {
 
     std::ostringstream json;
     json << "{\"path\":\"" << norm << "\",\"entries\":[";
-
+    struct FsIterContext {
+        std::ostringstream& json;
+        uint16_t count = 0;
+    };
+    FsIterContext fs_iter_context { json };
     // Special handling for root: show available mount points
     if (norm == "/") {
-        // Always show /data
-        json << "{\"name\":\"data\",\"type\":\"dir\",\"size\":0}";
-
-        // Show /sdcard if mounted
-        const auto sdcard_devices = hal::findDevices<hal::sdcard::SdCardDevice>(hal::Device::Type::SdCard);
-        for (const auto& sdcard : sdcard_devices) {
-            if (sdcard->isMounted()) {
-                json << ",{\"name\":\"sdcard\",\"type\":\"dir\",\"size\":0}";
-                break;
+        file_system_for_each(&fs_iter_context, [] (auto* fs, void* context) {
+            auto* fs_iter_context = static_cast<FsIterContext*>(context);
+            char path[128];
+            if (file_system_is_mounted(fs) && file_system_get_path(fs, path, sizeof(path)) == ERROR_NONE && strcmp(path, "/system") != 0) {
+                fs_iter_context->count++;
+                if (fs_iter_context->count != 1) fs_iter_context->json << ","; // add separator between json array entries
+                fs_iter_context->json << "{\"name\":\"" << path << "\",\"type\":\"dir\",\"size\":0}";
             }
-        }
+            return true;
+        });
+
         json << "]}";
     } else {
         std::vector<dirent> entries;
@@ -1159,34 +1165,38 @@ esp_err_t WebServerService::handleApiSysinfo(httpd_req_t* request) {
     json << "\"storage\":{";
     uint64_t storage_total = 0, storage_free = 0;
 
-    // Data partition
-    json << "\"data\":{";
-    if (esp_vfs_fat_info(file::MOUNT_POINT_DATA, &storage_total, &storage_free) == ESP_OK) {
-        json << "\"free\":" << storage_free << ",";
-        json << "\"total\":" << storage_total << ",";
-        json << "\"mounted\":true";
-    } else {
-        json << "\"mounted\":false";
-    }
-    json << "},";
+    struct FsIterContext {
+        std::ostringstream& json;
+        uint16_t count = 0;
+    };
+    FsIterContext fs_iter_context { json };
+    file_system_for_each(&fs_iter_context, [] (auto* fs, void* context) {
+        char mount_path[128] = "";
+        if (file_system_get_path(fs, mount_path, sizeof(mount_path)) != ERROR_NONE) return true;
+        if (strcmp(mount_path, "/system") == 0) return true; // Hide system partition
 
-    // SD card - check all sdcard devices
-    json << "\"sdcard\":{";
-    bool sdcard_found = false;
-    const auto sdcard_devices = hal::findDevices<hal::sdcard::SdCardDevice>(hal::Device::Type::SdCard);
-    for (const auto& sdcard : sdcard_devices) {
-        if (sdcard->isMounted() && esp_vfs_fat_info(sdcard->getMountPath().c_str(), &storage_total, &storage_free) == ESP_OK) {
-            json << "\"free\":" << storage_free << ",";
-            json << "\"total\":" << storage_total << ",";
-            json << "\"mounted\":true";
-            sdcard_found = true;
-            break;
+        bool mounted = file_system_is_mounted(fs);
+        auto* fs_iter_context = static_cast<FsIterContext*>(context);
+        auto& json_context = fs_iter_context->json;
+        std::string mount_path_cpp = mount_path;
+
+        fs_iter_context->count++;
+        if (fs_iter_context->count != 1) json_context << ","; // add separator between json array entries
+        json_context << "\"" << mount_path_cpp.substr(1) << "\":{";
+
+        uint64_t storage_total = 0, storage_free = 0;
+        if (esp_vfs_fat_info(mount_path, &storage_total, &storage_free) == ESP_OK) {
+            json_context << "\"free\":" << storage_free << ",";
+            json_context << "\"total\":" << storage_total << ",";
+        } else {
+            json_context << "\"free\":0,";
+            json_context << "\"total\":0,";
         }
-    }
-    if (!sdcard_found) {
-        json << "\"mounted\":false";
-    }
-    json << "}";
+
+        json_context << "\"mounted\":" << (mounted ? "true" : "false") << "";
+        json_context << "}";
+        return true;
+    });
 
     json << "},";  // end storage
 
@@ -1458,14 +1468,7 @@ esp_err_t WebServerService::handleApiScreenshot(httpd_req_t* request) {
 #if TT_FEATURE_SCREENSHOT_ENABLED
     // Determine save location: prefer SD card root if mounted, otherwise /data
     std::string save_path;
-    auto sdcard_devices = hal::findDevices<hal::sdcard::SdCardDevice>(hal::Device::Type::SdCard);
-    for (const auto& sdcard : sdcard_devices) {
-        if (sdcard->isMounted()) {
-            save_path = sdcard->getMountPath();
-            break;
-        }
-    }
-    if (save_path.empty()) {
+    if (!findFirstMountedSdCardPath(save_path)) {
         save_path = file::MOUNT_POINT_DATA;
     }
 
@@ -1542,7 +1545,7 @@ esp_err_t WebServerService::handleFsTree(httpd_req_t* request) {
     std::ostringstream json;
     json << "{";
     // Gather mount points
-    auto mounts = file::getMountPoints();
+    auto mounts = file::getFileSystemDirents();
     json << "\"mounts\": [";
     bool firstMount = true;
     for (auto& m : mounts) {

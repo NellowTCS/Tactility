@@ -3,7 +3,7 @@
 #include <Tactility/app/crashdiagnostics/QrHelpers.h>
 #include <Tactility/app/crashdiagnostics/QrUrl.h>
 #include <Tactility/app/launcher/Launcher.h>
-#include <Tactility/hal/Device.h>
+#include <tactility/hal/Device.h>
 #include <Tactility/Logger.h>
 #include <Tactility/lvgl/Statusbar.h>
 #include <Tactility/service/loader/Loader.h>
@@ -28,7 +28,7 @@ public:
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         auto* display = lv_obj_get_display(parent);
-        int32_t parent_height = lv_display_get_vertical_resolution(display) - lvgl::STATUSBAR_HEIGHT;
+        int32_t parent_height = lv_display_get_vertical_resolution(display) - lvgl::statusbar_get_height();
 
         lv_obj_add_event_cb(parent, onContinuePressed, LV_EVENT_SHORT_CLICKED, nullptr);
         auto* top_label = lv_label_create(parent);

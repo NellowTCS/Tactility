@@ -3,7 +3,11 @@
 #include <bindings/tlora_pager.h>
 #include <tactility/bindings/esp32_gpio.h>
 #include <tactility/bindings/esp32_i2c.h>
+#include <tactility/bindings/esp32_i2s.h>
+#include <tactility/bindings/esp32_spi.h>
+#include <tactility/bindings/esp32_uart.h>
 
+// Reference: https://wiki.lilygo.cc/get_started/en/LoRa_GPS/T-LoraPager/T-LoraPager.html#Pin-Overview
 / {
 	compatible = "lilygo,tlora-pager";
 	model = "LilyGO T-Lora Pager";
@@ -17,7 +21,41 @@
 		compatible = "espressif,esp32-i2c";
 		port = <I2C_NUM_0>;
 		clock-frequency = <100000>;
-		pin-sda = <3>;
-		pin-scl = <2>;
+		pin-sda = <&gpio0 3 GPIO_FLAG_NONE>;
+		pin-scl = <&gpio0 2 GPIO_FLAG_NONE>;
+	};
+
+	spi0 {
+		compatible = "espressif,esp32-spi";
+		host = <SPI2_HOST>;
+		pin-mosi = <&gpio0 34 GPIO_FLAG_NONE>;
+		pin-miso = <&gpio0 33 GPIO_FLAG_NONE>;
+		pin-sclk = <&gpio0 35 GPIO_FLAG_NONE>;
+	};
+
+	// ES8311
+	// TODO: init via I2C to enable audio playback
+	i2s0 {
+		compatible = "espressif,esp32-i2s";
+		port = <I2S_NUM_0>;
+		pin-bclk = <&gpio0 11 GPIO_FLAG_NONE>;
+		pin-ws = <&gpio0 18 GPIO_FLAG_NONE>;
+		pin-data-out = <&gpio0 45 GPIO_FLAG_NONE>;
+		pin-data-in = <&gpio0 17 GPIO_FLAG_NONE>;
+		pin-mclk = <&gpio0 10 GPIO_FLAG_NONE>;
+	};
+
+	uart_internal: uart0 {
+		compatible = "espressif,esp32-uart";
+		port = <UART_NUM_0>;
+		pin-tx = <&gpio0 12 GPIO_FLAG_NONE>;
+		pin-rx = <&gpio0 4 GPIO_FLAG_NONE>;
+	};
+
+	uart_external: uart1 {
+		compatible = "espressif,esp32-uart";
+		port = <UART_NUM_1>;
+		pin-tx = <&gpio0 43 GPIO_FLAG_NONE>;
+		pin-rx = <&gpio0 44 GPIO_FLAG_NONE>;
 	};
 };

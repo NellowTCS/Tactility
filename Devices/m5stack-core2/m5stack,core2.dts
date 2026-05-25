@@ -3,7 +3,13 @@
 #include <tactility/bindings/root.h>
 #include <tactility/bindings/esp32_gpio.h>
 #include <tactility/bindings/esp32_i2c.h>
+#include <tactility/bindings/esp32_i2s.h>
+#include <tactility/bindings/esp32_spi.h>
+#include <tactility/bindings/esp32_uart.h>
+#include <bindings/mpu6886.h>
+#include <bindings/bm8563.h>
 
+// Reference: https://docs.m5stack.com/en/core/Core2
 / {
 	compatible = "root";
 	model = "M5Stack Core2";
@@ -17,19 +23,52 @@
 		compatible = "espressif,esp32-i2c";
 		port = <I2C_NUM_0>;
 		clock-frequency = <400000>;
-		pin-sda = <21>;
-		pin-scl = <22>;
-		pin-sda-pullup;
-		pin-scl-pullup;
+		pin-sda = <&gpio0 21 GPIO_FLAG_NONE>;
+		pin-scl = <&gpio0 22 GPIO_FLAG_NONE>;
+
+		mpu6886 {
+			compatible = "invensense,mpu6886";
+			reg = <0x68>;
+		};
+
+		bm8563 {
+			compatible = "belling,bm8563";
+			reg = <0x51>;
+		};
 	};
 
 	i2c_port_a {
 		compatible = "espressif,esp32-i2c";
 		port = <I2C_NUM_1>;
 		clock-frequency = <400000>;
-		pin-sda = <32>;
-		pin-scl = <33>;
-		pin-sda-pullup;
-		pin-scl-pullup;
+		pin-sda = <&gpio0 32 GPIO_FLAG_NONE>;
+		pin-scl = <&gpio0 33 GPIO_FLAG_NONE>;
+	};
+
+	spi0 {
+		compatible = "espressif,esp32-spi";
+		host = <SPI2_HOST>;
+		pin-mosi = <&gpio0 23 GPIO_FLAG_NONE>;
+		pin-miso = <&gpio0 38 GPIO_FLAG_NONE>;
+		pin-sclk = <&gpio0 18 GPIO_FLAG_NONE>;
+	};
+
+	// NS4168: Speaker and microphone
+	// TODO: Init microphone via I2C: https://github.com/m5stack/M5Unified/blob/a6256725481f1bc366655fa48cf03b6095e30ad1/src/M5Unified.cpp#L391C19-L391C44
+	i2s0 {
+		compatible = "espressif,esp32-i2s";
+		port = <I2S_NUM_0>;
+		pin-bclk = <&gpio0 12 GPIO_FLAG_NONE>;
+		pin-ws = <&gpio0 0 GPIO_FLAG_NONE>;
+		pin-data-out = <&gpio0 2 GPIO_FLAG_NONE>;
+		pin-data-in = <&gpio0 34 GPIO_FLAG_NONE>;
+	};
+
+	uart_port_a: uart1 {
+		compatible = "espressif,esp32-uart";
+		status = "disabled";
+		port = <UART_NUM_1>;
+		pin-tx = <&gpio0 33 GPIO_FLAG_NONE>;
+		pin-rx = <&gpio0 32 GPIO_FLAG_NONE>;
 	};
 };

@@ -2,15 +2,13 @@
 #include "devices/Power.h"
 #include "devices/Constants.h"
 
+#include <tactility/log.h>
+#include <tactility/freertos/task.h>
+
 #include <Tactility/hal/Configuration.h>
-#include <Tactility/lvgl/LvglSync.h>
-#include <Tactility/Logger.h>
 #include <ButtonControl.h>
 
-#include "driver/gpio.h"
-#include "driver/i2c.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include <driver/gpio.h>
 
 static void enableOledPower() {
     gpio_config_t io_conf = {
@@ -24,7 +22,7 @@ static void enableOledPower() {
     gpio_set_level(DISPLAY_PIN_POWER, 0); // Active low
 
     vTaskDelay(pdMS_TO_TICKS(500)); // Add a small delay for power to stabilize
-    tt::Logger("HeltecV3").info("OLED power enabled");
+    LOG_I("HeltecV3", "OLED power enabled");
 }
 
 static bool initBoot() {
@@ -36,7 +34,7 @@ static bool initBoot() {
 
 using namespace tt::hal;
 
-static std::vector<std::shared_ptr<Device>> createDevices() {
+static std::vector<std::shared_ptr<tt::hal::Device>> createDevices() {
     return {
         createPower(),
         ButtonControl::createOneButtonControl(0),
@@ -46,7 +44,5 @@ static std::vector<std::shared_ptr<Device>> createDevices() {
 
 extern const Configuration hardwareConfiguration = {
     .initBoot = initBoot,
-    .uiScale = UiScale::Smallest,
-    .createDevices = createDevices,
-    .spi {},
+    .createDevices = createDevices
 };

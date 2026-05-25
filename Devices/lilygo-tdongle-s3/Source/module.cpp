@@ -12,11 +12,12 @@ static error_t stop() {
     return ERROR_NONE;
 }
 
-/** @warning The variable name must be exactly "device_module" */
-struct Module device_module = {
+struct Module lilygo_tdongle_s3_module = {
     .name = "lilygo-tdongle-s3",
     .start = start,
-    .stop = stop
+    .stop = stop,
+    .symbols = nullptr,
+    .internal = nullptr
 };
 
 }

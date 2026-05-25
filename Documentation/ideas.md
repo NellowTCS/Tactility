@@ -2,19 +2,33 @@
 
 ## Before release
 
+- Remove incubating flag from various devices
 - Add `// SPDX-License-Identifier: GPL-3.0-only` and `// SPDX-License-Identifier: Apache-2.0` to individual files in the project
-- Change ButtonControl to work with interrupts and xQueue
-- TCA9534 keyboards should use interrupts
-- GT911 drivers should use interrupts if it's stable
 - Elecrow Basic & Advance 3.5" memory issue: not enough memory for App Hub
 - App Hub crashes if you close it while an app is being installed
-- Fix glitches when installing app via App Hub with 4.3" Waveshare
 - Calculator bugs (see GitHub issue)
 - Try out speed optimizations: https://docs.espressif.com/projects/esp-faq/en/latest/software-framework/peripherals/lcd.html
   (relates to CONFIG_ESP32S3_DATA_CACHE_LINE_64B that is in use for RGB displays via the `device.properties` fix/workaround)
 
 ## Higher Priority
 
+- Make a root device type so it can be discovered more easily.
+- When device.py selects a new device, it should automatically delete the build dirs (build/, cmake-*/) when it detects that the platform has changed.
+- Add font design tokens such as "regular", "title" and "smaller". Perhaps via the LVGL kernel module.
+- Add kernel listening mechanism so that the root device init can be notified when a device becomes available: 
+  Callback for device/start stop with filtering on device type:
+    - on_before_start: e.g. to do the CS pin hack for SD card on a shared bus
+    - on_after_start: e.g. to initialize an I2S device via its I2C connection, once I2C becomes available
+    - on_before_stop: e.g. to stop using a device that was started before
+    - on_after_stop: ?
+- DTS: support for #defines
+- DTS: support for aliases
+- SPI kernel driver
+- iomux kernel driver
+- Kernel concepts for ELF loading (generic approach for GUI apps, console apps, libraries).
+- Fix glitches when installing app via App Hub with 4.3" Waveshare
+- TCA9534 keyboards should use interrupts
+- GT911 drivers should use interrupts if it's stable
 - Fix Cardputer (original): use LV_KEY_NEXT and _PREV in keyboard mapping instead of encoder driver hack (and check GPIO app if it then hangs too)
 - Logging with a function that uses std::format
 - Expose http::download() and main dispatcher to TactiltyC.
@@ -32,9 +46,12 @@
 - Support direct installation of an `.app` file with `tactility.py install helloworld.app <ip>`
 - Support `tactility.py target <ip>` to remember the device IP address.
 - minitar/untarFile(): "entry->metadata.path" can escape its confined path (e.g. "../something")
+- Refactor elf loader code to make it multi-platform and to support multiple types of executables
 
 ## Medium Priority
 
+- Filtering for apps in App Hub:
+  - apps that only work on a specific device
 - Diceware app has large "+" and "-' buttons on Cardputer. It should be smaller.
 - Create PwmRgbLedDevice class and implement it for all CYD devices
 - TactilityTool: Make API compatibility table (and check for compatibility in the tool itself)
@@ -47,14 +64,9 @@
 - Bug: Turn on WiFi (when testing it wasn't connected/connecting - just active). Open chat. Observe crash.
 - Bug: Crash handling app cannot be exited with an EncoderDevice. (current work-around is to manually reset the device)
 - I2C app should show error when I2C port is disabled when the scan button was manually pressed
-- TactilitySDK: Support automatic scanning of header files so that we can generate the `tt_init.cpp` symbols list.
-- elf_loader: split up symbol lists further (after radio support is implemented)
 
 ## Lower Priority
 
-- Rename `Lock::lock()` and `Lock::unlock()` to `Lock::acquire()` and `Lock::release()`?
-- elf_loader: make main() entry-point optional (so we can build libraries, or have the `manifest` as a global symbol)
-- Implement system suspend that turns off the screen
 - The boot button on some devices can be used as GPIO_NUM_0 at runtime
 - Localize all apps
 - Support hot-plugging SD card (note: this is not possible if they require the CS pin hack)
@@ -72,11 +84,11 @@
 - T-Deck: Use trackball as input device (with optional mouse functionality for LVGL)
 - Show a warning screen if firmware encryption or secure boot are off when saving WiFi credentials.
 - Remove flex_flow from app_container in Gui.cpp
-- Files app: copy/cut/paste actions
 - ElfAppManifest: change name (remove "manifest" as it's confusing), remove icon and title, publish snapshot SDK on CDN
-- `UiScale` implementation for devices like the CYD 2432S032C
 - Bug: CYD 2432S032C screen rotation fails due to touch driver issue
 - Calculator app should show regular text input field on non-touch devices that have a keyboard (Cardputer, T-Lora Pager)
+- Allow for WSAD keys to navigate LVGL (this is extra nice for cardputer, but just handy in general)
+- Create a "How to" app for a device. It could explain things like keyboard navigation on first start.
 
 # Nice-to-haves
 
@@ -115,28 +127,7 @@
 - Display touch calibration
 - RSS reader
 - Static file web server (with option to specify path and port)
-- Diceware
 - Port TamaFi https://github.com/cifertech/TamaFi
-
-# App Store
-
-- Register user
-    - Name
-    - Company
-    - Email
-    - Password
-- Create/destroy session
-- List apps
-    - Install app
-    - App ID
-    - App version
-- Add/remove API key
-- Upload app
-    - Category
-    - File
-    - Name
-    - Description
-- List apps
 
 # Notes on firmware size
 

@@ -12,6 +12,7 @@
 #include <Tactility/service/wifi/Wifi.h>
 
 #include <lvgl.h>
+#include <tactility/lvgl_icon_shared.h>
 #include <algorithm>
 #include <format>
 
@@ -30,7 +31,7 @@ class AppHubApp final : public App {
     std::vector<AppHubEntry> entries;
     Mutex mutex;
 
-    static std::shared_ptr<AppHubApp> _Nullable findAppInstance() {
+    static std::shared_ptr<AppHubApp> findAppInstance() {
         auto app_context = getCurrentAppContext();
         if (app_context->getManifest().appId != manifest.appId) {
             return nullptr;
@@ -178,6 +179,7 @@ public:
 extern const AppManifest manifest = {
     .appId = "AppHub",
     .appName = "App Hub",
+    .appIcon = LVGL_ICON_SHARED_HUB,
     .appCategory = Category::System,
     .createApp = create<AppHubApp>,
 };

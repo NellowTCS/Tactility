@@ -3,7 +3,10 @@
 #include <tactility/bindings/root.h>
 #include <tactility/bindings/esp32_gpio.h>
 #include <tactility/bindings/esp32_i2c.h>
+#include <tactility/bindings/esp32_spi.h>
+#include <bindings/qmi8658.h>
 
+// Reference: https://www.waveshare.com/wiki/ESP32-S3-LCD-1.3
 / {
 	compatible = "root";
 	model = "Waveshare S3 LCD 1.3";
@@ -17,9 +20,27 @@
 		compatible = "espressif,esp32-i2c";
 		port = <I2C_NUM_0>;
 		clock-frequency = <400000>;
-		pin-sda = <47>;
-		pin-scl = <48>;
-		pin-sda-pullup;
-		pin-scl-pullup;
+		pin-sda = <&gpio0 47 GPIO_FLAG_NONE>;
+		pin-scl = <&gpio0 48 GPIO_FLAG_NONE>;
+
+		qmi8658 {
+			compatible = "qst,qmi8658";
+			reg = <0x6B>;
+		};
+	};
+
+	spi0 {
+		compatible = "espressif,esp32-spi";
+		host = <SPI2_HOST>;
+		pin-mosi = <&gpio0 41 GPIO_FLAG_NONE>;
+		pin-sclk = <&gpio0 40 GPIO_FLAG_NONE>;
+	};
+
+	spi1 {
+		compatible = "espressif,esp32-spi";
+		host = <SPI3_HOST>;
+		pin-mosi = <&gpio0 18 GPIO_FLAG_NONE>;
+		pin-miso = <&gpio0 16 GPIO_FLAG_NONE>;
+		pin-sclk = <&gpio0 21 GPIO_FLAG_NONE>;
 	};
 };

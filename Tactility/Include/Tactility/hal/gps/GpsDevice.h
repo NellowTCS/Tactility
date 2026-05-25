@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../Device.h"
+#include <tactility/hal/Device.h>
 #include "GpsConfiguration.h"
 #include "Satellites.h"
 
@@ -48,7 +48,7 @@ private:
 
     const GpsConfiguration configuration;
     RecursiveMutex mutex;
-    std::unique_ptr<Thread> _Nullable thread;
+    std::unique_ptr<Thread> thread;
     bool threadInterrupted = false;
     std::vector<GgaSubscription> ggaSubscriptions;
     std::vector<RmcSubscription> rmcSubscriptions;
@@ -110,7 +110,7 @@ public:
         return lastRmcSubscriptionId;
     }
 
-    void unsubscribeRmc(GgaSubscriptionId subscriptionId) {
+    void unsubscribeRmc(RmcSubscriptionId subscriptionId) {
         auto lock = mutex.asScopedLock();
         lock.lock();
         std::erase_if(rmcSubscriptions, [subscriptionId](auto& subscription) { return subscription.id == subscriptionId; });

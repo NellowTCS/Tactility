@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Tactility/Lock.h>
 #include <tactility/check.h>
 #include <Tactility/hal/display/DisplayDevice.h>
 
@@ -10,12 +9,12 @@
 /** @deprecated use EspLcdDisplayV2 */
 class EspLcdDisplay : public tt::hal::display::DisplayDevice {
 
-    esp_lcd_panel_io_handle_t _Nullable ioHandle = nullptr;
-    esp_lcd_panel_handle_t _Nullable panelHandle = nullptr;
-    lv_display_t* _Nullable lvglDisplay = nullptr;
-    std::shared_ptr<tt::hal::display::DisplayDriver> _Nullable displayDriver;
-    std::shared_ptr<tt::Lock> lock;
-    lcd_rgb_element_order_t rgbElementOrder;
+    esp_lcd_panel_io_handle_t ioHandle = nullptr;
+    esp_lcd_panel_handle_t panelHandle = nullptr;
+    lv_display_t* lvglDisplay = nullptr;
+    std::shared_ptr<tt::hal::display::DisplayDriver> displayDriver;
+    /** @warning This is never changed, so a driver that needs BGR is not supported */
+    lcd_rgb_element_order_t rgbElementOrder = LCD_RGB_ELEMENT_ORDER_RGB;
 
 protected:
 
@@ -34,11 +33,9 @@ protected:
 
 public:
 
-    EspLcdDisplay(std::shared_ptr<tt::Lock> lock) : lock(lock) {}
+    EspLcdDisplay() = default;
 
     ~EspLcdDisplay() override;
-
-    std::shared_ptr<tt::Lock> getLock() const { return lock; }
 
     bool start() final;
 
@@ -52,7 +49,7 @@ public:
 
     bool stopLvgl() final;
 
-    lv_display_t* _Nullable getLvglDisplay() const final { return lvglDisplay; }
+    lv_display_t* getLvglDisplay() const final { return lvglDisplay; }
 
     // endregion
 
@@ -61,7 +58,7 @@ public:
     bool supportsDisplayDriver() const override { return true; }
 
     /** @return a NativeDisplay instance if this device supports it */
-    std::shared_ptr<tt::hal::display::DisplayDriver> _Nullable getDisplayDriver() final;
+    std::shared_ptr<tt::hal::display::DisplayDriver> getDisplayDriver() final;
 
     // endregion
 };

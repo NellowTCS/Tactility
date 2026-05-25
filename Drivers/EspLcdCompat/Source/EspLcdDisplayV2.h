@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Tactility/Lock.h>
 #include <tactility/check.h>
 #include <Tactility/hal/display/DisplayDevice.h>
 #include <esp_lcd_panel_dev.h>
@@ -21,6 +20,8 @@ struct EspLcdConfiguration {
     bool mirrorY;
     bool invertColor;
     uint32_t bufferSize; // Size in pixel count. 0 means default, which is 1/10 of the screen size
+    bool swRotate = false; // Use LVGL software rotation instead of hardware swap_xy (required for MIPI-DSI panels that don't support swap_xy)
+    bool buffSpiram = false; // Allocate LVGL draw buffers from PSRAM instead of DMA-capable internal SRAM (required when sw_rotate needs a 3rd buffer that won't fit in internal SRAM)
     std::shared_ptr<tt::hal::touch::TouchDevice> touch;
     std::function<void(uint8_t)> _Nullable backlightDutyFunction;
     gpio_num_t resetPin;
@@ -35,7 +36,6 @@ class EspLcdDisplayV2 : public tt::hal::display::DisplayDevice {
     esp_lcd_panel_handle_t _Nullable panelHandle = nullptr;
     lv_display_t* _Nullable lvglDisplay = nullptr;
     std::shared_ptr<tt::hal::display::DisplayDriver> _Nullable displayDriver;
-    std::shared_ptr<tt::Lock> lock;
     std::shared_ptr<EspLcdConfiguration> configuration;
 
     bool applyConfiguration() const;
@@ -67,17 +67,11 @@ protected:
 
 public:
 
-    EspLcdDisplayV2(const std::shared_ptr<EspLcdConfiguration>& configuration, const std::shared_ptr<tt::Lock>& lock) :
-        lock(lock),
+    explicit EspLcdDisplayV2(const std::shared_ptr<EspLcdConfiguration>& configuration) :
         configuration(configuration)
-    {
-        assert(configuration != nullptr);
-        assert(lock != nullptr);
-    }
+    {}
 
     ~EspLcdDisplayV2() override;
-
-    std::shared_ptr<tt::Lock> getLock() const { return lock; }
 
     bool start() final;
 

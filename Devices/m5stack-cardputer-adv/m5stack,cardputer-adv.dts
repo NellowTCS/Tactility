@@ -3,7 +3,12 @@
 #include <tactility/bindings/root.h>
 #include <tactility/bindings/esp32_gpio.h>
 #include <tactility/bindings/esp32_i2c.h>
+#include <tactility/bindings/esp32_i2s.h>
+#include <tactility/bindings/esp32_spi.h>
+#include <tactility/bindings/esp32_uart.h>
+#include <bindings/bmi270.h>
 
+// Reference: https://docs.m5stack.com/en/core/Cardputer-Adv
 / {
 	compatible = "root";
 	model = "M5Stack Cardputer Adv";
@@ -17,19 +22,53 @@
 		compatible = "espressif,esp32-i2c";
 		port = <I2C_NUM_0>;
 		clock-frequency = <400000>;
-		pin-sda = <8>;
-		pin-scl = <9>;
-		pin-sda-pullup;
-		pin-scl-pullup;
+		pin-sda = <&gpio0 8 GPIO_FLAG_NONE>;
+		pin-scl = <&gpio0 9 GPIO_FLAG_NONE>;
+
+		bmi270 {
+			compatible = "bosch,bmi270";
+			reg = <0x69>;
+		};
 	};
 
 	i2c_port_a {
 		compatible = "espressif,esp32-i2c";
 		port = <I2C_NUM_1>;
 		clock-frequency = <400000>;
-		pin-sda = <2>;
-		pin-scl = <1>;
-		pin-sda-pullup;
-		pin-scl-pullup;
+		pin-sda = <&gpio0 2 GPIO_FLAG_NONE>;
+		pin-scl = <&gpio0 1 GPIO_FLAG_NONE>;
+	};
+
+	display_spi: spi0 {
+		compatible = "espressif,esp32-spi";
+		host = <SPI2_HOST>;
+		pin-mosi = <&gpio0 35 GPIO_FLAG_NONE>;
+		pin-sclk = <&gpio0 36 GPIO_FLAG_NONE>;
+	};
+
+	sdcard_spi: spi1 {
+		compatible = "espressif,esp32-spi";
+		host = <SPI3_HOST>;
+		pin-mosi = <&gpio0 14 GPIO_FLAG_NONE>;
+		pin-miso = <&gpio0 39 GPIO_FLAG_NONE>;
+		pin-sclk = <&gpio0 40 GPIO_FLAG_NONE>;
+	};
+
+	// Speaker and microphone (ES8311)
+	i2s0 {
+		compatible = "espressif,esp32-i2s";
+		port = <I2S_NUM_0>;
+		pin-bclk = <&gpio0 41 GPIO_FLAG_NONE>;
+		pin-ws = <&gpio0 43 GPIO_FLAG_NONE>;
+		pin-data-out = <&gpio0 42 GPIO_FLAG_NONE>;
+		pin-data-in = <&gpio0 46 GPIO_FLAG_NONE>;
+	};
+
+	uart_port_a: uart1 {
+		compatible = "espressif,esp32-uart";
+		status = "disabled";
+		port = <UART_NUM_1>;
+		pin-tx = <&gpio0 1 GPIO_FLAG_NONE>;
+		pin-rx = <&gpio0 2 GPIO_FLAG_NONE>;
 	};
 };

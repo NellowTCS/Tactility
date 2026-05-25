@@ -5,10 +5,8 @@
 #include "tt_app_selectiondialog.h"
 #include "tt_bundle.h"
 #include "tt_gps.h"
-#include "tt_hal.h"
 #include "tt_hal_device.h"
 #include "tt_hal_display.h"
-#include "tt_hal_gpio.h"
 #include "tt_hal_touch.h"
 #include "tt_hal_uart.h"
 #include <tt_lock.h>
@@ -20,37 +18,49 @@
 #include "tt_time.h"
 #include "tt_wifi.h"
 
+#include "symbols/cplusplus.h"
 #include "symbols/esp_event.h"
 #include "symbols/esp_http_client.h"
+#include "symbols/freertos.h"
+#include "symbols/gcc_soft_float.h"
+#include "symbols/mbedtls.h"
 #include "symbols/pthread.h"
 #include "symbols/stl.h"
 #include "symbols/string.h"
-#include "symbols/cplusplus.h"
-#include "symbols/freertos.h"
-#include "symbols/gcc_soft_float.h"
 
-#include <cstring>
-#include <ctype.h>
 #include <cassert>
-#include <getopt.h>
 #include <cmath>
+#include <cstring>
 #include <ctime>
-#include <setjmp.h>
-#include <sys/errno.h>
-#include <sys/unistd.h>
-
+#include <ctype.h>
+#include <driver/ledc.h>
+#include <getopt.h>
+#include <dirent.h>
 #include <esp_log.h>
 #include <esp_random.h>
 #include <esp_sntp.h>
 #include <esp_netif.h>
-#include <dirent.h>
-#include <sys/stat.h>
-#include <time.h>
+#include <esp_heap_caps.h>
+#include <esp_timer.h>
 #include <fcntl.h>
 #include <lwip/sockets.h>
-
-#include <lvgl.h>
+#include <lwip/netdb.h>
+#include <lwip/inet.h>
+#include <miniz.h>
+#include <sys/select.h>
+#include <locale.h>
+#include <setjmp.h>
+#include <strings.h>
+#include <sys/errno.h>
+#include <sys/stat.h>
+#include <sys/unistd.h>
 #include <vector>
+
+#include <Tactility/Tactility.h>
+
+#include <driver/i2s_common.h>
+#include <driver/i2s_std.h>
+#include <driver/gpio.h>
 
 extern "C" {
 
@@ -79,17 +89,79 @@ const esp_elfsym main_symbols[] {
     ESP_ELFSYM_EXPORT(close),
     ESP_ELFSYM_EXPORT(rmdir),
     ESP_ELFSYM_EXPORT(unlink),
+    // strings.h
+    ESP_ELFSYM_EXPORT(explicit_bzero),
+    ESP_ELFSYM_EXPORT(strcasecmp),
+    ESP_ELFSYM_EXPORT(strncasecmp),
     // time.h
     ESP_ELFSYM_EXPORT(clock_gettime),
     ESP_ELFSYM_EXPORT(strftime),
     ESP_ELFSYM_EXPORT(time),
+    ESP_ELFSYM_EXPORT(difftime),
     ESP_ELFSYM_EXPORT(localtime_r),
     ESP_ELFSYM_EXPORT(localtime),
+    ESP_ELFSYM_EXPORT(mktime),
     // esp_sntp.h
     ESP_ELFSYM_EXPORT(sntp_get_sync_status),
     // math.h
+    ESP_ELFSYM_EXPORT(acos),
+    ESP_ELFSYM_EXPORT(acoshf),
+    ESP_ELFSYM_EXPORT(acosf),
+    ESP_ELFSYM_EXPORT(asin),
+    ESP_ELFSYM_EXPORT(asinhf),
+    ESP_ELFSYM_EXPORT(asinf),
+    ESP_ELFSYM_EXPORT(atan),
+    ESP_ELFSYM_EXPORT(atanhf),
+    ESP_ELFSYM_EXPORT(atanf),
     ESP_ELFSYM_EXPORT(cos),
+    ESP_ELFSYM_EXPORT(coshf),
+    ESP_ELFSYM_EXPORT(cosf),
     ESP_ELFSYM_EXPORT(sin),
+    ESP_ELFSYM_EXPORT(sinhf),
+    ESP_ELFSYM_EXPORT(sinf),
+    ESP_ELFSYM_EXPORT(tan),
+    ESP_ELFSYM_EXPORT(tanhf),
+    ESP_ELFSYM_EXPORT(tanf),
+    ESP_ELFSYM_EXPORT(frexp),
+    ESP_ELFSYM_EXPORT(frexpf),
+    ESP_ELFSYM_EXPORT(modf),
+    ESP_ELFSYM_EXPORT(modff),
+    ESP_ELFSYM_EXPORT(ceil),
+    ESP_ELFSYM_EXPORT(ceilf),
+    ESP_ELFSYM_EXPORT(fabs),
+    ESP_ELFSYM_EXPORT(fabsf),
+    ESP_ELFSYM_EXPORT(floor),
+    ESP_ELFSYM_EXPORT(floorf),
+    ESP_ELFSYM_EXPORT(fmax),
+    ESP_ELFSYM_EXPORT(fmaxf),
+    ESP_ELFSYM_EXPORT(fmin),
+    ESP_ELFSYM_EXPORT(fminf),
+    ESP_ELFSYM_EXPORT(round),
+    ESP_ELFSYM_EXPORT(roundf),
+#ifndef _REENT_ONLY
+    ESP_ELFSYM_EXPORT(acos),
+    ESP_ELFSYM_EXPORT(acosf),
+    ESP_ELFSYM_EXPORT(asin),
+    ESP_ELFSYM_EXPORT(asinf),
+    ESP_ELFSYM_EXPORT(atan2),
+    ESP_ELFSYM_EXPORT(atan2f),
+    ESP_ELFSYM_EXPORT(sinh),
+    ESP_ELFSYM_EXPORT(sinhf),
+    ESP_ELFSYM_EXPORT(exp),
+    ESP_ELFSYM_EXPORT(expf),
+    ESP_ELFSYM_EXPORT(ldexp),
+    ESP_ELFSYM_EXPORT(ldexpf),
+    ESP_ELFSYM_EXPORT(log),
+    ESP_ELFSYM_EXPORT(logf),
+    ESP_ELFSYM_EXPORT(log10),
+    ESP_ELFSYM_EXPORT(log10f),
+    ESP_ELFSYM_EXPORT(pow),
+    ESP_ELFSYM_EXPORT(powf),
+    ESP_ELFSYM_EXPORT(sqrt),
+    ESP_ELFSYM_EXPORT(sqrtf),
+    ESP_ELFSYM_EXPORT(fmod),
+    ESP_ELFSYM_EXPORT(fmodf),
+#endif
     // sys/errno.h
     ESP_ELFSYM_EXPORT(__errno),
     // freertos_tasks_c_additions.h
@@ -112,6 +184,7 @@ const esp_elfsym main_symbols[] {
     // cassert
     ESP_ELFSYM_EXPORT(__assert_func),
     // cstdio
+    ESP_ELFSYM_EXPORT(abort),
     ESP_ELFSYM_EXPORT(fclose),
     ESP_ELFSYM_EXPORT(feof),
     ESP_ELFSYM_EXPORT(ferror),
@@ -120,6 +193,7 @@ const esp_elfsym main_symbols[] {
     ESP_ELFSYM_EXPORT(fgetpos),
     ESP_ELFSYM_EXPORT(fgets),
     ESP_ELFSYM_EXPORT(fopen),
+    ESP_ELFSYM_EXPORT(freopen),
     ESP_ELFSYM_EXPORT(fputc),
     ESP_ELFSYM_EXPORT(fputs),
     ESP_ELFSYM_EXPORT(fprintf),
@@ -151,13 +225,18 @@ const esp_elfsym main_symbols[] {
     ESP_ELFSYM_EXPORT(strtod),
     ESP_ELFSYM_EXPORT(strrchr),
     ESP_ELFSYM_EXPORT(strtol),
+    ESP_ELFSYM_EXPORT(strtoul),
     ESP_ELFSYM_EXPORT(strcspn),
     ESP_ELFSYM_EXPORT(strncat),
+    ESP_ELFSYM_EXPORT(strpbrk),
+    ESP_ELFSYM_EXPORT(strspn),
+    ESP_ELFSYM_EXPORT(strcoll),
     ESP_ELFSYM_EXPORT(memset),
     ESP_ELFSYM_EXPORT(memcpy),
     ESP_ELFSYM_EXPORT(memcmp),
     ESP_ELFSYM_EXPORT(memchr),
     ESP_ELFSYM_EXPORT(memmove),
+
     // ctype
     ESP_ELFSYM_EXPORT(isalnum),
     ESP_ELFSYM_EXPORT(isalpha),
@@ -207,7 +286,6 @@ const esp_elfsym main_symbols[] {
     ESP_ELFSYM_EXPORT(tt_bundle_put_string),
     ESP_ELFSYM_EXPORT(tt_gps_has_coordinates),
     ESP_ELFSYM_EXPORT(tt_gps_get_coordinates),
-    ESP_ELFSYM_EXPORT(tt_hal_configuration_get_ui_scale),
     ESP_ELFSYM_EXPORT(tt_hal_device_find),
     ESP_ELFSYM_EXPORT(tt_hal_display_driver_alloc),
     ESP_ELFSYM_EXPORT(tt_hal_display_driver_draw_bitmap),
@@ -218,8 +296,6 @@ const esp_elfsym main_symbols[] {
     ESP_ELFSYM_EXPORT(tt_hal_display_driver_lock),
     ESP_ELFSYM_EXPORT(tt_hal_display_driver_unlock),
     ESP_ELFSYM_EXPORT(tt_hal_display_driver_supported),
-    ESP_ELFSYM_EXPORT(tt_hal_gpio_get_level),
-    ESP_ELFSYM_EXPORT(tt_hal_gpio_get_pin_count),
     ESP_ELFSYM_EXPORT(tt_hal_touch_driver_supported),
     ESP_ELFSYM_EXPORT(tt_hal_touch_driver_alloc),
     ESP_ELFSYM_EXPORT(tt_hal_touch_driver_free),
@@ -284,300 +360,7 @@ const esp_elfsym main_symbols[] {
     ESP_ELFSYM_EXPORT(tt_wifi_get_rssi),
     // tt::lvgl
     ESP_ELFSYM_EXPORT(tt_lvgl_spinner_create),
-    // lv_event
-    ESP_ELFSYM_EXPORT(lv_event_get_code),
-    ESP_ELFSYM_EXPORT(lv_event_get_indev),
-    ESP_ELFSYM_EXPORT(lv_event_get_key),
-    ESP_ELFSYM_EXPORT(lv_event_get_param),
-    ESP_ELFSYM_EXPORT(lv_event_get_scroll_anim),
-    ESP_ELFSYM_EXPORT(lv_event_get_user_data),
-    ESP_ELFSYM_EXPORT(lv_event_get_target_obj),
-    ESP_ELFSYM_EXPORT(lv_event_get_target),
-    ESP_ELFSYM_EXPORT(lv_event_get_current_target_obj),
-    ESP_ELFSYM_EXPORT(lv_event_get_draw_task),
-    // lv_obj
-    ESP_ELFSYM_EXPORT(lv_color_hex),
-    ESP_ELFSYM_EXPORT(lv_color_make),
-    ESP_ELFSYM_EXPORT(lv_obj_center),
-    ESP_ELFSYM_EXPORT(lv_obj_clean),
-    ESP_ELFSYM_EXPORT(lv_obj_clear_flag),
-    ESP_ELFSYM_EXPORT(lv_obj_create),
-    ESP_ELFSYM_EXPORT(lv_obj_delete),
-    ESP_ELFSYM_EXPORT(lv_obj_add_event_cb),
-    ESP_ELFSYM_EXPORT(lv_obj_add_flag),
-    ESP_ELFSYM_EXPORT(lv_obj_add_state),
-    ESP_ELFSYM_EXPORT(lv_obj_align),
-    ESP_ELFSYM_EXPORT(lv_obj_align_to),
-    ESP_ELFSYM_EXPORT(lv_obj_get_parent),
-    ESP_ELFSYM_EXPORT(lv_obj_get_height),
-    ESP_ELFSYM_EXPORT(lv_obj_get_width),
-    ESP_ELFSYM_EXPORT(lv_obj_get_coords),
-    ESP_ELFSYM_EXPORT(lv_obj_get_x),
-    ESP_ELFSYM_EXPORT(lv_obj_get_display),
-    ESP_ELFSYM_EXPORT(lv_obj_get_y),
-    ESP_ELFSYM_EXPORT(lv_obj_get_content_width),
-    ESP_ELFSYM_EXPORT(lv_obj_get_content_height),
-    ESP_ELFSYM_EXPORT(lv_obj_get_group),
-    ESP_ELFSYM_EXPORT(lv_obj_get_user_data),
-    ESP_ELFSYM_EXPORT(lv_obj_get_state),
-    ESP_ELFSYM_EXPORT(lv_obj_has_flag),
-    ESP_ELFSYM_EXPORT(lv_obj_has_flag_any),
-    ESP_ELFSYM_EXPORT(lv_obj_has_state),
-    ESP_ELFSYM_EXPORT(lv_obj_invalidate),
-    ESP_ELFSYM_EXPORT(lv_obj_is_valid),
-    ESP_ELFSYM_EXPORT(lv_obj_remove_event_cb),
-    ESP_ELFSYM_EXPORT(lv_obj_remove_flag),
-    ESP_ELFSYM_EXPORT(lv_obj_remove_state),
-    ESP_ELFSYM_EXPORT(lv_obj_set_pos),
-    ESP_ELFSYM_EXPORT(lv_obj_set_flex_align),
-    ESP_ELFSYM_EXPORT(lv_obj_set_flex_flow),
-    ESP_ELFSYM_EXPORT(lv_obj_set_flex_grow),
-    ESP_ELFSYM_EXPORT(lv_obj_set_layout),
-    ESP_ELFSYM_EXPORT(lv_obj_is_layout_positioned),
-    ESP_ELFSYM_EXPORT(lv_obj_mark_layout_as_dirty),
-    ESP_ELFSYM_EXPORT(lv_obj_get_style_layout),
-    ESP_ELFSYM_EXPORT(lv_obj_update_layout),
-    ESP_ELFSYM_EXPORT(lv_obj_set_scroll_dir),
-    ESP_ELFSYM_EXPORT(lv_obj_scroll_to_view),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_radius),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_border_width),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_border_color),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_border_opa),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_line_width),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_line_color),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_line_opa),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_line_rounded),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_opa),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_bg_color),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_bg_opa),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_bg_image_src),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_bg_image_opa),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_bg_image_recolor),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_bg_image_recolor_opa),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_margin_hor),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_margin_ver),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_margin_top),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_margin_bottom),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_margin_left),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_margin_right),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_margin_all),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_pad_all),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_pad_hor),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_pad_ver),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_pad_top),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_pad_bottom),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_pad_left),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_pad_right),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_pad_column),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_pad_row),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_border_post),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_border_side),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_opa),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_align),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_color),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_font),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_decor),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_letter_space),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_line_space),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_color),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_opa),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_text_outline_stroke_width),
-    ESP_ELFSYM_EXPORT(lv_obj_set_user_data),
-    ESP_ELFSYM_EXPORT(lv_obj_set_align),
-    ESP_ELFSYM_EXPORT(lv_obj_set_x),
-    ESP_ELFSYM_EXPORT(lv_obj_set_y),
-    ESP_ELFSYM_EXPORT(lv_obj_set_size),
-    ESP_ELFSYM_EXPORT(lv_obj_set_width),
-    ESP_ELFSYM_EXPORT(lv_obj_set_height),
-    ESP_ELFSYM_EXPORT(lv_obj_send_event),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_outline_color),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_outline_width),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_outline_pad),
-    ESP_ELFSYM_EXPORT(lv_obj_set_style_outline_opa),
-    ESP_ELFSYM_EXPORT(lv_obj_scroll_to_y),
-    ESP_ELFSYM_EXPORT(lv_obj_set_scrollbar_mode),
-    ESP_ELFSYM_EXPORT(lv_obj_get_child_count),
-    ESP_ELFSYM_EXPORT(lv_obj_get_child),
-    // lv_font
-    ESP_ELFSYM_EXPORT(lv_font_get_default),
-    // lv_theme
-    ESP_ELFSYM_EXPORT(lv_theme_get_color_primary),
-    ESP_ELFSYM_EXPORT(lv_theme_get_color_secondary),
-    ESP_ELFSYM_EXPORT(lv_theme_get_font_small),
-    ESP_ELFSYM_EXPORT(lv_theme_get_font_normal),
-    ESP_ELFSYM_EXPORT(lv_theme_get_font_large),
-    // lv_button
-    ESP_ELFSYM_EXPORT(lv_button_create),
-    // lv_buttonmatrix
-    ESP_ELFSYM_EXPORT(lv_buttonmatrix_create),
-    ESP_ELFSYM_EXPORT(lv_buttonmatrix_get_button_text),
-    ESP_ELFSYM_EXPORT(lv_buttonmatrix_get_map),
-    ESP_ELFSYM_EXPORT(lv_buttonmatrix_get_one_checked),
-    ESP_ELFSYM_EXPORT(lv_buttonmatrix_get_selected_button),
-    ESP_ELFSYM_EXPORT(lv_buttonmatrix_set_button_ctrl),
-    ESP_ELFSYM_EXPORT(lv_buttonmatrix_set_button_ctrl_all),
-    ESP_ELFSYM_EXPORT(lv_buttonmatrix_set_ctrl_map),
-    ESP_ELFSYM_EXPORT(lv_buttonmatrix_set_map),
-    ESP_ELFSYM_EXPORT(lv_buttonmatrix_set_one_checked),
-    ESP_ELFSYM_EXPORT(lv_buttonmatrix_set_button_width),
-    ESP_ELFSYM_EXPORT(lv_buttonmatrix_set_selected_button),
-    // lv_label
-    ESP_ELFSYM_EXPORT(lv_label_create),
-    ESP_ELFSYM_EXPORT(lv_label_cut_text),
-    ESP_ELFSYM_EXPORT(lv_label_get_long_mode),
-    ESP_ELFSYM_EXPORT(lv_label_set_long_mode),
-    ESP_ELFSYM_EXPORT(lv_label_get_text),
-    ESP_ELFSYM_EXPORT(lv_label_set_text),
-    ESP_ELFSYM_EXPORT(lv_label_set_text_fmt),
-    // lv_switch
-    ESP_ELFSYM_EXPORT(lv_switch_create),
-    // lv_checkbox
-    ESP_ELFSYM_EXPORT(lv_checkbox_create),
-    ESP_ELFSYM_EXPORT(lv_checkbox_set_text),
-    ESP_ELFSYM_EXPORT(lv_checkbox_get_text),
-    ESP_ELFSYM_EXPORT(lv_checkbox_set_text_static),
-    // lv_bar
-    ESP_ELFSYM_EXPORT(lv_bar_create),
-    ESP_ELFSYM_EXPORT(lv_bar_get_max_value),
-    ESP_ELFSYM_EXPORT(lv_bar_get_min_value),
-    ESP_ELFSYM_EXPORT(lv_bar_get_mode),
-    ESP_ELFSYM_EXPORT(lv_bar_get_start_value),
-    ESP_ELFSYM_EXPORT(lv_bar_get_value),
-    ESP_ELFSYM_EXPORT(lv_bar_set_mode),
-    ESP_ELFSYM_EXPORT(lv_bar_set_range),
-    ESP_ELFSYM_EXPORT(lv_bar_set_start_value),
-    ESP_ELFSYM_EXPORT(lv_bar_set_value),
-    ESP_ELFSYM_EXPORT(lv_bar_is_symmetrical),
-    // lv_dropdown
-    ESP_ELFSYM_EXPORT(lv_dropdown_create),
-    ESP_ELFSYM_EXPORT(lv_dropdown_add_option),
-    ESP_ELFSYM_EXPORT(lv_dropdown_clear_options),
-    ESP_ELFSYM_EXPORT(lv_dropdown_close),
-    ESP_ELFSYM_EXPORT(lv_dropdown_get_dir),
-    ESP_ELFSYM_EXPORT(lv_dropdown_get_list),
-    ESP_ELFSYM_EXPORT(lv_dropdown_get_option_count),
-    ESP_ELFSYM_EXPORT(lv_dropdown_get_option_index),
-    ESP_ELFSYM_EXPORT(lv_dropdown_get_options),
-    ESP_ELFSYM_EXPORT(lv_dropdown_get_selected),
-    ESP_ELFSYM_EXPORT(lv_dropdown_get_selected_str),
-    ESP_ELFSYM_EXPORT(lv_dropdown_get_selected_highlight),
-    ESP_ELFSYM_EXPORT(lv_dropdown_set_dir),
-    ESP_ELFSYM_EXPORT(lv_dropdown_set_options),
-    ESP_ELFSYM_EXPORT(lv_dropdown_set_options_static),
-    ESP_ELFSYM_EXPORT(lv_dropdown_set_selected),
-    ESP_ELFSYM_EXPORT(lv_dropdown_set_selected_highlight),
-    ESP_ELFSYM_EXPORT(lv_dropdown_set_symbol),
-    ESP_ELFSYM_EXPORT(lv_dropdown_set_text),
-    ESP_ELFSYM_EXPORT(lv_dropdown_open),
-    // lv_list
-    ESP_ELFSYM_EXPORT(lv_list_create),
-    ESP_ELFSYM_EXPORT(lv_list_add_text),
-    ESP_ELFSYM_EXPORT(lv_list_add_button),
-    ESP_ELFSYM_EXPORT(lv_list_get_button_text),
-    ESP_ELFSYM_EXPORT(lv_list_set_button_text),
-    // lv_textarea
-    ESP_ELFSYM_EXPORT(lv_textarea_create),
-    ESP_ELFSYM_EXPORT(lv_textarea_get_accepted_chars),
-    ESP_ELFSYM_EXPORT(lv_textarea_get_label),
-    ESP_ELFSYM_EXPORT(lv_textarea_get_max_length),
-    ESP_ELFSYM_EXPORT(lv_textarea_get_one_line),
-    ESP_ELFSYM_EXPORT(lv_textarea_get_text),
-    ESP_ELFSYM_EXPORT(lv_textarea_get_text_selection),
-    ESP_ELFSYM_EXPORT(lv_textarea_set_one_line),
-    ESP_ELFSYM_EXPORT(lv_textarea_set_accepted_chars),
-    ESP_ELFSYM_EXPORT(lv_textarea_set_align),
-    ESP_ELFSYM_EXPORT(lv_textarea_set_password_bullet),
-    ESP_ELFSYM_EXPORT(lv_textarea_set_password_mode),
-    ESP_ELFSYM_EXPORT(lv_textarea_set_password_show_time),
-    ESP_ELFSYM_EXPORT(lv_textarea_set_placeholder_text),
-    ESP_ELFSYM_EXPORT(lv_textarea_set_text),
-    ESP_ELFSYM_EXPORT(lv_textarea_set_text_selection),
-    ESP_ELFSYM_EXPORT(lv_textarea_set_max_length),
-    ESP_ELFSYM_EXPORT(lv_textarea_set_cursor_click_pos),
-    ESP_ELFSYM_EXPORT(lv_textarea_add_text),
-    // lv_palette
-    ESP_ELFSYM_EXPORT(lv_palette_main),
-    ESP_ELFSYM_EXPORT(lv_palette_darken),
-    ESP_ELFSYM_EXPORT(lv_palette_lighten),
-    // lv_display
-    ESP_ELFSYM_EXPORT(lv_display_get_default),
-    ESP_ELFSYM_EXPORT(lv_display_get_horizontal_resolution),
-    ESP_ELFSYM_EXPORT(lv_display_get_vertical_resolution),
-    ESP_ELFSYM_EXPORT(lv_display_get_physical_horizontal_resolution),
-    ESP_ELFSYM_EXPORT(lv_display_get_physical_vertical_resolution),
-    ESP_ELFSYM_EXPORT(lv_display_dpx),
-    // lv_pct
-    ESP_ELFSYM_EXPORT(lv_pct),
-    ESP_ELFSYM_EXPORT(lv_pct_to_px),
-    // lv_spinbox
-    ESP_ELFSYM_EXPORT(lv_spinbox_create),
-    ESP_ELFSYM_EXPORT(lv_spinbox_decrement),
-    ESP_ELFSYM_EXPORT(lv_spinbox_get_rollover),
-    ESP_ELFSYM_EXPORT(lv_spinbox_get_step),
-    ESP_ELFSYM_EXPORT(lv_spinbox_get_value),
-    ESP_ELFSYM_EXPORT(lv_spinbox_increment),
-    ESP_ELFSYM_EXPORT(lv_spinbox_set_rollover),
-    ESP_ELFSYM_EXPORT(lv_spinbox_set_step),
-    ESP_ELFSYM_EXPORT(lv_spinbox_set_range),
-    ESP_ELFSYM_EXPORT(lv_spinbox_set_digit_format),
-    ESP_ELFSYM_EXPORT(lv_spinbox_set_digit_step_direction),
-    ESP_ELFSYM_EXPORT(lv_spinbox_set_value),
-    ESP_ELFSYM_EXPORT(lv_spinbox_set_cursor_pos),
-    ESP_ELFSYM_EXPORT(lv_spinbox_step_next),
-    ESP_ELFSYM_EXPORT(lv_spinbox_step_prev),
-    // lv_indev
-    ESP_ELFSYM_EXPORT(lv_indev_get_type),
-    ESP_ELFSYM_EXPORT(lv_indev_get_point),
-    ESP_ELFSYM_EXPORT(lv_indev_get_display),
-    ESP_ELFSYM_EXPORT(lv_indev_get_key),
-    ESP_ELFSYM_EXPORT(lv_indev_get_gesture_dir),
-    ESP_ELFSYM_EXPORT(lv_indev_get_state),
-    ESP_ELFSYM_EXPORT(lv_indev_active),
-    // lv_timer
-    ESP_ELFSYM_EXPORT(lv_timer_handler),
-    ESP_ELFSYM_EXPORT(lv_timer_handler_run_in_period),
-    ESP_ELFSYM_EXPORT(lv_timer_periodic_handler),
-    ESP_ELFSYM_EXPORT(lv_timer_handler_set_resume_cb),
-    ESP_ELFSYM_EXPORT(lv_timer_create_basic),
-    ESP_ELFSYM_EXPORT(lv_timer_create),
-    ESP_ELFSYM_EXPORT(lv_timer_delete),
-    ESP_ELFSYM_EXPORT(lv_timer_pause),
-    ESP_ELFSYM_EXPORT(lv_timer_resume),
-    ESP_ELFSYM_EXPORT(lv_timer_set_cb),
-    ESP_ELFSYM_EXPORT(lv_timer_set_period),
-    ESP_ELFSYM_EXPORT(lv_timer_ready),
-    ESP_ELFSYM_EXPORT(lv_timer_set_repeat_count),
-    ESP_ELFSYM_EXPORT(lv_timer_set_auto_delete),
-    ESP_ELFSYM_EXPORT(lv_timer_set_user_data),
-    ESP_ELFSYM_EXPORT(lv_timer_reset),
-    ESP_ELFSYM_EXPORT(lv_timer_enable),
-    ESP_ELFSYM_EXPORT(lv_timer_get_idle),
-    ESP_ELFSYM_EXPORT(lv_timer_get_time_until_next),
-    ESP_ELFSYM_EXPORT(lv_timer_get_next),
-    ESP_ELFSYM_EXPORT(lv_timer_get_user_data),
-    ESP_ELFSYM_EXPORT(lv_timer_get_paused),
-    // lvgl other
-    ESP_ELFSYM_EXPORT(lv_refr_now),
-    ESP_ELFSYM_EXPORT(lv_line_create),
-    ESP_ELFSYM_EXPORT(lv_line_set_points),
-    ESP_ELFSYM_EXPORT(lv_line_set_points_mutable),
-    // lv_group
-    ESP_ELFSYM_EXPORT(lv_group_remove_obj),
-    ESP_ELFSYM_EXPORT(lv_group_focus_obj),
-    ESP_ELFSYM_EXPORT(lv_group_get_default),
-    ESP_ELFSYM_EXPORT(lv_group_add_obj),
-    ESP_ELFSYM_EXPORT(lv_group_set_default),
-    ESP_ELFSYM_EXPORT(lv_group_set_editing),
-    // lv_mem
-    ESP_ELFSYM_EXPORT(lv_free),
-    ESP_ELFSYM_EXPORT(lv_malloc),
-    // lv_draw
-    ESP_ELFSYM_EXPORT(lv_draw_task_get_draw_dsc),
-    ESP_ELFSYM_EXPORT(lv_draw_task_get_label_dsc),
-    ESP_ELFSYM_EXPORT(lv_draw_task_get_fill_dsc),
-    // lv_image
-    ESP_ELFSYM_EXPORT(lv_image_create),
-    ESP_ELFSYM_EXPORT(lv_image_set_src),
+
     // stdio.h
     ESP_ELFSYM_EXPORT(rename),
     // dirent.h
@@ -597,12 +380,75 @@ const esp_elfsym main_symbols[] {
     ESP_ELFSYM_EXPORT(lwip_accept),
     ESP_ELFSYM_EXPORT(lwip_getsockname),
     ESP_ELFSYM_EXPORT(lwip_send),
+    ESP_ELFSYM_EXPORT(lwip_connect),
+    ESP_ELFSYM_EXPORT(lwip_select),
+    ESP_ELFSYM_EXPORT(lwip_gethostbyname),
+    ESP_ELFSYM_EXPORT(ipaddr_addr),
+    // POSIX socket names (VFS wrappers used when apps include <sys/socket.h>)
+    ESP_ELFSYM_EXPORT(select),
     // sys/stat.h
     ESP_ELFSYM_EXPORT(stat),
     ESP_ELFSYM_EXPORT(mkdir),
     // esp_netif.h
     ESP_ELFSYM_EXPORT(esp_netif_get_ip_info),
     ESP_ELFSYM_EXPORT(esp_netif_get_handle_from_ifkey),
+    // Locale
+    ESP_ELFSYM_EXPORT(localeconv),
+    // driver/gpio.h
+    ESP_ELFSYM_EXPORT(gpio_config),
+    ESP_ELFSYM_EXPORT(gpio_get_level),
+    ESP_ELFSYM_EXPORT(gpio_set_level),
+    ESP_ELFSYM_EXPORT(gpio_reset_pin),
+    // driver/i2s_common.h
+    ESP_ELFSYM_EXPORT(i2s_new_channel),
+    ESP_ELFSYM_EXPORT(i2s_del_channel),
+    ESP_ELFSYM_EXPORT(i2s_channel_enable),
+    ESP_ELFSYM_EXPORT(i2s_channel_disable),
+    ESP_ELFSYM_EXPORT(i2s_channel_write),
+    ESP_ELFSYM_EXPORT(i2s_channel_get_info),
+    ESP_ELFSYM_EXPORT(i2s_channel_read),
+    ESP_ELFSYM_EXPORT(i2s_channel_register_event_callback),
+    ESP_ELFSYM_EXPORT(i2s_channel_preload_data),
+    ESP_ELFSYM_EXPORT(i2s_channel_tune_rate),
+    // driver/i2s_std.h
+    ESP_ELFSYM_EXPORT(i2s_channel_init_std_mode),
+    ESP_ELFSYM_EXPORT(i2s_channel_reconfig_std_clock),
+    ESP_ELFSYM_EXPORT(i2s_channel_reconfig_std_slot),
+    ESP_ELFSYM_EXPORT(i2s_channel_reconfig_std_gpio),
+    // miniz.h
+    ESP_ELFSYM_EXPORT(tinfl_decompress),
+    ESP_ELFSYM_EXPORT(tinfl_decompress_mem_to_callback),
+    ESP_ELFSYM_EXPORT(tinfl_decompress_mem_to_mem),
+    // ledc
+    ESP_ELFSYM_EXPORT(ledc_update_duty),
+    ESP_ELFSYM_EXPORT(ledc_set_freq),
+    ESP_ELFSYM_EXPORT(ledc_channel_config),
+    ESP_ELFSYM_EXPORT(ledc_set_duty),
+    ESP_ELFSYM_EXPORT(ledc_set_fade),
+    ESP_ELFSYM_EXPORT(ledc_set_fade_with_step),
+    ESP_ELFSYM_EXPORT(ledc_set_fade_with_time),
+    ESP_ELFSYM_EXPORT(ledc_set_fade_step_and_start),
+    ESP_ELFSYM_EXPORT(ledc_set_fade_time_and_start),
+    ESP_ELFSYM_EXPORT(ledc_set_pin),
+    ESP_ELFSYM_EXPORT(ledc_timer_config),
+    ESP_ELFSYM_EXPORT(ledc_timer_pause),
+    ESP_ELFSYM_EXPORT(ledc_timer_resume),
+    ESP_ELFSYM_EXPORT(ledc_timer_rst),
+    // esp_heap_caps.h
+    ESP_ELFSYM_EXPORT(heap_caps_get_total_size),
+    ESP_ELFSYM_EXPORT(heap_caps_get_allocated_size),
+    ESP_ELFSYM_EXPORT(heap_caps_get_free_size),
+    ESP_ELFSYM_EXPORT(heap_caps_get_largest_free_block),
+    ESP_ELFSYM_EXPORT(heap_caps_malloc),
+    ESP_ELFSYM_EXPORT(heap_caps_calloc),
+    ESP_ELFSYM_EXPORT(heap_caps_free),
+    // esp_timer.h
+    ESP_ELFSYM_EXPORT(esp_timer_create),
+    ESP_ELFSYM_EXPORT(esp_timer_stop),
+    ESP_ELFSYM_EXPORT(esp_timer_delete),
+    ESP_ELFSYM_EXPORT(esp_timer_start_periodic),
+    ESP_ELFSYM_EXPORT(esp_timer_start_once),
+    ESP_ELFSYM_EXPORT(esp_timer_get_time),
     // delimiter
     ESP_ELFSYM_END
 };
@@ -629,6 +475,7 @@ uintptr_t tt_symbol_resolver(const char* symbolName) {
         string_symbols,
         esp_event_symbols,
         esp_http_client_symbols,
+        mbedtls_symbols,
     };
 
     for (const auto* symbols : all_symbols) {
@@ -638,6 +485,11 @@ uintptr_t tt_symbol_resolver(const char* symbolName) {
         }
     }
 
+    uintptr_t symbol_address;
+    if (module_resolve_symbol_global(symbolName, &symbol_address)) {
+        return symbol_address;
+    }
+
     return 0;
 }
 
@@ -645,7 +497,9 @@ void tt_init_tactility_c() {
     elf_set_symbol_resolver(tt_symbol_resolver);
 }
 
-} // extern "C"
+}
+
+// extern "C"
 
 #else // Simulator
 

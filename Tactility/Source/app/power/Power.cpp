@@ -6,8 +6,9 @@
 
 #include <Tactility/hal/power/PowerDevice.h>
 #include <Tactility/Timer.h>
-#include <Tactility/Assets.h>
-#include <Tactility/hal/Device.h>
+
+#include <tactility/hal/Device.h>
+#include <tactility/lvgl_icon_shared.h>
 
 #include <lvgl.h>
 
@@ -20,7 +21,7 @@ extern const AppManifest manifest;
 class PowerApp;
 
 /** Returns the app data if the app is active. Note that this could clash if the same app is started twice and a background thread is slow. */
-std::shared_ptr<PowerApp> _Nullable optApp() {
+std::shared_ptr<PowerApp> optApp() {
     auto appContext = getCurrentAppContext();
     if (appContext != nullptr && appContext->getManifest().appId == manifest.appId) {
         return std::static_pointer_cast<PowerApp>(appContext->getApp());
@@ -191,7 +192,7 @@ public:
 extern const AppManifest manifest = {
     .appId = "Power",
     .appName = "Power",
-    .appIcon = TT_ASSETS_APP_ICON_POWER_SETTINGS,
+    .appIcon = LVGL_ICON_SHARED_ELECTRIC_BOLT,
     .appCategory = Category::Settings,
     .createApp = create<PowerApp>
 };

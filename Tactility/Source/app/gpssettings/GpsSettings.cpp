@@ -10,6 +10,8 @@
 #include <Tactility/service/gps/GpsState.h>
 #include <Tactility/service/loader/Loader.h>
 
+#include <tactility/lvgl_icon_shared.h>
+
 #include <cstring>
 #include <format>
 #include <lvgl.h>
@@ -292,14 +294,18 @@ class GpsSettingsApp final : public App {
                 lv_obj_add_flag(statusLabelWidget, LV_OBJ_FLAG_HIDDEN);
             }
 
-            lv_obj_clean(gpsConfigWrapper);
-            std::vector<tt::hal::gps::GpsConfiguration> configurations;
-            auto gps_service = tt::service::gps::findGpsService();
-            if (gps_service && gps_service->getGpsConfigurations(configurations)) {
-                int index = 0;
-                for (auto& configuration : configurations) {
-                    createGpsView(configuration, index++);
+            if (!lv_obj_has_flag(gpsConfigWrapper, LV_OBJ_FLAG_HIDDEN)) {
+                lv_obj_clean(gpsConfigWrapper);
+                std::vector<tt::hal::gps::GpsConfiguration> configurations;
+                auto gps_service = tt::service::gps::findGpsService();
+                if (gps_service && gps_service->getGpsConfigurations(configurations)) {
+                    int index = 0;
+                    for (auto& configuration : configurations) {
+                        createGpsView(configuration, index++);
+                    }
                 }
+            } else {
+                lv_obj_clean(gpsConfigWrapper);
             }
         }
     }
@@ -449,7 +455,7 @@ public:
 extern const AppManifest manifest = {
     .appId = "GpsSettings",
     .appName = "GPS",
-    .appIcon = LV_SYMBOL_GPS,
+    .appIcon = LVGL_ICON_SHARED_NAVIGATION,
     .appCategory = Category::Settings,
     .createApp = create<GpsSettingsApp>
 };

@@ -1,15 +1,20 @@
 #include <Tactility/Tactility.h>
 
+#include <tactility/lvgl_icon_shared.h>
+
 #ifdef ESP_PLATFORM
 #include <Tactility/service/displayidle/DisplayIdleService.h>
 #endif
-#include <Tactility/settings/DisplaySettings.h>
-#include <Tactility/Assets.h>
-#include <Tactility/hal/display/DisplayDevice.h>
+
 #include <Tactility/Logger.h>
+#include <Tactility/app/App.h>
+#include <Tactility/hal/display/DisplayDevice.h>
+#include <Tactility/hal/touch/TouchDevice.h>
 #include <Tactility/lvgl/Toolbar.h>
+#include <Tactility/settings/DisplaySettings.h>
 
 #include <lvgl.h>
+#include <tactility/lvgl_module.h>
 
 namespace tt::app::display {
 
@@ -17,6 +22,16 @@ static const auto LOGGER = Logger("Display");
 
 static std::shared_ptr<hal::display::DisplayDevice> getHalDisplay() {
     return hal::findFirstDevice<hal::display::DisplayDevice>(hal::Device::Type::Display);
+}
+
+static bool hasCalibratableTouchDevice() {
+    auto touch_devices = hal::findDevices<hal::touch::TouchDevice>(hal::Device::Type::Touch);
+    for (const auto& touch_device : touch_devices) {
+        if (touch_device != nullptr && touch_device->supportsCalibration()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 class DisplayApp final : public App {
@@ -116,11 +131,15 @@ class DisplayApp final : public App {
         }
     }
 
+    static void onCalibrateTouchClicked(lv_event_t*) {
+        app::start("TouchCalibration");
+    }
+
 public:
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         displaySettings = settings::display::loadOrGetDefault();
-        auto ui_scale = hal::getConfiguration()->uiScale;
+        auto ui_density = lvgl_get_ui_density();
 
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
@@ -142,7 +161,7 @@ public:
             lv_obj_set_size(brightness_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
             lv_obj_set_style_pad_hor(brightness_wrapper, 0, LV_STATE_DEFAULT);
             lv_obj_set_style_border_width(brightness_wrapper, 0, LV_STATE_DEFAULT);
-            if (ui_scale != hal::UiScale::Smallest) {
+            if (ui_density != LVGL_UI_DENSITY_COMPACT) {
                 lv_obj_set_style_pad_ver(brightness_wrapper, 4, LV_STATE_DEFAULT);
             }
 
@@ -166,7 +185,7 @@ public:
             lv_obj_set_size(gamma_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
             lv_obj_set_style_pad_hor(gamma_wrapper, 0, LV_STATE_DEFAULT);
             lv_obj_set_style_border_width(gamma_wrapper, 0, LV_STATE_DEFAULT);
-            if (ui_scale != hal::UiScale::Smallest) {
+            if (ui_density != LVGL_UI_DENSITY_COMPACT) {
                 lv_obj_set_style_pad_ver(gamma_wrapper, 4, LV_STATE_DEFAULT);
             }
 
@@ -200,8 +219,6 @@ public:
         // Note: order correlates with settings::display::Orientation item order
         lv_dropdown_set_options(orientation_dropdown, "Landscape\nPortrait Right\nLandscape Flipped\nPortrait Left");
         lv_obj_align(orientation_dropdown, LV_ALIGN_RIGHT_MID, 0, 0);
-        lv_obj_set_style_border_color(orientation_dropdown, lv_color_hex(0xFAFAFA), LV_PART_MAIN);
-        lv_obj_set_style_border_width(orientation_dropdown, 1, LV_PART_MAIN);
         lv_obj_add_event_cb(orientation_dropdown, onOrientationSet, LV_EVENT_VALUE_CHANGED, this);
         // Set the dropdown to match current orientation enum
         lv_dropdown_set_selected(orientation_dropdown, static_cast<uint16_t>(displaySettings.orientation));
@@ -237,8 +254,6 @@ public:
             timeoutDropdown = lv_dropdown_create(timeout_select_wrapper);
             lv_dropdown_set_options(timeoutDropdown, "15 seconds\n30 seconds\n1 minute\n2 minutes\n5 minutes\nNever");
             lv_obj_align(timeoutDropdown, LV_ALIGN_RIGHT_MID, 0, 0);
-            lv_obj_set_style_border_color(timeoutDropdown, lv_color_hex(0xFAFAFA), LV_PART_MAIN);
-            lv_obj_set_style_border_width(timeoutDropdown, 1, LV_PART_MAIN);
             lv_obj_add_event_cb(timeoutDropdown, onTimeoutChanged, LV_EVENT_VALUE_CHANGED, this);
             // Initialize dropdown selection from settings
             uint32_t ms = displaySettings.backlightTimeoutMs;
@@ -273,13 +288,30 @@ public:
             // Note: order correlates with settings::display::ScreensaverType enum order
             lv_dropdown_set_options(screensaverDropdown, "None\nBouncing Balls\nMystify\nMatrix Rain");
             lv_obj_align(screensaverDropdown, LV_ALIGN_RIGHT_MID, 0, 0);
-            lv_obj_set_style_border_color(screensaverDropdown, lv_color_hex(0xFAFAFA), LV_PART_MAIN);
-            lv_obj_set_style_border_width(screensaverDropdown, 1, LV_PART_MAIN);
             lv_obj_add_event_cb(screensaverDropdown, onScreensaverChanged, LV_EVENT_VALUE_CHANGED, this);
             lv_dropdown_set_selected(screensaverDropdown, static_cast<uint16_t>(displaySettings.screensaverType));
             if (!displaySettings.backlightTimeoutEnabled) {
                 lv_obj_add_state(screensaverDropdown, LV_STATE_DISABLED);
             }
+        }
+
+        if (hasCalibratableTouchDevice()) {
+            auto* calibrate_wrapper = lv_obj_create(main_wrapper);
+            lv_obj_set_size(calibrate_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
+            lv_obj_set_style_pad_all(calibrate_wrapper, 0, LV_STATE_DEFAULT);
+            lv_obj_set_style_border_width(calibrate_wrapper, 0, LV_STATE_DEFAULT);
+
+            auto* calibrate_label = lv_label_create(calibrate_wrapper);
+            lv_label_set_text(calibrate_label, "Touch calibration");
+            lv_obj_align(calibrate_label, LV_ALIGN_LEFT_MID, 0, 0);
+
+            auto* calibrate_button = lv_button_create(calibrate_wrapper);
+            lv_obj_align(calibrate_button, LV_ALIGN_RIGHT_MID, 0, 0);
+            lv_obj_add_event_cb(calibrate_button, onCalibrateTouchClicked, LV_EVENT_SHORT_CLICKED, this);
+
+            auto* calibrate_button_label = lv_label_create(calibrate_button);
+            lv_label_set_text(calibrate_button_label, "Calibrate");
+            lv_obj_center(calibrate_button_label);
         }
     }
 
@@ -304,7 +336,7 @@ public:
 extern const AppManifest manifest = {
     .appId = "Display",
     .appName = "Display",
-    .appIcon = TT_ASSETS_APP_ICON_DISPLAY_SETTINGS,
+    .appIcon = LVGL_ICON_SHARED_DISPLAY_SETTINGS,
     .appCategory = Category::Settings,
     .createApp = create<DisplayApp>
 };

@@ -19,9 +19,9 @@ dependencies:
     version: "0.0.1"
     rules:
       - if: "target in [esp32, esp32s3]"
-  espressif/esp_lcd_touch: "1.1.2"
+  espressif/esp_lcd_touch: "1.2.1"
   atanisoft/esp_lcd_touch_xpt2046:
-    version: "1.0.5"
+    version: "1.0.6"
     rules:
       - if: "target in [esp32, esp32s3]"
   espressif/esp_lcd_touch_cst816s: "1.0.3"
@@ -49,9 +49,28 @@ dependencies:
     rules:
       # More hardware seems to be supported - enable as needed
       - if: "target in [esp32p4]"
+  espressif/esp_lcd_st7123:
+    version: "1.0.2"
+    rules:
+      # More hardware seems to be supported - enable as needed
+      - if: "target in [esp32p4]"
+  espressif/esp_lcd_touch_st7123:
+    version: "1.0.1"
+    rules:
+      # More hardware seems to be supported - enable as needed
+      - if: "target in [esp32p4]"
   espressif/esp_lcd_panel_io_additions: "1.0.1"
   espressif/esp_tinyusb:
     version: "1.7.6~1"
     rules:
       - if: "target == esp32s3"
+  espressif/esp_lvgl_port: "2.5.0"
+  lvgl/lvgl: "9.3.0"
+  epdiy:
+    git: https://github.com/Shadowtrance/epdiy.git
+    version: 2.0.1
+    rules:
+      # More hardware might be supported - enable as needed
+      - if: "target in [esp32s3]"
   idf: '5.5'
+

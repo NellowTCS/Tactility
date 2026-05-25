@@ -6,7 +6,9 @@ class DtsVersion:
 
 @dataclass
 class Device:
-    identifier: str
+    node_name: str
+    node_alias: str
+    status: str
     properties: list
     devices: list
 
@@ -26,11 +28,16 @@ class IncludeC:
     statement: str
 
 @dataclass
+class DefineC:
+    statement: str
+
+@dataclass
 class BindingProperty:
     name: str
     type: str
     required: bool
     description: str
+    default: object = None
 
 @dataclass
 class Binding:

@@ -5,22 +5,23 @@
 #include <Tactility/Logger.h>
 #include <Tactility/settings/BootSettings.h>
 
+#include <Tactility/Paths.h>
 #include <format>
 #include <string>
 #include <vector>
 
 namespace tt::settings {
 
-static const auto LOGGER = Logger("BootSettings");
+constexpr auto* TAG = "BootSettings";
 
 constexpr auto* PROPERTIES_FILE_FORMAT = "{}/settings/boot.properties";
 constexpr auto* PROPERTIES_KEY_LAUNCHER_APP_ID = "launcherAppId";
 constexpr auto* PROPERTIES_KEY_AUTO_START_APP_ID = "autoStartAppId";
 
 static std::string getPropertiesFilePath() {
-    const auto sdcards = hal::findDevices<hal::sdcard::SdCardDevice>(hal::Device::Type::SdCard);
-    for (auto& sdcard : sdcards) {
-        std::string path = std::format(PROPERTIES_FILE_FORMAT, sdcard->getMountPath());
+    std::string sdcard_path;
+    if (findFirstMountedSdCardPath(sdcard_path)) {
+        std::string path = std::format(PROPERTIES_FILE_FORMAT, sdcard_path);
         if (file::isFile(path)) {
             return path;
         }
@@ -37,11 +38,11 @@ bool loadBootSettings(BootSettings& properties) {
             properties.launcherAppId = value;
         }
     })) {
-        LOGGER.error("Failed to load {}", path);
+        LOG_I(TAG, "No settings at %s", path.c_str());
         return false;
     }
 
-    return !properties.launcherAppId.empty();
+    return true;
 }
 
 }

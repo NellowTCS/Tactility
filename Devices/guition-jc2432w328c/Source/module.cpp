@@ -12,11 +12,12 @@ static error_t stop() {
     return ERROR_NONE;
 }
 
-/** @warning The variable name must be exactly "device_module" */
-struct Module device_module = {
+struct Module guition_jc2432w328c_module = {
     .name = "guition-jc2432w328c",
     .start = start,
-    .stop = stop
+    .stop = stop,
+    .symbols = nullptr,
+    .internal = nullptr
 };
 
 }

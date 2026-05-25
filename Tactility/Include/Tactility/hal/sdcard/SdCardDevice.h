@@ -1,10 +1,12 @@
 #pragma once
 
-#include "../Device.h"
+#include <tactility/hal/Device.h>
 
-#include <Tactility/TactilityCore.h>
 #include <Tactility/Lock.h>
+#include <Tactility/TactilityCore.h>
 
+
+struct FileSystem;
 namespace tt::hal::sdcard {
 
 /**
@@ -31,11 +33,12 @@ public:
 private:
 
     MountBehaviour mountBehaviour;
+    FileSystem* fileSystem;
 
 public:
 
-    explicit SdCardDevice(MountBehaviour mountBehaviour) : mountBehaviour(mountBehaviour) {}
-    ~SdCardDevice() override = default;
+    explicit SdCardDevice(MountBehaviour mountBehaviour);
+    ~SdCardDevice() override;
 
     Type getType() const final { return Type::SdCard; };
 
@@ -67,8 +70,8 @@ public:
     bool isMounted(TickType_t timeout = kernel::MAX_TICKS) const { return getState(timeout) == State::Mounted; }
 };
 
-/** Return the SdCard device if the path is within the SdCard mounted path (path std::string::starts_with() check)*/
-std::shared_ptr<SdCardDevice> _Nullable find(const std::string& path);
+/** Return the SdCard device if the path is within the SdCard mounted path (path std::string::starts_with() check), otherwise return nullptr */
+std::shared_ptr<SdCardDevice> find(const std::string& path);
 
 /**
  * Attempt to find an SD card that the specified belongs to,

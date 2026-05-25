@@ -1,9 +1,6 @@
 #include <Tactility/Tactility.h>
 #include <Tactility/TactilityConfig.h>
 
-#include <Tactility/Timer.h>
-#include <Tactility/kernel/Kernel.h>
-
 #if TT_FEATURE_SCREENSHOT_ENABLED
 
 #include <Tactility/app/App.h>
@@ -14,6 +11,11 @@
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/lvgl/Toolbar.h>
 #include <Tactility/service/screenshot/Screenshot.h>
+
+#include <Tactility/Paths.h>
+#include <Tactility/Timer.h>
+
+#include <tactility/lvgl_icon_shared.h>
 
 namespace tt::app::screenshot {
 
@@ -49,7 +51,7 @@ public:
 
 
 /** Returns the app data if the app is active. Note that this could clash if the same app is started twice and a background thread is slow. */
-std::shared_ptr<ScreenshotApp> _Nullable optApp() {
+std::shared_ptr<ScreenshotApp> optApp() {
     auto appContext = getCurrentAppContext();
     if (appContext != nullptr && appContext->getManifest().appId == manifest.appId) {
         return std::static_pointer_cast<ScreenshotApp>(appContext->getApp());
@@ -168,8 +170,6 @@ void ScreenshotApp::createModeSettingWidgets(lv_obj_t* parent) {
     modeDropdown = lv_dropdown_create(mode_wrapper);
     lv_dropdown_set_options(modeDropdown, "Timer\nApp start");
     lv_obj_align_to(modeDropdown, mode_label, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
-    lv_obj_set_style_border_color(modeDropdown, lv_color_hex(0xFAFAFA), LV_PART_MAIN);
-    lv_obj_set_style_border_width(modeDropdown, 1, LV_PART_MAIN);
     lv_obj_add_event_cb(modeDropdown, onModeSetCallback, LV_EVENT_VALUE_CHANGED, nullptr);
     service::screenshot::Mode mode = service->getMode();
     if (mode == service::screenshot::Mode::Apps) {
@@ -202,12 +202,9 @@ void ScreenshotApp::createFilePathWidgets(lv_obj_t* parent) {
     lv_textarea_set_one_line(pathTextArea, true);
     lv_obj_set_flex_grow(pathTextArea, 1);
     if (kernel::getPlatform() == kernel::PlatformEsp) {
-        auto sdcard_devices = tt::hal::findDevices<tt::hal::sdcard::SdCardDevice>(tt::hal::Device::Type::SdCard);
-        if (sdcard_devices.size() > 1) {
-            LOGGER.warn("Found multiple SD card devices - picking first");
-        }
-        if (!sdcard_devices.empty() && sdcard_devices.front()->isMounted()) {
-            std::string lvgl_mount_path = lvgl::PATH_PREFIX + sdcard_devices.front()->getMountPath();
+        std::string sdcard_path;
+        if (findFirstMountedSdCardPath(sdcard_path)) {
+            std::string lvgl_mount_path = lvgl::PATH_PREFIX + sdcard_path + "/screenshots";
             lv_textarea_set_text(pathTextArea, lvgl_mount_path.c_str());
         } else {
             lv_textarea_set_text(pathTextArea, "Error: no SD card");
@@ -283,7 +280,7 @@ void ScreenshotApp::onShow(AppContext& appContext, lv_obj_t* parent) {
 extern const AppManifest manifest = {
     .appId = "Screenshot",
     .appName = "Screenshot",
-    .appIcon = LV_SYMBOL_IMAGE,
+    .appIcon = LVGL_ICON_SHARED_IMAGE,
     .appCategory = Category::System,
     .createApp = create<ScreenshotApp>
 };

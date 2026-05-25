@@ -1,13 +1,11 @@
 #pragma once
 
-#include <Tactility/RecursiveMutex.h>
-
 #include <EspLcdDisplay.h>
 #include <lvgl.h>
 
 class St7701Display final : public EspLcdDisplay {
 
-    std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable touchDevice;
+    std::shared_ptr<tt::hal::touch::TouchDevice> touchDevice;
 
     bool createIoHandle(esp_lcd_panel_io_handle_t& outHandle) override;
 
@@ -21,13 +19,13 @@ class St7701Display final : public EspLcdDisplay {
 
 public:
 
-    St7701Display() : EspLcdDisplay(std::make_shared<tt::RecursiveMutex>()) {}
+    St7701Display() : EspLcdDisplay() {}
 
     std::string getName() const override { return "ST7701S"; }
 
     std::string getDescription() const override { return "ST7701S RGB display"; }
 
-    std::shared_ptr<tt::hal::touch::TouchDevice> _Nullable getTouchDevice() override;
+    std::shared_ptr<tt::hal::touch::TouchDevice> getTouchDevice() override;
 
     void setBacklightDuty(uint8_t backlightDuty) override;
 

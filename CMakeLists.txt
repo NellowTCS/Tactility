@@ -12,15 +12,21 @@ set(Cyan "${Esc}[36m")
 file(READ version.txt TACTILITY_VERSION)
 add_compile_definitions(TT_VERSION="${TACTILITY_VERSION}")
 
+# tactility_add_module() macro
+include("Buildscripts/module.cmake")
+
 # Determine device identifier and project location
+include("Buildscripts/device.cmake")
+
 if (DEFINED ENV{ESP_IDF_VERSION})
-    include("Buildscripts/device.cmake")
     init_tactility_globals("sdkconfig")
     get_property(TACTILITY_DEVICE_PROJECT GLOBAL PROPERTY TACTILITY_DEVICE_PROJECT)
     get_property(TACTILITY_DEVICE_ID GLOBAL PROPERTY TACTILITY_DEVICE_ID)
 else ()
     set(TACTILITY_DEVICE_PROJECT "Devices/simulator")
     set(TACTILITY_DEVICE_ID "simulator")
+    set_property(GLOBAL PROPERTY TACTILITY_DEVICE_PROJECT ${TACTILITY_DEVICE_PROJECT})
+    set_property(GLOBAL PROPERTY TACTILITY_DEVICE_ID ${TACTILITY_DEVICE_ID})
 endif ()
 
 if (DEFINED ENV{ESP_IDF_VERSION})
@@ -32,15 +38,14 @@ if (DEFINED ENV{ESP_IDF_VERSION})
         "Firmware"
         "Devices/${TACTILITY_DEVICE_PROJECT}"
         "Drivers"
-        "Platforms/PlatformEsp32"
+        "Modules"
+        "Platforms/platform-esp32"
         "TactilityKernel"
         "Tactility"
         "TactilityC"
         "TactilityCore"
         "TactilityFreeRtos"
-        "Libraries/esp_lvgl_port"
         "Libraries/elf_loader"
-        "Libraries/lvgl"
         "Libraries/lv_screenshot"
         "Libraries/minitar"
         "Libraries/minmea"
@@ -67,6 +72,8 @@ else ()
     message("Building for sim target")
     add_compile_definitions(CONFIG_TT_DEVICE_ID="simulator")
     add_compile_definitions(CONFIG_TT_DEVICE_NAME="Simulator")
+    add_compile_definitions(CONFIG_TT_LAUNCHER_APP_ID="Launcher")
+    add_compile_definitions(CONFIG_TT_AUTO_START_APP_ID="")
 endif ()
 
 project(Tactility)
@@ -77,22 +84,21 @@ if (NOT DEFINED ENV{ESP_IDF_VERSION})
     add_subdirectory(TactilityCore)
     add_subdirectory(TactilityFreeRtos)
     add_subdirectory(TactilityKernel)
-    add_subdirectory(Platforms/PlatformPosix)
+    add_subdirectory(Platforms/platform-posix)
     add_subdirectory(Devices/simulator)
     add_subdirectory(Libraries/cJSON)
     add_subdirectory(Libraries/lv_screenshot)
     add_subdirectory(Libraries/QRCode)
     add_subdirectory(Libraries/minitar)
     add_subdirectory(Libraries/minmea)
+    add_subdirectory(Modules/hal-device-module)
+    add_subdirectory(Modules/lvgl-module)
 
     # FreeRTOS
     set(FREERTOS_CONFIG_FILE_DIRECTORY ${PROJECT_SOURCE_DIR}/Devices/simulator/Source CACHE STRING "")
     set(FREERTOS_PORT GCC_POSIX CACHE STRING "")
     add_subdirectory(Libraries/FreeRTOS-Kernel)
     target_compile_definitions(freertos_kernel PUBLIC "projCOVERAGE_TEST=0")
-    target_include_directories(freertos_kernel
-        PUBLIC Devices/Simulator/Source # for FreeRTOSConfig.h
-    )
 
     # EmbedTLS
     set(ENABLE_TESTING OFF)

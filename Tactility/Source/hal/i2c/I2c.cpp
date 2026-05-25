@@ -32,14 +32,13 @@ Device* findDevice(i2c_port_t port) {
         .device = nullptr
     };
 
-    for_each_device_of_type(&I2C_CONTROLLER_TYPE, &params, [](auto* device, auto* context) {
+    device_for_each_of_type(&I2C_CONTROLLER_TYPE, &params, [](auto* device, auto* context) {
         auto* params_ptr = (Params*)context;
         auto* driver = device_get_driver(device);
         if (driver == nullptr) return true;
         if (!driver_is_compatible(driver, "espressif,esp32-i2c")) return true;
-        i2c_port_t port;
-        if (esp32_i2c_get_port(device, &port) != ERROR_NONE) return true;
-        if (port != params_ptr->port) return true;
+        auto* config = static_cast<const Esp32I2cConfig*>(device->config);
+        if (config->port != params_ptr->port) return true;
         // Found it, stop iterating
         params_ptr->device = device;
         return false;

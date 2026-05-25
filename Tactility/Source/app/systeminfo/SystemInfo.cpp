@@ -1,17 +1,20 @@
 #include <Tactility/TactilityConfig.h>
-#include <Tactility/lvgl/Toolbar.h>
 #include <Tactility/lvgl/LvglSync.h>
-
-#include <Tactility/Assets.h>
-#include <Tactility/hal/Device.h>
+#include <Tactility/lvgl/Toolbar.h>
 #include <Tactility/Tactility.h>
 #include <Tactility/Timer.h>
 
+#include <Tactility/Paths.h>
 #include <algorithm>
+#include <cstring>
 #include <format>
 #include <lvgl.h>
 #include <utility>
-#include <cstring>
+
+#include <tactility/hal/Device.h>
+#include <tactility/lvgl_fonts.h>
+#include <tactility/lvgl_icon_shared.h>
+#include <tactility/lvgl_module.h>
 
 #ifdef ESP_PLATFORM
 #include <esp_vfs_fat.h>
@@ -138,7 +141,8 @@ static MemoryBarWidgets createMemoryBar(lv_obj_t* parent, const char* label) {
 
     auto* left_label = lv_label_create(container);
     lv_label_set_text(left_label, label);
-    lv_obj_set_width(left_label, 60);
+    auto label_width = 6 * lvgl_get_text_font_height(FONT_SIZE_DEFAULT);
+    lv_obj_set_width(left_label, label_width);
 
     auto* bar = lv_bar_create(container);
     lv_obj_set_flex_grow(bar, 1);
@@ -147,7 +151,7 @@ static MemoryBarWidgets createMemoryBar(lv_obj_t* parent, const char* label) {
     lv_obj_set_width(bottom_label, LV_PCT(100));
     lv_obj_set_style_text_align(bottom_label, LV_TEXT_ALIGN_RIGHT, 0);
 
-    if (hal::getConfiguration()->uiScale == hal::UiScale::Smallest) {
+    if (lvgl_get_ui_density() == LVGL_UI_DENSITY_COMPACT) {
         lv_obj_set_style_pad_bottom(bottom_label, 2, LV_STATE_DEFAULT);
     } else {
         lv_obj_set_style_pad_bottom(bottom_label, 12, LV_STATE_DEFAULT);
@@ -274,7 +278,7 @@ extern const AppManifest manifest;
 
 class SystemInfoApp;
 
-static std::shared_ptr<SystemInfoApp> _Nullable optApp() {
+static std::shared_ptr<SystemInfoApp> optApp() {
     auto appContext = getCurrentAppContext();
     if (appContext != nullptr && appContext->getManifest().appId == manifest.appId) {
         return std::static_pointer_cast<SystemInfoApp>(appContext->getApp());
@@ -317,7 +321,6 @@ class SystemInfoApp final : public App {
 
     bool hasExternalMem = false;
     bool hasDataStorage = false;
-    bool hasSdcardStorage = false;
     bool hasSystemStorage = false;
 
     void updateMemory() {
@@ -339,14 +342,9 @@ class SystemInfoApp final : public App {
             }
         }
 
-        if (hasSdcardStorage) {
-            const auto sdcard_devices = hal::findDevices<hal::sdcard::SdCardDevice>(hal::Device::Type::SdCard);
-            for (const auto& sdcard : sdcard_devices) {
-                if (sdcard->isMounted() && esp_vfs_fat_info(sdcard->getMountPath().c_str(), &storage_total, &storage_free) == ESP_OK) {
-                    updateMemoryBar(sdcardStorageBar, storage_free, storage_total);
-                    break;  // Only update first SD card
-                }
-            }
+        std::string sdcard_path;
+        if (findFirstMountedSdCardPath(sdcard_path) && esp_vfs_fat_info(sdcard_path.c_str(), &storage_total, &storage_free) == ESP_OK) {
+            updateMemoryBar(sdcardStorageBar, storage_free, storage_total);
         }
 
         if (hasSystemStorage) {
@@ -435,7 +433,6 @@ class SystemInfoApp final : public App {
         // Summary
         auto* summary_label = lv_label_create(psramContainer);
         lv_label_set_text(summary_label, "PSRAM Usage Summary");
-        lv_obj_set_style_text_font(summary_label, &lv_font_montserrat_14, 0);
         lv_obj_set_style_pad_bottom(summary_label, 8, 0);
 
         // Current usage
@@ -476,7 +473,6 @@ class SystemInfoApp final : public App {
         // PSRAM Configuration section
         auto* config_header = lv_label_create(psramContainer);
         lv_label_set_text(config_header, "PSRAM Configuration");
-        lv_obj_set_style_text_font(config_header, &lv_font_montserrat_14, 0);
         lv_obj_set_style_pad_bottom(config_header, 8, 0);
 
         // Get threshold from sdkconfig
@@ -513,7 +509,6 @@ class SystemInfoApp final : public App {
         // Known PSRAM consumers header
         auto* consumers_label = lv_label_create(psramContainer);
         lv_label_set_text(consumers_label, "PSRAM Allocation Strategy");
-        lv_obj_set_style_text_font(consumers_label, &lv_font_montserrat_14, 0);
         lv_obj_set_style_pad_bottom(consumers_label, 8, 0);
 
         // Explain what's in PSRAM
@@ -553,7 +548,6 @@ class SystemInfoApp final : public App {
         // App behavior explanation
         auto* app_behavior_label = lv_label_create(psramContainer);
         lv_label_set_text(app_behavior_label, "App Memory Behavior");
-        lv_obj_set_style_text_font(app_behavior_label, &lv_font_montserrat_14, 0);
         lv_obj_set_style_pad_bottom(app_behavior_label, 8, 0);
 
         auto* app_note1 = lv_label_create(psramContainer);
@@ -584,7 +578,8 @@ class SystemInfoApp final : public App {
 
         auto* tabview = lv_tabview_create(wrapper);
         lv_tabview_set_tab_bar_position(tabview, LV_DIR_LEFT);
-        lv_tabview_set_tab_bar_size(tabview, 80);
+        auto tab_bar_width = 6 * lvgl_get_text_font_height(FONT_SIZE_DEFAULT);
+        lv_tabview_set_tab_bar_size(tabview, tab_bar_width);
 
         // Create tabs
         auto* memory_tab = createTab(tabview, "Memory");
@@ -623,13 +618,9 @@ class SystemInfoApp final : public App {
             dataStorageBar = createMemoryBar(storage_tab, file::MOUNT_POINT_DATA);
         }
 
-        const auto sdcard_devices = hal::findDevices<hal::sdcard::SdCardDevice>(hal::Device::Type::SdCard);
-        for (const auto& sdcard : sdcard_devices) {
-            if (sdcard->isMounted() && esp_vfs_fat_info(sdcard->getMountPath().c_str(), &storage_total, &storage_free) == ESP_OK) {
-                hasSdcardStorage = true;
-                sdcardStorageBar = createMemoryBar(storage_tab, sdcard->getMountPath().c_str());
-                break;  // Only show first SD card
-            }
+        std::string sdcard_path;
+        if (findFirstMountedSdCardPath(sdcard_path) && esp_vfs_fat_info(sdcard_path.c_str(), &storage_total, &storage_free) == ESP_OK) {
+            sdcardStorageBar = createMemoryBar(storage_tab, sdcard_path.c_str());
         }
 
         if (config::SHOW_SYSTEM_PARTITION) {
@@ -644,7 +635,6 @@ class SystemInfoApp final : public App {
         // CPU tab - summary at top
         cpuSummaryLabel = lv_label_create(cpu_tab);
         lv_label_set_text(cpuSummaryLabel, "Overall CPU Usage: --.-%");
-        lv_obj_set_style_text_font(cpuSummaryLabel, &lv_font_montserrat_14, 0);
         lv_obj_set_style_pad_bottom(cpuSummaryLabel, 4, 0);
         
         taskCountLabel = lv_label_create(cpu_tab);
@@ -701,7 +691,7 @@ class SystemInfoApp final : public App {
 extern const AppManifest manifest = {
     .appId = "SystemInfo",
     .appName = "System Info",
-    .appIcon = TT_ASSETS_APP_ICON_SYSTEM_INFO,
+    .appIcon = LVGL_ICON_SHARED_AREA_CHART,
     .appCategory = Category::System,
     .createApp = create<SystemInfoApp>
 };

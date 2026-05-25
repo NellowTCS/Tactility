@@ -1,12 +1,13 @@
 #ifdef ESP_PLATFORM
 
-#include <Tactility/Tactility.h>
-
-#include <Tactility/settings/TrackballSettings.h>
-#include <Tactility/Assets.h>
-#include <Tactility/lvgl/Toolbar.h>
-
 #include <lvgl.h>
+
+#include <tactility/lvgl_icon_shared.h>
+#include <tactility/lvgl_module.h>
+
+#include <Tactility/Tactility.h>
+#include <Tactility/settings/TrackballSettings.h>
+#include <Tactility/lvgl/Toolbar.h>
 
 // Forward declare driver functions
 namespace trackball {
@@ -108,7 +109,7 @@ class TrackballSettingsApp final : public App {
 public:
     void onShow(AppContext& app, lv_obj_t* parent) override {
         tbSettings = settings::trackball::loadOrGetDefault();
-        auto ui_scale = hal::getConfiguration()->uiScale;
+        auto ui_density = lvgl_get_ui_density();
         updated = false;
 
         lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
@@ -138,8 +139,6 @@ public:
         trackballModeDropdown = lv_dropdown_create(tb_mode_wrapper);
         lv_dropdown_set_options(trackballModeDropdown, "Encoder\nPointer");
         lv_obj_align(trackballModeDropdown, LV_ALIGN_RIGHT_MID, 0, 0);
-        lv_obj_set_style_border_color(trackballModeDropdown, lv_color_hex(0xFAFAFA), LV_PART_MAIN);
-        lv_obj_set_style_border_width(trackballModeDropdown, 1, LV_PART_MAIN);
         lv_dropdown_set_selected(trackballModeDropdown, modeToDropdownIndex(tbSettings.trackballMode));
         lv_obj_add_event_cb(trackballModeDropdown, onTrackballModeChanged, LV_EVENT_VALUE_CHANGED, this);
 
@@ -153,7 +152,7 @@ public:
         lv_obj_set_size(enc_sens_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
         lv_obj_set_style_pad_hor(enc_sens_wrapper, 0, LV_STATE_DEFAULT);
         lv_obj_set_style_border_width(enc_sens_wrapper, 0, LV_STATE_DEFAULT);
-        if (ui_scale != hal::UiScale::Smallest) {
+        if (ui_density != LVGL_UI_DENSITY_COMPACT) {
             lv_obj_set_style_pad_ver(enc_sens_wrapper, 4, LV_STATE_DEFAULT);
         }
 
@@ -177,7 +176,7 @@ public:
         lv_obj_set_size(ptr_sens_wrapper, LV_PCT(100), LV_SIZE_CONTENT);
         lv_obj_set_style_pad_hor(ptr_sens_wrapper, 0, LV_STATE_DEFAULT);
         lv_obj_set_style_border_width(ptr_sens_wrapper, 0, LV_STATE_DEFAULT);
-        if (ui_scale != hal::UiScale::Smallest) {
+        if (ui_density != LVGL_UI_DENSITY_COMPACT) {
             lv_obj_set_style_pad_ver(ptr_sens_wrapper, 4, LV_STATE_DEFAULT);
         }
 
@@ -209,7 +208,7 @@ public:
 extern const AppManifest manifest = {
     .appId = "TrackballSettings",
     .appName = "Trackball",
-    .appIcon = TT_ASSETS_APP_ICON_SETTINGS,
+    .appIcon = LVGL_ICON_SHARED_CIRCLE,
     .appCategory = Category::Settings,
     .createApp = create<TrackballSettingsApp>
 };

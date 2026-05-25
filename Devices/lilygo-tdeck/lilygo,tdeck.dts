@@ -3,29 +3,62 @@
 #include <tactility/bindings/root.h>
 #include <tactility/bindings/esp32_gpio.h>
 #include <tactility/bindings/esp32_i2c.h>
+#include <tactility/bindings/esp32_i2s.h>
+#include <tactility/bindings/esp32_ble.h>
+#include <tactility/bindings/esp32_spi.h>
+#include <tactility/bindings/esp32_uart.h>
 
+// Reference: https://wiki.lilygo.cc/get_started/en/Wearable/T-Deck-Plus/T-Deck-Plus.html#Pin-Overview
 / {
 	compatible = "root";
 	model = "LilyGO T-Deck";
+
+	ble0 {
+		compatible = "espressif,esp32-ble";
+	};
 
 	gpio0 {
 		compatible = "espressif,esp32-gpio";
 		gpio-count = <49>;
 	};
 
-	i2c_internal {
+	i2c_internal: i2c0 {
 		compatible = "espressif,esp32-i2c";
 		port = <I2C_NUM_0>;
 		clock-frequency = <400000>;
-		pin-sda = <18>;
-		pin-scl = <8>;
+		pin-sda = <&gpio0 18 GPIO_FLAG_NONE>;
+		pin-scl = <&gpio0 8 GPIO_FLAG_NONE>;
 	};
 
-	i2c_external {
+	i2c_external: i2c1 {
 		compatible = "espressif,esp32-i2c";
+		status = "disabled";
 		port = <I2C_NUM_1>;
 		clock-frequency = <400000>;
-		pin-sda = <43>;
-		pin-scl = <44>;
+		pin-sda = <&gpio0 43 GPIO_FLAG_NONE>;
+		pin-scl = <&gpio0 44 GPIO_FLAG_NONE>;
+	};
+
+	i2s0 {
+		compatible = "espressif,esp32-i2s";
+		port = <I2S_NUM_0>;
+		pin-bclk = <&gpio0 7 GPIO_FLAG_NONE>;
+		pin-ws = <&gpio0 5 GPIO_FLAG_NONE>;
+		pin-data-out = <&gpio0 6 GPIO_FLAG_NONE>;
+	};
+
+	spi0 {
+		compatible = "espressif,esp32-spi";
+		host = <SPI2_HOST>;
+		pin-mosi = <&gpio0 41 GPIO_FLAG_NONE>;
+		pin-miso = <&gpio0 38 GPIO_FLAG_NONE>;
+		pin-sclk = <&gpio0 40 GPIO_FLAG_NONE>;
+	};
+
+	uart1 {
+		compatible = "espressif,esp32-uart";
+		port = <UART_NUM_1>;
+		pin-tx = <&gpio0 43 GPIO_FLAG_NONE>;
+		pin-rx = <&gpio0 44 GPIO_FLAG_NONE>;
 	};
 };

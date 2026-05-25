@@ -2,34 +2,43 @@
 #include <sdkconfig.h>
 #endif
 
+#include <format>
+#include <map>
+
 #include <Tactility/Tactility.h>
 #include <Tactility/TactilityConfig.h>
 
+#include <Tactility/CpuAffinity.h>
+#include <Tactility/DispatcherThread.h>
+#include <Tactility/LogMessages.h>
+#include <Tactility/Logger.h>
+#include <Tactility/MountPoints.h>
+#include <Tactility/Paths.h>
 #include <Tactility/app/AppManifestParsing.h>
 #include <Tactility/app/AppRegistration.h>
-#include <Tactility/DispatcherThread.h>
 #include <Tactility/file/File.h>
 #include <Tactility/file/FileLock.h>
 #include <Tactility/file/PropertiesFile.h>
 #include <Tactility/hal/HalPrivate.h>
-#include <Tactility/Logger.h>
-#include <Tactility/LogMessages.h>
 #include <Tactility/lvgl/LvglPrivate.h>
-#include <Tactility/MountPoints.h>
 #include <Tactility/network/NtpPrivate.h>
 #include <Tactility/service/ServiceManifest.h>
 #include <Tactility/service/ServiceRegistration.h>
-#include <Tactility/service/loader/Loader.h>
 #include <Tactility/settings/TimePrivate.h>
 
+#include <tactility/concurrent/thread.h>
+#include <tactility/drivers/uart_controller.h>
+#include <tactility/filesystem/file_system.h>
+#include <tactility/hal_device_module.h>
 #include <tactility/kernel_init.h>
-
-#include <map>
-#include <format>
+#include <tactility/lvgl_module.h>
 
 #ifdef ESP_PLATFORM
+#include <tactility/drivers/root.h>
 #include <Tactility/InitEsp.h>
 #endif
+
+#include <Tactility/bluetooth/Bluetooth.h>
 
 namespace tt {
 
@@ -43,7 +52,6 @@ namespace service {
     // Primary
     namespace gps { extern const ServiceManifest manifest; }
     namespace wifi { extern const ServiceManifest manifest; }
-    namespace sdcard { extern const ServiceManifest manifest; }
 #ifdef ESP_PLATFORM
     namespace development { extern const ServiceManifest manifest; }
 #endif
@@ -57,8 +65,6 @@ namespace service {
     namespace statusbar { extern const ServiceManifest manifest; }
 #ifdef ESP_PLATFORM
     namespace displayidle { extern const ServiceManifest manifest; }
-#endif
-#if defined(ESP_PLATFORM) && defined(CONFIG_TT_DEVICE_LILYGO_TDECK)
     namespace keyboardidle { extern const ServiceManifest manifest; }
 #endif
 #if TT_FEATURE_SCREENSHOT_ENABLED
@@ -99,20 +105,23 @@ namespace app {
     namespace settings { extern const AppManifest manifest; }
     namespace systeminfo { extern const AppManifest manifest; }
     namespace timedatesettings { extern const AppManifest manifest; }
+    namespace touchcalibration { extern const AppManifest manifest; }
     namespace timezone { extern const AppManifest manifest; }
     namespace usbsettings { extern const AppManifest manifest; }
+    namespace btmanage { extern const AppManifest manifest; }
+    namespace btpeersettings { extern const AppManifest manifest; }
     namespace wifiapsettings { extern const AppManifest manifest; }
     namespace wificonnect { extern const AppManifest manifest; }
     namespace wifimanage { extern const AppManifest manifest; }
 
 #ifdef ESP_PLATFORM
+    namespace apwebserver { extern const AppManifest manifest; }
     namespace crashdiagnostics { extern const AppManifest manifest; }
     namespace webserversettings { extern const AppManifest manifest; }
+#if CONFIG_TT_TDECK_WORKAROUND == 1
+    namespace keyboardsettings { extern const AppManifest manifest; } // T-Deck only for now
+    namespace trackballsettings { extern const AppManifest manifest; } // T-Deck only for now
 #endif
-
-#if defined(ESP_PLATFORM) && defined(CONFIG_TT_DEVICE_LILYGO_TDECK)
-    namespace keyboardsettings { extern const AppManifest manifest; }
-    namespace trackballsettings { extern const AppManifest manifest; }
 #endif
 
 #if TT_FEATURE_SCREENSHOT_ENABLED
@@ -149,20 +158,21 @@ static void registerInternalApps() {
     addAppManifest(app::selectiondialog::manifest);
     addAppManifest(app::systeminfo::manifest);
     addAppManifest(app::timedatesettings::manifest);
+    addAppManifest(app::touchcalibration::manifest);
     addAppManifest(app::timezone::manifest);
     addAppManifest(app::wifiapsettings::manifest);
     addAppManifest(app::wificonnect::manifest);
     addAppManifest(app::wifimanage::manifest);
 
 #ifdef ESP_PLATFORM
+    addAppManifest(app::apwebserver::manifest);
     addAppManifest(app::webserversettings::manifest);
     addAppManifest(app::crashdiagnostics::manifest);
     addAppManifest(app::development::manifest);
+#if defined(CONFIG_TT_TDECK_WORKAROUND)
+        addAppManifest(app::keyboardsettings::manifest);
+        addAppManifest(app::trackballsettings::manifest);
 #endif
-
-#if defined(ESP_PLATFORM) && defined(CONFIG_TT_DEVICE_LILYGO_TDECK)
-    addAppManifest(app::keyboardsettings::manifest);
-    addAppManifest(app::trackballsettings::manifest);
 #endif
 
 #if defined(CONFIG_TINYUSB_MSC_ENABLED) && CONFIG_TINYUSB_MSC_ENABLED
@@ -177,7 +187,7 @@ static void registerInternalApps() {
     addAppManifest(app::chat::manifest);
 #endif
 
-    if (!hal::getConfiguration()->uart.empty()) {
+    if (device_exists_of_type(&UART_CONTROLLER_TYPE)) {
         addAppManifest(app::addgps::manifest);
         addAppManifest(app::gpssettings::manifest);
     }
@@ -185,6 +195,11 @@ static void registerInternalApps() {
     if (hal::hasDevice(hal::Device::Type::Power)) {
         addAppManifest(app::power::manifest);
     }
+
+#if defined(CONFIG_BT_ENABLED) && CONFIG_BT_ENABLED
+    addAppManifest(app::btmanage::manifest);
+    addAppManifest(app::btpeersettings::manifest);
+#endif
 }
 
 static void registerInstalledApp(std::string path) {
@@ -224,22 +239,18 @@ static void registerInstalledApps(const std::string& path) {
     });
 }
 
-static void registerInstalledAppsFromSdCard(const std::shared_ptr<hal::sdcard::SdCardDevice>& sdcard) {
-    auto sdcard_root_path = sdcard->getMountPath();
-    auto app_path = std::format("{}/app", sdcard_root_path);
-    if (file::isDirectory(app_path)) {
-        registerInstalledApps(app_path);
-    }
-}
-
-static void registerInstalledAppsFromSdCards() {
-    auto sdcard_devices = hal::findDevices<hal::sdcard::SdCardDevice>(hal::Device::Type::SdCard);
-    for (const auto& sdcard : sdcard_devices) {
-        if (sdcard->isMounted()) {
-            LOGGER.info("Registering apps from {}", sdcard->getMountPath());
-            registerInstalledAppsFromSdCard(sdcard);
+static void registerInstalledAppsFromFileSystems() {
+    file_system_for_each(nullptr, [](auto* fs, void* context) {
+        if (!file_system_is_mounted(fs)) return true;
+        char path[128];
+        if (file_system_get_path(fs, path, sizeof(path)) != ERROR_NONE) return true;
+        const auto app_path = std::format("{}/app", path);
+        if (!app_path.starts_with(file::MOUNT_POINT_SYSTEM) && file::isDirectory(app_path)) {
+            LOGGER.info("Registering apps from {}", app_path);
+            registerInstalledApps(app_path);
         }
-    }
+        return true;
+    });
 }
 
 static void registerAndStartSecondaryServices() {
@@ -247,13 +258,13 @@ static void registerAndStartSecondaryServices() {
     addService(service::loader::manifest);
     addService(service::gui::manifest);
     addService(service::statusbar::manifest);
-#ifdef ESP_PLATFORM
+    addService(service::memorychecker::manifest);
+#if defined(ESP_PLATFORM)
     addService(service::displayidle::manifest);
-#endif
-#if defined(ESP_PLATFORM) && defined(CONFIG_TT_DEVICE_LILYGO_TDECK)
+#if defined(CONFIG_TT_TDECK_WORKAROUND)
     addService(service::keyboardidle::manifest);
 #endif
-    addService(service::memorychecker::manifest);
+#endif
 #if TT_FEATURE_SCREENSHOT_ENABLED
     addService(service::screenshot::manifest);
 #endif
@@ -262,9 +273,6 @@ static void registerAndStartSecondaryServices() {
 static void registerAndStartPrimaryServices() {
     LOGGER.info("Registering and starting primary system services");
     addService(service::gps::manifest);
-    if (hal::hasDevice(hal::Device::Type::SdCard)) {
-        addService(service::sdcard::manifest);
-    }
     addService(service::wifi::manifest);
 #ifdef ESP_PLATFORM
     addService(service::development::manifest);
@@ -297,40 +305,34 @@ void createTempDirectory(const std::string& rootPath) {
 }
 
 void prepareFileSystems() {
-    // Temporary directories for SD cards
-    auto sdcard_devices = hal::findDevices<hal::sdcard::SdCardDevice>(hal::Device::Type::SdCard);
-    for (const auto& sdcard : sdcard_devices) {
-        if (sdcard->isMounted()) {
-            createTempDirectory(sdcard->getMountPath());
-        }
-    }
-    // Temporary directory for /data
-    if (file::isDirectory(file::MOUNT_POINT_DATA)) {
-        createTempDirectory(file::MOUNT_POINT_DATA);
-    }
+    file_system_for_each(nullptr, [](auto* fs, void* context) {
+        if (!file_system_is_mounted(fs)) return true;
+        char path[128];
+        if (file_system_get_path(fs, path, sizeof(path)) != ERROR_NONE) return true;
+        if (std::string(path) == file::MOUNT_POINT_SYSTEM) return true;
+        createTempDirectory(path);
+        return true;
+    });
 }
 
 void registerApps() {
     registerInternalApps();
-    auto data_apps_path = std::format("{}/app", file::MOUNT_POINT_DATA);
-    if (file::isDirectory(data_apps_path)) {
-        registerInstalledApps(data_apps_path);
-    }
-    registerInstalledAppsFromSdCards();
+    registerInstalledAppsFromFileSystems();
 }
 
-void run(const Configuration& config, Module* platformModule, Module* deviceModule, CompatibleDevice devicetreeDevices[]) {
+void run(const Configuration& config, Module* dtsModules[], DtsDevice dtsDevices[]) {
     LOGGER.info("Tactility v{} on {} ({})", TT_VERSION, CONFIG_TT_DEVICE_NAME, CONFIG_TT_DEVICE_ID);
 
     assert(config.hardware);
 
-    LOGGER.info(R"(Calling kernel_init with modules: "{}" and "{}")", platformModule->name, deviceModule->name);
-    if (kernel_init(platformModule, deviceModule, devicetreeDevices) != ERROR_NONE) {
+    LOGGER.info("Initializing kernel");
+    if (kernel_init(dtsModules, dtsDevices) != ERROR_NONE) {
         LOGGER.error("Failed to initialize kernel");
         return;
     }
 
-    const hal::Configuration& hardware = *config.hardware;
+    // hal-device-module
+    check(module_construct_add_start(&hal_device_module) == ERROR_NONE);
 
     // Assign early so starting services can use it
     config_instance = &config;
@@ -342,9 +344,26 @@ void run(const Configuration& config, Module* platformModule, Module* deviceModu
     settings::initTimeZone();
     hal::init(*config.hardware);
     network::ntp::init();
+    bluetooth::systemStart();
 
     registerAndStartPrimaryServices();
-    lvgl::init(hardware);
+
+    lvgl_module_configure((LvglModuleConfig) {
+        .on_start = lvgl::attachDevices,
+        .on_stop = lvgl::detachDevices,
+        .task_priority = THREAD_PRIORITY_HIGHER,
+        /** Minimum seems to be about 3500. In some scenarios, the WiFi app crashes at 8192,
+         * so we now have 9120 to run in a stable manner. We should figure out a way to avoid this.
+         * Perhaps we can give apps their own stack space and deal with lvgl callback handlers in a clever way. */
+        .task_stack_size = 9120,
+#ifdef ESP_PLATFORM
+        .task_affinity = getCpuAffinityConfiguration().graphics
+#endif
+    });
+    check(module_construct(&lvgl_module) == ERROR_NONE);
+    check(module_add(&lvgl_module) == ERROR_NONE);
+    lvgl::start();
+
     registerAndStartSecondaryServices();
 
     LOGGER.info("Core systems ready");
@@ -360,7 +379,8 @@ void run(const Configuration& config, Module* platformModule, Module* deviceModu
     }
 }
 
-const Configuration* _Nullable getConfiguration() {
+/** return the configuration or nullptr if it's not initialized */
+const Configuration* getConfiguration() {
     return config_instance;
 }
 

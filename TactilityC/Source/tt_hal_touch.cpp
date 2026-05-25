@@ -1,6 +1,6 @@
 #include "tt_hal_touch.h"
 
-#include "Tactility/hal/Device.h"
+#include <tactility/hal/Device.h>
 #include "Tactility/hal/touch/TouchDevice.h"
 #include "Tactility/hal/touch/TouchDriver.h"
 
@@ -35,7 +35,7 @@ void tt_hal_touch_driver_free(TouchDriverHandle handle) {
     delete wrapper;
 }
 
-bool tt_hal_touch_driver_get_touched_points(TouchDriverHandle handle, uint16_t* x, uint16_t* y, uint16_t* _Nullable strength, uint8_t* pointCount, uint8_t maxPointCount) {
+bool tt_hal_touch_driver_get_touched_points(TouchDriverHandle handle, uint16_t* x, uint16_t* y, uint16_t* strength, uint8_t* pointCount, uint8_t maxPointCount) {
     DriverWrapper* wrapper = static_cast<DriverWrapper*>(handle);
     return wrapper->driver->getTouchedPoints(x, y, strength, pointCount, maxPointCount);
 }

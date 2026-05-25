@@ -11,10 +11,11 @@
 #include <Tactility/Preferences.h>
 #include <Tactility/RecursiveMutex.h>
 #include <Tactility/service/loader/Loader.h>
-#include <Tactility/Tactility.h>
 #include <Tactility/Timer.h>
 
 #include <format>
+
+#include <tactility/lvgl_icon_shared.h>
 
 namespace tt::app::i2cscanner {
 
@@ -71,7 +72,7 @@ public:
 };
 
 /** Returns the app data if the app is active. Note that this could clash if the same app is started twice and a background thread is slow. */
-std::shared_ptr<I2cScannerApp> _Nullable optApp() {
+std::shared_ptr<I2cScannerApp> optApp() {
     auto appContext = getCurrentAppContext();
     if (appContext != nullptr && appContext->getManifest().appId == manifest.appId) {
         return std::static_pointer_cast<I2cScannerApp>(appContext->getApp());
@@ -127,8 +128,6 @@ void I2cScannerApp::onShow(AppContext& app, lv_obj_t* parent) {
     lv_dropdown_set_options(port_dropdown, dropdown_items.c_str());
     lv_obj_set_width(port_dropdown, LV_PCT(48));
     lv_obj_align(port_dropdown, LV_ALIGN_TOP_RIGHT, 0, 0);
-    lv_obj_set_style_border_color(port_dropdown, lv_color_hex(0xFAFAFA), LV_PART_MAIN);
-    lv_obj_set_style_border_width(port_dropdown, 1, LV_PART_MAIN);
     lv_obj_add_event_cb(port_dropdown, onSelectBusCallback, LV_EVENT_VALUE_CHANGED, this);
     auto selected_bus = getLastBusIndex();
     lv_dropdown_set_selected(port_dropdown, selected_bus);
@@ -410,7 +409,7 @@ void I2cScannerApp::onScanTimerFinished() {
 extern const AppManifest manifest = {
     .appId = "I2cScanner",
     .appName = "I2C Scanner",
-    .appIcon = TT_ASSETS_APP_ICON_I2C_SETTINGS,
+    .appIcon = LVGL_ICON_SHARED_SEARCH,
     .appCategory = Category::System,
     .createApp = create<I2cScannerApp>
 };

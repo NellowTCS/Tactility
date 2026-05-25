@@ -4,19 +4,12 @@ enable_language(C CXX ASM)
 
 set(CMAKE_CXX_COMPILER g++)
 
-file(GLOB_RECURSE TEST_SOURCES ${PROJECT_SOURCE_DIR}/*.cpp)
+file(GLOB_RECURSE TEST_SOURCES ${PROJECT_SOURCE_DIR}/Source/*.cpp)
 add_executable(TactilityFreeRtosTests EXCLUDE_FROM_ALL ${TEST_SOURCES})
 
-add_definitions(-D_Nullable=)
-add_definitions(-D_Nonnull=)
+target_include_directories(TactilityFreeRtosTests PRIVATE ${DOCTESTINC})
 
-target_include_directories(TactilityFreeRtosTests PRIVATE
-    ${DOCTESTINC}
-)
-
-add_test(NAME TactilityFreeRtosTests
-    COMMAND TactilityFreeRtosTests
-)
+add_test(NAME TactilityFreeRtosTests COMMAND TactilityFreeRtosTests)
 
 target_link_libraries(TactilityFreeRtosTests PUBLIC
     TactilityFreeRtos

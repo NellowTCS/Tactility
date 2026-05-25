@@ -1,5 +1,5 @@
-#include <Tactility/app/files/View.h>
 #include <Tactility/app/files/SupportedFiles.h>
+#include <Tactility/app/files/View.h>
 
 #include <Tactility/LogMessages.h>
 #include <Tactility/Logger.h>
@@ -10,11 +10,11 @@
 #include <Tactility/app/imageviewer/ImageViewer.h>
 #include <Tactility/app/inputdialog/InputDialog.h>
 #include <Tactility/app/notes/Notes.h>
-#include <tactility/check.h>
 #include <Tactility/file/File.h>
 #include <Tactility/kernel/Platform.h>
 #include <Tactility/lvgl/LvglSync.h>
 #include <Tactility/lvgl/Toolbar.h>
+#include <tactility/check.h>
 
 #include <cstdio>
 #include <cstring>
@@ -74,6 +74,114 @@ static void onNewFolderPressedCallback(lv_event_t* event) {
     view->onNewFolderPressed();
 }
 
+static void onCopyPressedCallback(lv_event_t* event) {
+    auto* view = static_cast<View*>(lv_event_get_user_data(event));
+    view->onCopyPressed();
+}
+
+static void onCutPressedCallback(lv_event_t* event) {
+    auto* view = static_cast<View*>(lv_event_get_user_data(event));
+    view->onCutPressed();
+}
+
+static void onPastePressedCallback(lv_event_t* event) {
+    auto* view = static_cast<View*>(lv_event_get_user_data(event));
+    view->onPastePressed();
+}
+
+// endregion
+
+// region File helpers
+
+static bool copyFileContents(const std::string& src, const std::string& dst) {
+    auto src_lock = file::getLock(src);
+    auto dst_lock = file::getLock(dst);
+    const bool same_lock = (src_lock.get() == dst_lock.get());
+
+    auto unlock_all = [&] {
+        if (!same_lock) dst_lock->unlock();
+        src_lock->unlock();
+    };
+
+    src_lock->lock();
+    if (!same_lock) dst_lock->lock();
+
+    FILE* in = fopen(src.c_str(), "rb");
+    if (in == nullptr) {
+        unlock_all();
+        return false;
+    }
+    FILE* out = fopen(dst.c_str(), "wb");
+    if (out == nullptr) {
+        fclose(in);
+        unlock_all();
+        return false;
+    }
+    uint8_t buf[512];
+    bool success = true;
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {
+            success = false;
+            break;
+        }
+    }
+    if (ferror(in)) {
+        success = false;
+    }
+    fclose(in);
+    if (fclose(out) != 0) {
+        success = false;
+    }
+    if (!success) {
+        remove(dst.c_str());
+    }
+    unlock_all();
+    return success;
+}
+
+static bool copyRecursive(const std::string& src, const std::string& dst) {
+    if (file::isDirectory(src)) {
+        if (!file::findOrCreateDirectory(dst, 0755)) {
+            return false;
+        }
+
+        // Process one entry at a time: release the device lock between iterations
+        // so other SPI bus users aren't starved, and stop immediately on failure.
+        auto lock = file::getLock(src);
+        lock->lock();
+        DIR* dir = opendir(src.c_str());
+        if (!dir) {
+            lock->unlock();
+            file::deleteRecursively(dst);
+            return false;
+        }
+
+        bool success = true;
+        while (success) {
+            struct dirent* entry = readdir(dir);
+            if (!entry) break;
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+
+            std::string name = entry->d_name; // copy before releasing lock
+            lock->unlock();
+
+            success = copyRecursive(file::getChildPath(src, name), file::getChildPath(dst, name));
+
+            lock->lock();
+        }
+        closedir(dir);
+        lock->unlock();
+
+        if (!success) {
+            file::deleteRecursively(dst);
+        }
+        return success;
+    } else {
+        return copyFileContents(src, dst);
+    }
+}
+
 // endregion
 
 void View::viewFile(const std::string& path, const std::string& filename) {
@@ -104,7 +212,7 @@ void View::viewFile(const std::string& path, const std::string& filename) {
         // install(filename);
         auto message = std::format("Do you want to install {}?", filename);
         installAppPath = processed_filepath;
-        auto choices = std::vector { "Yes", "No" };
+        auto choices = std::vector {"Yes", "No"};
         installAppLaunchId = alertdialog::start("Install?", message, choices);
 #endif
     } else if (isSupportedImageFile(filename)) {
@@ -123,59 +231,76 @@ void View::viewFile(const std::string& path, const std::string& filename) {
     onNavigate();
 }
 
+bool View::resolveDirentFromListIndex(int32_t list_index, dirent& out_entry) {
+    const bool is_root = (state->getCurrentPath() == "/");
+    const bool has_back = (!is_root && current_start_index > 0);
+
+    if (has_back && list_index == 0) {
+        return false; // Back button
+    }
+
+    const size_t adjusted_index =
+        current_start_index + static_cast<size_t>(list_index) - (has_back ? 1 : 0);
+
+    return state->getDirent(static_cast<uint32_t>(adjusted_index), out_entry);
+}
+
 void View::onDirEntryPressed(uint32_t index) {
     dirent dir_entry;
-    if (state->getDirent(index, dir_entry)) {
-        LOGGER.info("Pressed {} {}", dir_entry.d_name, dir_entry.d_type);
-        state->setSelectedChildEntry(dir_entry.d_name);
-        using namespace tt::file;
-        switch (dir_entry.d_type) {
-            case TT_DT_DIR:
-            case TT_DT_CHR:
-                state->setEntriesForChildPath(dir_entry.d_name);
-                onNavigate();
-                update();
-                break;
-            case TT_DT_LNK:
-                LOGGER.warn("opening links is not supported");
-                break;
-            case TT_DT_REG:
-                viewFile(state->getCurrentPath(), dir_entry.d_name);
-                onNavigate();
-                break;
-            default:
-                // Assume it's a file
-                // TODO: Find a better way to identify a file
-                viewFile(state->getCurrentPath(), dir_entry.d_name);
-                onNavigate();
-                break;
-        }
+    if (!resolveDirentFromListIndex(static_cast<int32_t>(index), dir_entry)) {
+        return;
+    }
+
+    LOGGER.info("Pressed {} {}", dir_entry.d_name, dir_entry.d_type);
+    state->setSelectedChildEntry(dir_entry.d_name);
+
+    using namespace tt::file;
+    switch (dir_entry.d_type) {
+        case TT_DT_DIR:
+        case TT_DT_CHR:
+            state->setEntriesForChildPath(dir_entry.d_name);
+            onNavigate();
+            update();
+            break;
+
+        case TT_DT_LNK:
+            LOGGER.warn("opening links is not supported");
+            break;
+
+        default:
+            viewFile(state->getCurrentPath(), dir_entry.d_name);
+            onNavigate();
+            break;
     }
 }
 
 void View::onDirEntryLongPressed(int32_t index) {
+    if (state->getCurrentPath() == "/") {
+        return;
+    }
+
     dirent dir_entry;
-    if (state->getDirent(index, dir_entry)) {
-        LOGGER.info("Pressed {} {}", dir_entry.d_name, dir_entry.d_type);
-        state->setSelectedChildEntry(dir_entry.d_name);
-        using namespace file;
-        switch (dir_entry.d_type) {
-            case TT_DT_DIR:
-            case TT_DT_CHR:
-                showActionsForDirectory();
-                break;
-            case TT_DT_LNK:
-                LOGGER.warn("Opening links is not supported");
-                break;
-            case TT_DT_REG:
-                showActionsForFile();
-                break;
-            default:
-                // Assume it's a file
-                // TODO: Find a better way to identify a file
-                showActionsForFile();
-                break;
-        }
+    if (!resolveDirentFromListIndex(index, dir_entry)) {
+        return;
+    }
+
+    LOGGER.info("Pressed {} {}", dir_entry.d_name, dir_entry.d_type);
+    state->setSelectedChildEntry(dir_entry.d_name);
+
+    using namespace file;
+    switch (dir_entry.d_type) {
+        case TT_DT_DIR:
+        case TT_DT_CHR:
+            showActionsForDirectory();
+            break;
+
+        case TT_DT_LNK:
+            LOGGER.warn("Opening links is not supported");
+            break;
+
+        default:
+            showActionsForFile();
+            break;
     }
 }
 
@@ -251,7 +376,7 @@ void View::onDeletePressed() {
     LOGGER.info("Pending delete {}", file_path);
     state->setPendingAction(State::ActionDelete);
     std::string message = "Do you want to delete this?\n" + file_path;
-    const std::vector<std::string> choices = { "Yes", "No" };
+    const std::vector<std::string> choices = {"Yes", "No"};
     alertdialog::start("Are you sure?", message, choices);
 }
 
@@ -267,9 +392,13 @@ void View::onNewFolderPressed() {
     inputdialog::start("New Folder", "Enter folder name:", "");
 }
 
-void View::showActionsForDirectory() {
+void View::showActions() {
     lv_obj_clean(action_list);
 
+    auto* copy_button = lv_list_add_button(action_list, LV_SYMBOL_COPY, "Copy");
+    lv_obj_add_event_cb(copy_button, onCopyPressedCallback, LV_EVENT_SHORT_CLICKED, this);
+    auto* cut_button = lv_list_add_button(action_list, LV_SYMBOL_CUT, "Cut");
+    lv_obj_add_event_cb(cut_button, onCutPressedCallback, LV_EVENT_SHORT_CLICKED, this);
     auto* rename_button = lv_list_add_button(action_list, LV_SYMBOL_EDIT, "Rename");
     lv_obj_add_event_cb(rename_button, onRenamePressedCallback, LV_EVENT_SHORT_CLICKED, this);
     auto* delete_button = lv_list_add_button(action_list, LV_SYMBOL_TRASH, "Delete");
@@ -278,36 +407,76 @@ void View::showActionsForDirectory() {
     lv_obj_remove_flag(action_list, LV_OBJ_FLAG_HIDDEN);
 }
 
-void View::showActionsForFile() {
-    lv_obj_clean(action_list);
+void View::showActionsForDirectory() { showActions(); }
+void View::showActionsForFile() { showActions(); }
 
-    auto* rename_button = lv_list_add_button(action_list, LV_SYMBOL_EDIT, "Rename");
-    lv_obj_add_event_cb(rename_button, onRenamePressedCallback, LV_EVENT_SHORT_CLICKED, this);
-    auto* delete_button = lv_list_add_button(action_list, LV_SYMBOL_TRASH, "Delete");
-    lv_obj_add_event_cb(delete_button, onDeletePressedCallback, LV_EVENT_SHORT_CLICKED, this);
+void View::update(size_t start_index) {
+    const bool is_root = (state->getCurrentPath() == "/");
 
-    lv_obj_remove_flag(action_list, LV_OBJ_FLAG_HIDDEN);
-}
-
-void View::update() {
     auto scoped_lockable = lvgl::getSyncLock()->asScopedLock();
-    if (scoped_lockable.lock(lvgl::defaultLockTime)) {
-        lv_obj_clean(dir_entry_list);
-
-        state->withEntries([this](const std::vector<dirent>& entries) {
-            for (auto entry : entries) {
-                LOGGER.debug("Entry: {} {}", entry.d_name, entry.d_type);
-                createDirEntryWidget(dir_entry_list, entry);
-            }
-        });
-
-        if (state->getCurrentPath() == "/") {
-            lv_obj_add_flag(navigate_up_button, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_remove_flag(navigate_up_button, LV_OBJ_FLAG_HIDDEN);
-        }
-    } else {
+    if (!scoped_lockable.lock(lvgl::defaultLockTime)) {
         LOGGER.error(LOG_MESSAGE_MUTEX_LOCK_FAILED_FMT, "lvgl");
+        return;
+    }
+
+    lv_obj_clean(dir_entry_list);
+
+    current_start_index = start_index;
+
+    state->withEntries([this, is_root](const std::vector<dirent>& entries) {
+        size_t total_entries = entries.size();
+        if (current_start_index >= total_entries) {
+            current_start_index = (total_entries > MAX_BATCH)
+                ? (total_entries - MAX_BATCH)
+                : 0;
+        }
+        size_t count = 0;
+
+        if (!is_root && current_start_index > 0) {
+            auto* back_btn = lv_list_add_btn(dir_entry_list, LV_SYMBOL_LEFT, "Back");
+            lv_obj_add_event_cb(back_btn, [](lv_event_t* event) {
+                auto* view = static_cast<View*>(lv_event_get_user_data(event));
+                size_t new_index = (view->current_start_index >= view->MAX_BATCH) ? 
+                                    view->current_start_index - view->MAX_BATCH : 0;
+                view->update(new_index); }, LV_EVENT_SHORT_CLICKED, this);
+        }
+
+        for (size_t i = current_start_index; i < total_entries; ++i) {
+            auto entry = entries[i];
+
+            createDirEntryWidget(dir_entry_list, entry);
+            count++;
+
+            if (count >= MAX_BATCH) {
+                break;
+            }
+        }
+
+        last_loaded_index = std::min(current_start_index + count, total_entries);
+
+        if (!is_root && last_loaded_index < total_entries) {
+            if (total_entries > current_start_index &&
+                (total_entries - current_start_index) > MAX_BATCH) {
+                auto* next_btn = lv_list_add_btn(dir_entry_list, LV_SYMBOL_RIGHT, "Next");
+                lv_obj_add_event_cb(next_btn, [](lv_event_t* event) {
+                    auto* view = static_cast<View*>(lv_event_get_user_data(event));
+                    view->update(view->last_loaded_index); }, LV_EVENT_SHORT_CLICKED, this);
+            }
+        } else {
+            last_loaded_index = total_entries;
+        }
+    });
+
+    if (is_root) {
+        lv_obj_add_flag(lv_obj_get_parent(navigate_up_button), LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_remove_flag(lv_obj_get_parent(navigate_up_button), LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (state->hasClipboard() && !is_root) {
+        lv_obj_remove_flag(lv_obj_get_parent(paste_button), LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(lv_obj_get_parent(paste_button), LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -319,6 +488,8 @@ void View::init(const AppContext& appContext, lv_obj_t* parent) {
     navigate_up_button = lvgl::toolbar_add_image_button_action(toolbar, LV_SYMBOL_UP, &onNavigateUpPressedCallback, this);
     new_file_button = lvgl::toolbar_add_image_button_action(toolbar, LV_SYMBOL_FILE, &onNewFilePressedCallback, this);
     new_folder_button = lvgl::toolbar_add_image_button_action(toolbar, LV_SYMBOL_DIRECTORY, &onNewFolderPressedCallback, this);
+    paste_button = lvgl::toolbar_add_image_button_action(toolbar, LV_SYMBOL_PASTE, &onPastePressedCallback, this);
+    lv_obj_add_flag(lv_obj_get_parent(paste_button), LV_OBJ_FLAG_HIDDEN);
 
     auto* wrapper = lv_obj_create(parent);
     lv_obj_set_width(wrapper, LV_PCT(100));
@@ -382,7 +553,7 @@ void View::onResult(LaunchId launchId, Result result, std::unique_ptr<Bundle> bu
                 } else if (file::isFile(filepath)) {
                     auto lock = file::getLock(filepath);
                     lock->lock();
-                    if (remove(filepath.c_str()) <= 0) {
+                    if (remove(filepath.c_str()) != 0) {
                         LOGGER.warn("Failed to delete {}", filepath);
                     }
                     lock->unlock();
@@ -399,7 +570,15 @@ void View::onResult(LaunchId launchId, Result result, std::unique_ptr<Bundle> bu
                 auto lock = file::getLock(filepath);
                 lock->lock();
                 std::string rename_to = file::getChildPath(state->getCurrentPath(), new_name);
-                if (rename(filepath.c_str(), rename_to.c_str())) {
+                struct stat st;
+                if (stat(rename_to.c_str(), &st) == 0) {
+                    LOGGER.warn("Rename: destination already exists: \"{}\"", rename_to);
+                    lock->unlock();
+                    state->setPendingAction(State::ActionNone);
+                    alertdialog::start("Rename failed", "\"" + new_name + "\" already exists.");
+                    break;
+                }
+                if (rename(filepath.c_str(), rename_to.c_str()) == 0) {
                     LOGGER.info("Renamed \"{}\" to \"{}\"", filepath, rename_to);
                 } else {
                     LOGGER.error("Failed to rename \"{}\" to \"{}\"", filepath, rename_to);
@@ -467,13 +646,136 @@ void View::onResult(LaunchId launchId, Result result, std::unique_ptr<Bundle> bu
             }
             break;
         }
+        case State::ActionPaste: {
+            if (alertdialog::getResultIndex(*bundle) == 0) {
+                auto clipboard = state->getClipboard();
+                if (clipboard.has_value()) {
+                    std::string dst = state->getPendingPasteDst();
+                    // Trade-off: dst is removed before the copy attempt. If doPaste
+                    // subsequently fails (e.g. source read error, out of space), the
+                    // original dst data is unrecoverable. Acceptable for an embedded
+                    // file manager; a safer approach would rename dst to a temp path
+                    // first and roll back on failure.
+                    if (file::deleteRecursively(dst)) {
+                        doPaste(clipboard->first, clipboard->second, dst);
+                    } else {
+                        LOGGER.error("Overwrite: failed to remove existing destination: \"{}\"", dst);
+                        state->setPendingAction(State::ActionNone);
+                        alertdialog::start(
+                            "Overwrite failed",
+                            "Could not remove \"" + file::getLastPathSegment(dst) + "\" before overwriting."
+                        );
+                    }
+                }
+            }
+            break;
+        }
         default:
             break;
     }
+}
+
+void View::onCopyPressed() {
+    std::string path = state->getSelectedChildPath();
+    state->setClipboard(path, false);
+    LOGGER.info("Copied to clipboard: {}", path);
+    onNavigate();
+    update();
+}
+
+void View::onCutPressed() {
+    std::string path = state->getSelectedChildPath();
+    state->setClipboard(path, true);
+    LOGGER.info("Cut to clipboard: {}", path);
+    onNavigate();
+    update();
+}
+
+void View::onPastePressed() {
+    auto clipboard = state->getClipboard();
+    if (!clipboard.has_value()) return;
+
+    std::string src = clipboard->first;
+    bool is_cut = clipboard->second;
+    std::string entry_name = file::getLastPathSegment(src);
+    std::string dst = file::getChildPath(state->getCurrentPath(), entry_name);
+
+    // Note: getLock(src) guards the source path; the existence check below is
+    // against dst, so there is a TOCTOU gap — another writer could create dst
+    // between this check and the write inside doPaste.  Acceptable on a
+    // single-user embedded device; locking dst instead would be more correct.
+    if (src == dst) {
+        LOGGER.info("Paste: source and destination are the same path, skipping");
+        return;
+    }
+    auto lock = file::getLock(src);
+    lock->lock();
+
+    struct stat st;
+    bool dst_exists = (stat(dst.c_str(), &st) == 0);
+    lock->unlock();
+
+    if (dst_exists) {
+        state->setPendingPasteDst(dst);
+        state->setPendingAction(State::ActionPaste);
+        const std::vector<std::string> choices = {"Overwrite", "Cancel"};
+        alertdialog::start("File exists", "Overwrite \"" + entry_name + "\"?", choices);
+        return;
+    }
+
+    doPaste(src, is_cut, dst);
+}
+
+void View::doPaste(const std::string& src, bool is_cut, const std::string& dst) {
+    bool success = false;
+    bool src_delete_failed = false;
+    if (is_cut) {
+        auto lock = file::getLock(src);
+        lock->lock();
+        success = (rename(src.c_str(), dst.c_str()) == 0);
+        lock->unlock();
+        if (!success) {
+            // Fallback for cross-filesystem moves: copy then delete.
+            // Only mark success if both halves succeed — if the source removal
+            // fails we leave success=false so the clipboard is preserved and
+            // the error is surfaced; the user must remove the source manually.
+            if (copyRecursive(src, dst)) {
+                if (file::deleteRecursively(src)) {
+                    success = true;
+                } else {
+                    src_delete_failed = true;
+                    LOGGER.error("Cut: copied \"{}\" to \"{}\" but failed to remove source — manual cleanup required", src, dst);
+                }
+            }
+        }
+    } else {
+        success = copyRecursive(src, dst);
+    }
+
+    const std::string filename = file::getLastPathSegment(src);
+    if (success) {
+        LOGGER.info("{} \"{}\" to \"{}\"", is_cut ? "Moved" : "Copied", src, dst);
+        if (is_cut) {
+            state->clearClipboard();
+        }
+    } else if (src_delete_failed) {
+        state->setPendingAction(State::ActionNone); // prevent re-trigger on dialog dismiss
+        alertdialog::start("Move incomplete", "\"" + filename + "\" was copied but the original could not be removed.\nPlease delete it manually.");
+    } else {
+        LOGGER.error("Failed to {} \"{}\" to \"{}\"", is_cut ? "move" : "copy", src, dst);
+        state->setPendingAction(State::ActionNone); // prevent re-trigger on dialog dismiss
+        alertdialog::start(
+            std::string("Failed to ") + (is_cut ? "move" : "copy"),
+            "\"" + filename + "\" could not be " + (is_cut ? "moved." : "copied.")
+        );
+    }
+
+    state->setEntriesForPath(state->getCurrentPath());
+    update();
 }
 
 void View::deinit(const AppContext& appContext) {
     lv_obj_remove_event_cb(dir_entry_list, dirEntryListScrollBeginCallback);
 }
 
-}
+} // namespace tt::app::files

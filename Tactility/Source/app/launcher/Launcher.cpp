@@ -4,31 +4,36 @@
 #include <Tactility/app/AppPaths.h>
 #include <Tactility/app/AppRegistration.h>
 #include <Tactility/hal/power/PowerDevice.h>
-#include <Tactility/lvgl/Lvgl.h>
 #include <Tactility/service/loader/Loader.h>
 #include <Tactility/settings/BootSettings.h>
 
+#include <cstring>
 #include <lvgl.h>
+
+#include <tactility/lvgl_fonts.h>
+#include <tactility/lvgl_icon_launcher.h>
+#include <tactility/lvgl_module.h>
 
 namespace tt::app::launcher {
 
 static const auto LOGGER = Logger("Launcher");
 
-static int getButtonSize(hal::UiScale scale) {
-    if (scale == hal::UiScale::Smallest) {
-        return 40;
+static uint32_t getButtonPadding(UiDensity density, uint32_t buttonSize) {
+    if (density == LVGL_UI_DENSITY_COMPACT) {
+        return 0;
     } else {
-        return 64;
+        return buttonSize / 8;
     }
 }
 
 class LauncherApp final : public App {
 
-    static lv_obj_t* createAppButton(lv_obj_t* parent, hal::UiScale uiScale, const char* imageFile, const char* appId, int32_t itemMargin, bool isLandscape) {
-        auto button_size = getButtonSize(uiScale);
-
+    static lv_obj_t* createAppButton(lv_obj_t* parent, UiDensity uiDensity, const char* imageFile, const char* appId, int32_t itemMargin, bool isLandscape) {
+        const auto button_size = lvgl_get_launcher_icon_font_height();
+        const auto button_padding = getButtonPadding(uiDensity, button_size);
         auto* apps_button = lv_button_create(parent);
-        lv_obj_set_style_pad_all(apps_button, 0, LV_STATE_DEFAULT);
+
+        lv_obj_set_style_pad_all(apps_button, static_cast<int32_t>(button_padding), LV_STATE_DEFAULT);
         if (isLandscape) {
             lv_obj_set_style_margin_hor(apps_button, itemMargin, LV_STATE_DEFAULT);
         } else {
@@ -40,22 +45,13 @@ class LauncherApp final : public App {
 
         // create the image first
         auto* button_image = lv_image_create(apps_button);
+        lv_obj_set_style_text_font(button_image, lvgl_get_launcher_icon_font(), LV_STATE_DEFAULT);
         lv_image_set_src(button_image, imageFile);
-
-        // Recolor handling:
-        // For color builds use theme primary color
-        // For 1-bit/monochrome builds force a visible color (black)
-        #if LV_COLOR_DEPTH == 1
-        // Try forcing black recolor on monochrome builds
-        lv_obj_set_style_image_recolor(button_image, lv_color_black(), LV_STATE_DEFAULT);
-        lv_obj_set_style_image_recolor_opa(button_image, LV_OPA_COVER, LV_STATE_DEFAULT);
-        #else
+        lv_obj_set_style_text_color(button_image, lv_theme_get_color_primary(button_image), LV_STATE_DEFAULT);
         lv_obj_set_style_image_recolor(button_image, lv_theme_get_color_primary(parent), LV_STATE_DEFAULT);
         lv_obj_set_style_image_recolor_opa(button_image, LV_OPA_COVER, LV_STATE_DEFAULT);
-        #endif
 
-        // Ensure buttons are still tappable when the asset fails to load
-        // Icon images are 40x40, so we get some extra padding too
+        // Ensure it's square (Material Symbols are slightly wider than tall)
         lv_obj_set_size(button_image, button_size, button_size);
 
         lv_obj_add_event_cb(apps_button, onAppPressed, LV_EVENT_SHORT_CLICKED, (void*)appId);
@@ -92,30 +88,40 @@ public:
 
     void onCreate(AppContext& app) override {
         settings::BootSettings boot_properties;
-        if (settings::loadBootSettings(boot_properties) && !boot_properties.autoStartAppId.empty()) {
-            LOGGER.info("Starting {}", boot_properties.autoStartAppId);
-            start(boot_properties.autoStartAppId);
+        if (settings::loadBootSettings(boot_properties)) {
+            if (
+                !boot_properties.autoStartAppId.empty() &&
+                findAppManifestById(boot_properties.autoStartAppId) != nullptr
+            ) {
+                LOGGER.info("Starting {}", boot_properties.autoStartAppId);
+                start(boot_properties.autoStartAppId);
+            } else {
+                LOGGER.info("No auto-start app configured. Skipping default auto-start due to boot.properties presence.");
+            }
+        } else if (
+            strcmp(CONFIG_TT_AUTO_START_APP_ID, "") != 0 &&
+            findAppManifestById(CONFIG_TT_AUTO_START_APP_ID) != nullptr
+        ) {
+            LOGGER.info("Starting {}", CONFIG_TT_AUTO_START_APP_ID);
+            start(CONFIG_TT_AUTO_START_APP_ID);
         }
     }
 
     void onShow(AppContext& app, lv_obj_t* parent) override {
         auto* buttons_wrapper = lv_obj_create(parent);
 
-        auto ui_scale = hal::getConfiguration()->uiScale;
-        auto button_size = getButtonSize(ui_scale);
+        auto ui_density = lvgl_get_ui_density();
+        const auto button_size = lvgl_get_launcher_icon_font_height();
+        const auto button_padding = getButtonPadding(ui_density, button_size);
+        const auto total_button_size = button_size + (button_padding * 2);
 
         lv_obj_align(buttons_wrapper, LV_ALIGN_CENTER, 0, 0);
-        // lv_obj_set_style_pad_all(buttons_wrapper, 0, LV_STATE_DEFAULT);
         lv_obj_set_size(buttons_wrapper, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_style_border_width(buttons_wrapper, 0, LV_STATE_DEFAULT);
         lv_obj_set_flex_grow(buttons_wrapper, 1);
 
-        // Fix for button selection (problem with UiScale::Small on Cardputer)
-        if (!hal::hasDevice(hal::Device::Type::Touch)) {
-            lv_obj_set_style_pad_all(buttons_wrapper, 6, LV_STATE_DEFAULT);
-        } else {
-            lv_obj_set_style_pad_all(buttons_wrapper, 0, LV_STATE_DEFAULT);
-        }
+        // Fix for button selection
+        lv_obj_set_style_pad_all(buttons_wrapper, 6, LV_STATE_DEFAULT);
 
         const auto* display = lv_obj_get_display(parent);
         const auto horizontal_px = lv_display_get_horizontal_resolution(display);
@@ -129,24 +135,19 @@ public:
 
         int32_t margin;
         if (is_landscape_display) {
-            const int32_t available_width = std::max<int32_t>(0, lv_display_get_horizontal_resolution(display) - (3 * button_size));
-            margin = std::min<int32_t>(available_width / 16, button_size);
+            const int32_t available_width = std::max<int32_t>(0, lv_display_get_horizontal_resolution(display) - (3 * total_button_size));
+            margin = std::min<int32_t>(available_width / 16, total_button_size / 2);
         } else {
-            const int32_t available_height = std::max<int32_t>(0, lv_display_get_vertical_resolution(display) - (3 * button_size));
-            margin = std::min<int32_t>(available_height / 16, button_size);
+            const int32_t available_height = std::max<int32_t>(0, lv_display_get_vertical_resolution(display) - (3 * total_button_size));
+            margin = std::min<int32_t>(available_height / 16, total_button_size / 2);
         }
 
-        const auto paths = app.getPaths();
-        const auto apps_icon_path = lvgl::PATH_PREFIX + paths->getAssetsPath("icon_apps.png");
-        const auto files_icon_path = lvgl::PATH_PREFIX + paths->getAssetsPath("icon_files.png");
-        const auto settings_icon_path = lvgl::PATH_PREFIX + paths->getAssetsPath("icon_settings.png");
-
-        createAppButton(buttons_wrapper, ui_scale, apps_icon_path.c_str(), "AppList", margin, is_landscape_display);
-        createAppButton(buttons_wrapper, ui_scale, files_icon_path.c_str(), "Files", margin, is_landscape_display);
-        createAppButton(buttons_wrapper, ui_scale, settings_icon_path.c_str(), "Settings", margin, is_landscape_display);
+        createAppButton(buttons_wrapper, ui_density, LVGL_ICON_LAUNCHER_APPS, "AppList", margin, is_landscape_display);
+        createAppButton(buttons_wrapper, ui_density, LVGL_ICON_LAUNCHER_FOLDER, "Files", margin, is_landscape_display);
+        createAppButton(buttons_wrapper, ui_density, LVGL_ICON_LAUNCHER_SETTINGS, "Settings", margin, is_landscape_display);
 
         if (shouldShowPowerButton()) {
-            auto* power_button = lv_btn_create(parent);
+            auto* power_button = lv_button_create(parent);
             lv_obj_set_style_pad_all(power_button, 8, 0);
             lv_obj_align(power_button, LV_ALIGN_BOTTOM_MID, 0, -10);
             lv_obj_add_event_cb(power_button, onPowerOffPressed, LV_EVENT_SHORT_CLICKED, nullptr);
