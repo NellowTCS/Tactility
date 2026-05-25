@@ -246,7 +246,9 @@ bool GpsService::getGga(minmea_sentence_gga& gga) const {
 
 std::shared_ptr<GpsService> findGpsService() {
     auto service = findServiceById(manifest.id);
-    assert(service != nullptr);
+    if (service == nullptr) {
+        return nullptr; // Service not registered yet
+    }
     return std::static_pointer_cast<GpsService>(service);
 }
 
