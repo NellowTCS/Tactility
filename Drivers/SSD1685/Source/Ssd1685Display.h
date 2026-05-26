@@ -2,7 +2,7 @@
 
 #include <EspLcdDisplay.h>
 #include <Tactility/hal/display/DisplayDevice.h>
-#include <Tactility/hal/spi/Spi.h>
+#include <tactility/log.h>
 
 #include <driver/gpio.h>
 #include <driver/spi_master.h>
@@ -15,7 +15,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "esp_lcd_panel_ssd1685.h"
+#include "esp_lcd_ssd1685.h"
 #ifdef __cplusplus
 }
 #endif
@@ -70,7 +70,7 @@ public:
 private:
 
     std::unique_ptr<Configuration> configuration;
-    esp_lcd_ssd1685_config_t* vendorConfig;
+    esp_lcd_panel_ssd1685_config_t* vendorConfig;
 
     bool createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) override;
 
@@ -81,13 +81,13 @@ private:
 public:
 
     explicit Ssd1685Display(std::unique_ptr<Configuration> inConfiguration) :
-        EspLcdDisplay(tt::hal::spi::getLock(inConfiguration->spiHost)),
+        EspLcdDisplay(),
         configuration(std::move(inConfiguration)),
         vendorConfig(nullptr)
     {
         assert(configuration != nullptr);
         
-        TT_LOG_I(TAG, "Display config: %ux%u", 
+        LOG_I(TAG, "Display config: %ux%u", 
                 configuration->width, configuration->height);
     }
 

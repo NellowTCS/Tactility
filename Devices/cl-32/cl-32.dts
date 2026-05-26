@@ -7,7 +7,6 @@
 / {
 	compatible = "root";
 	model = "CL-32";
-	vendor = "CL-32";
 
 	gpio0 {
 		compatible = "espressif,esp32-gpio";
@@ -18,7 +17,7 @@
 		compatible = "espressif,esp32-i2c";
 		port = <I2C_NUM_0>;
 		clock-frequency = <100000>;
-		pin-sda = <1>;
-		pin-scl = <2>;
+		pin-sda = <&gpio0 1 GPIO_FLAG_NONE>;
+		pin-scl = <&gpio0 2 GPIO_FLAG_NONE>;
 	};
 };

@@ -19,6 +19,12 @@ dependencies:
     version: "0.0.1"
     rules:
       - if: "target in [esp32, esp32s3]"
+  NellowTCS/esp_lcd_ssd1685:
+    git: https://github.com/NellowTCS/esp_lcd_ssd1685.git
+    version: "1.0.0"
+    rules:
+      # More hardware seems to be supported - enable as needed
+      - if: "target in [esp32s3]"
   espressif/esp_lcd_touch: "1.2.1"
   atanisoft/esp_lcd_touch_xpt2046:
     version: "1.0.6"

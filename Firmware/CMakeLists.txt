@@ -101,16 +101,14 @@ endif ()
 # Devicetree code generation
 #
 
-add_custom_target(AlwaysRun
-    COMMAND ${CMAKE_COMMAND} -E rm -f "${GENERATED_DIR}/devicetree.c"
-)
 add_custom_command(
     OUTPUT "${GENERATED_DIR}/devicetree.c"
         "${GENERATED_DIR}/devicetree.h"
+    COMMAND ${CMAKE_COMMAND} -E rm -f "${GENERATED_DIR}/devicetree.c" "${GENERATED_DIR}/devicetree.h"
     COMMAND python "${CMAKE_SOURCE_DIR}/Buildscripts/DevicetreeCompiler/compile.py"
         "${DEVICETREE_LOCATION}" "${GENERATED_DIR}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    DEPENDS AlwaysRun "${DEVICETREE_LOCATION}/devicetree.yaml" # AlwaysRun ensures it always gets built
+    DEPENDS "${DEVICETREE_LOCATION}/devicetree.yaml"
     COMMENT "Generating devicetree source files..."
 )
 add_custom_target(Generated DEPENDS "${GENERATED_DIR}/devicetree.c")

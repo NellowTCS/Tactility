@@ -32,7 +32,7 @@ bool Ssd1685Display::createIoHandle(esp_lcd_panel_io_handle_t& ioHandle) {
     };
 
     if (esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)configuration->spiHost, &io_config, &ioHandle) != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to create SPI IO handle");
+        LOG_E(TAG, "Failed to create SPI IO handle");
         return false;
     }
 
@@ -58,12 +58,13 @@ bool Ssd1685Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
     }
 
     // Allocate and configure the vendor-specific config
-    vendorConfig = new esp_lcd_ssd1685_config_t();
-    vendorConfig->busy_gpio = configuration->busyPin;
-    vendorConfig->refresh_mode = SSD1685_REFRESH_FULL;
-    vendorConfig->swap_axes = false;
-    vendorConfig->mirror_x = false;
-    vendorConfig->mirror_y = false;
+    vendorConfig = new esp_lcd_panel_ssd1685_config_t();
+    vendorConfig->busy_gpio_num = configuration->busyPin;
+    vendorConfig->panel_width = configuration->width;
+    vendorConfig->panel_height = configuration->height;
+    vendorConfig->default_refresh_mode = SSD1685_REFRESH_FULL;
+    vendorConfig->busy_timeout_ms = 5000;
+    vendorConfig->non_copy_mode = false;
 
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = GPIO_NUM_NC, // We handle reset manually above
@@ -75,25 +76,25 @@ bool Ssd1685Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         .vendor_config = vendorConfig,
     };
 
-    if (esp_lcd_new_panel_ssd1685(ioHandle, &panel_config, vendorConfig, &panelHandle) != ESP_OK) {
-        TT_LOG_E(TAG, "Failed to create SSD1685 panel");
+    if (esp_lcd_new_panel_ssd1685(ioHandle, &panel_config, &panelHandle) != ESP_OK) {
+        LOG_E(TAG, "Failed to create SSD1685 panel");
         delete vendorConfig;
         vendorConfig = nullptr;
         return false;
     }
 
     if (esp_lcd_panel_reset(panelHandle) != ESP_OK) {
-        TT_LOG_E(TAG, "Panel reset failed");
+        LOG_E(TAG, "Panel reset failed");
         return false;
     }
 
     if (esp_lcd_panel_init(panelHandle) != ESP_OK) {
-        TT_LOG_E(TAG, "Panel init failed");
+        LOG_E(TAG, "Panel init failed");
         return false;
     }
 
     // Initial clear - fill with white
-    TT_LOG_I(TAG, "Issuing initial full-screen clear (white) for SSD1685 panel");
+    LOG_I(TAG, "Issuing initial full-screen clear (white) for SSD1685 panel");
     const size_t clear_size = configuration->width * configuration->height / 8;
     uint8_t *white_buffer = (uint8_t *)heap_caps_malloc(clear_size, MALLOC_CAP_DMA);
     if (white_buffer) {
@@ -101,11 +102,11 @@ bool Ssd1685Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
         
         esp_err_t r = esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, configuration->width, configuration->height, white_buffer);
         if (r != ESP_OK) {
-            TT_LOG_W(TAG, "Initial draw_bitmap returned %d", r);
+            LOG_W(TAG, "Initial draw_bitmap returned %d", r);
         }
         
         // Wait for BUSY to finish
-        TT_LOG_I(TAG, "Waiting for BUSY to clear after initial refresh...");
+        LOG_I(TAG, "Waiting for BUSY to clear after initial refresh...");
         int busy_pin = configuration->busyPin;
         if (busy_pin != GPIO_NUM_NC) {
             int timeout = 0;
@@ -114,18 +115,18 @@ bool Ssd1685Display::createPanelHandle(esp_lcd_panel_io_handle_t ioHandle, esp_l
                 timeout++;
             }
             if (timeout >= 60) {
-                TT_LOG_W(TAG, "BUSY timeout waiting for initial clear");
+                LOG_W(TAG, "BUSY timeout waiting for initial clear");
             }
         } else {
             vTaskDelay(pdMS_TO_TICKS(3000));
         }
-        TT_LOG_I(TAG, "Initial refresh finished");
+        LOG_I(TAG, "Initial refresh finished");
         heap_caps_free(white_buffer);
     } else {
-        TT_LOG_W(TAG, "Unable to allocate white buffer for initial clear");
+        LOG_W(TAG, "Unable to allocate white buffer for initial clear");
     }
 
-    TT_LOG_I(TAG, "SSD1685 e-paper display initialized successfully");
+    LOG_I(TAG, "SSD1685 e-paper display initialized successfully");
 
     return true;
 }
@@ -141,10 +142,10 @@ lvgl_port_display_cfg_t Ssd1685Display::getLvglPortDisplayConfig(esp_lcd_panel_i
     // For e-paper: use full-screen buffer in PSRAM
     uint32_t buffer_size = logical_width * logical_height;
 
-    TT_LOG_I(TAG, "LVGL config: physical=%dx%d logical=%dx%d rotation=%d buffer_size=%lu pixels",
+    LOG_I(TAG, "LVGL config: physical=%dx%d logical=%dx%d rotation=%d buffer_size=%lu pixels",
              configuration->width, configuration->height, logical_width, logical_height,
              configuration->rotation, buffer_size);
-    TT_LOG_I(TAG, "LVGL rotation: swap_xy=%d, mirror_x=%d, mirror_y=%d",
+    LOG_I(TAG, "LVGL rotation: swap_xy=%d, mirror_x=%d, mirror_y=%d",
              swap_xy, mirror_x, mirror_y);
 
     // set monochrome=true and let ESP-LVGL-PORT handle the conversion
