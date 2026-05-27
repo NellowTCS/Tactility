@@ -6,7 +6,6 @@
  * Tactility HAL driver header for SSD1685 / SSD168x e-paper panels.
  */
 
-
 #include <Tactility/hal/display/DisplayDevice.h>
 #include <Tactility/hal/touch/TouchDevice.h>
 
@@ -20,17 +19,13 @@
 #include <freertos/task.h>
 #include <lvgl.h>
 
+#include <atomic>
 #include <memory>
 #include <string>
-#include <atomic>
 
 class Ssd1685Display final : public tt::hal::display::DisplayDevice {
 
 public:
-
-    // -----------------------------------------------------------------------
-    // Configuration
-    // -----------------------------------------------------------------------
 
     struct Configuration {
 
@@ -42,62 +37,44 @@ public:
             gpio_num_t        busyPin,
             uint16_t          width,
             uint16_t          height,
-            uint8_t           rotation  = 0,
+            uint8_t           rotation = 0,
             std::shared_ptr<tt::hal::touch::TouchDevice> touch = nullptr
         ) :
-            spiHost(spiHost),
-            csPin(csPin),
-            dcPin(dcPin),
-            resetPin(resetPin),
-            busyPin(busyPin),
-            width(width),
-            height(height),
-            rotation(rotation),
-            touch(std::move(touch))
+            spiHost(spiHost), csPin(csPin), dcPin(dcPin),
+            resetPin(resetPin), busyPin(busyPin),
+            width(width), height(height),
+            rotation(rotation), touch(std::move(touch))
         {}
 
         spi_host_device_t spiHost;
-        gpio_num_t        csPin;
-        gpio_num_t        dcPin;
-        gpio_num_t        resetPin;
-        gpio_num_t        busyPin;
-        uint16_t          width;
-        uint16_t           height;
+        gpio_num_t csPin, dcPin, resetPin, busyPin;
+        uint16_t   width, height;
 
-        /**
-         * Display orientation:
-         *   0 = portrait  (native)
-         *   1 = landscape 90° CW
-         *   2 = portrait 180°
-         *   3 = landscape 90° CCW
-         */
+        /** 0=portrait  1=landscape CW  2=portrait180  3=landscape CCW */
         uint8_t rotation = 0;
 
-        /** Source-line offset compensation (many SSD168x panels need gapX=8) */
-        int gapX = 0;
-        int gapY = 0;
+        /** Source-line offset; many SSD168x panels need gapX=8 */
+        int gapX = 0, gapY = 0;
 
-        /** SPI clock (Hz). 4 MHz is safe for all SSD168x panels. */
+        /** SPI clock Hz; 4 MHz is safe for all SSD168x panels */
         uint32_t spiClockHz = 4'000'000;
 
-        /** Max wait for BUSY to deassert. Full refresh can take ~5 s. */
+        /** BUSY-pin timeout ms; full refresh can take ~5 s */
         uint32_t busyTimeoutMs = 10'000;
 
         /**
-         * Refresh mode used by the background refresh task.
+         * Refresh mode:
          *   SSD1685_REFRESH_FULL    – ghost-free, ~3 s
          *   SSD1685_REFRESH_PARTIAL – fast, ~0.3 s, may ghost
          *   SSD1685_REFRESH_FAST    – fastest, most ghosting
          */
         ssd1685_refresh_mode_t refreshMode = SSD1685_REFRESH_FULL;
 
-        /** Optional custom LUT. nullptr = use panel OTP waveform. */
+        /** Optional custom LUT; nullptr = panel OTP waveform */
         const uint8_t* customLut     = nullptr;
         size_t         customLutSize = 0;
 
-        /** FreeRTOS priority for the background EPD refresh task.
-         *  Must be high enough to run promptly but below configMAX_PRIORITIES-1
-         *  so it doesn't starve the watchdog.  Default: 5. */
+        /** Priority of the "epd_refresh" FreeRTOS task. Default: 5. */
         UBaseType_t refreshTaskPriority = 5;
 
         std::shared_ptr<tt::hal::touch::TouchDevice> touch;
@@ -111,38 +88,35 @@ private:
     esp_lcd_panel_handle_t          panelHandle = nullptr;
     lv_display_t*                   lvglDisplay = nullptr;
 
-    uint8_t*  drawBuf1    = nullptr;
-    uint8_t*  drawBuf2    = nullptr;
+    uint8_t*  drawBuf1    = nullptr;   // LVGL render buffer A
+    uint8_t*  drawBuf2    = nullptr;   // LVGL render buffer B
+    uint8_t*  pendingBuf  = nullptr;   // refresh task's working copy
     size_t    drawBufSize = 0;
 
     bool started = false;
 
-    // -----------------------------------------------------------------------
-    // Background refresh task state
-    // -----------------------------------------------------------------------
-
-    /** Semaphore posted by flushCallback to trigger a refresh */
-    SemaphoreHandle_t  refreshSem  = nullptr;
-    /** Handle for the background "epd_refresh" task */
+    // Semaphore pair for flush_cb ↔ refresh task ↔ wait_cb handshake:
+    //   semReady: flush_cb gives → refresh task takes  (frame ready to send)
+    //   semDone:  refresh task gives → wait_cb takes   (refresh complete)
+    SemaphoreHandle_t  semReady = nullptr;
+    SemaphoreHandle_t  semDone  = nullptr;
     TaskHandle_t       refreshTask = nullptr;
-    /** Set true to ask the refresh task to exit */
     std::atomic<bool>  stopRefreshTask { false };
 
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
-
-    uint16_t lvglWidth()  const;
-    uint16_t lvglHeight() const;
+    uint16_t  lvglWidth()  const;
+    uint16_t  lvglHeight() const;
     esp_err_t applyRotation();
 
-    /** Entry point for the background refresh FreeRTOS task */
     static void refreshTaskFunc(void* arg);
 
-    /** LVGL flush callback – posts semaphore and returns immediately */
+    // flush_cb: called by lv_timer_handler. Must not block.
     static void flushCallback(lv_display_t* disp,
                                const lv_area_t* area,
                                uint8_t* pixelMap);
+
+    // wait_cb: called by LVGL after flush_cb returns, outside the render lock.
+    // This is where we block until the refresh task completes.
+    static void flushWaitCallback(lv_display_t* disp);
 
 public:
 
@@ -173,7 +147,6 @@ public:
         return nullptr;
     }
 
-    // Extended EPD ops
     esp_err_t refresh(ssd1685_refresh_mode_t mode = SSD1685_REFRESH_FULL);
     esp_err_t clearScreen(uint8_t colorByte = 0xFF);
     esp_err_t sleep();
