@@ -74,7 +74,11 @@ public:
         const uint8_t* customLut     = nullptr;
         size_t         customLutSize = 0;
 
-        /** Priority of the "epd_refresh" FreeRTOS task. Default: 5. */
+        /**
+         * Priority of the "epd_refresh" FreeRTOS task.
+         * Should be >= LVGL task priority so it runs promptly after being
+         * woken. Tactility's LVGL task runs at priority 4 by default.
+         */
         UBaseType_t refreshTaskPriority = 5;
 
         std::shared_ptr<tt::hal::touch::TouchDevice> touch;
@@ -90,33 +94,26 @@ private:
 
     uint8_t*  drawBuf1    = nullptr;   // LVGL render buffer A
     uint8_t*  drawBuf2    = nullptr;   // LVGL render buffer B
-    uint8_t*  pendingBuf  = nullptr;   // refresh task's working copy
+    uint8_t*  pendingBuf  = nullptr;   // owned by refresh task while busy
     size_t    drawBufSize = 0;
 
     bool started = false;
 
-    // Semaphore pair for flush_cb ↔ refresh task ↔ wait_cb handshake:
-    //   semReady: flush_cb gives → refresh task takes  (frame ready to send)
-    //   semDone:  refresh task gives → wait_cb takes   (refresh complete)
-    SemaphoreHandle_t  semReady = nullptr;
-    SemaphoreHandle_t  semDone  = nullptr;
-    TaskHandle_t       refreshTask = nullptr;
+    // Binary semaphore: flush_cb gives, refresh task takes
+    SemaphoreHandle_t  semReady     = nullptr;
+    TaskHandle_t       refreshTask  = nullptr;
     std::atomic<bool>  stopRefreshTask { false };
+    // Stored so refresh task can call lv_display_flush_ready()
+    lv_display_t*      lvglDisplayForFlush = nullptr;
 
     uint16_t  lvglWidth()  const;
     uint16_t  lvglHeight() const;
     esp_err_t applyRotation();
 
     static void refreshTaskFunc(void* arg);
-
-    // flush_cb: called by lv_timer_handler. Must not block.
     static void flushCallback(lv_display_t* disp,
                                const lv_area_t* area,
                                uint8_t* pixelMap);
-
-    // wait_cb: called by LVGL after flush_cb returns, outside the render lock.
-    // This is where we block until the refresh task completes.
-    static void flushWaitCallback(lv_display_t* disp);
 
 public:
 

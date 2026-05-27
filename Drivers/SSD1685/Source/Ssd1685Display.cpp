@@ -67,24 +67,22 @@ esp_err_t Ssd1685Display::applyRotation()
         LOG_W(TAG, "Unknown rotation %d, using 0", config->rotation);
         break;
     }
-
     if (swap_xy) {
-        ESP_RETURN_ON_ERROR(
-            esp_lcd_panel_swap_xy(panelHandle, true), TAG, "swap_xy");
+        ESP_RETURN_ON_ERROR(esp_lcd_panel_swap_xy(panelHandle, true), TAG, "swap_xy");
     }
     if (mirror_x || mirror_y) {
-        ESP_RETURN_ON_ERROR(
-            esp_lcd_panel_mirror(panelHandle, mirror_x, mirror_y), TAG, "mirror");
+        ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(panelHandle, mirror_x, mirror_y), TAG, "mirror");
     }
     return ESP_OK;
 }
 
 // Refresh task
 //
-// Sits waiting on semReady. On each wakeup:
-//   1. Writes pendingBuf to panel RAM (SPI).
-//   2. Triggers EPD waveform refresh (blocks on BUSY).
-//   3. Posts semDone to unblock the wait_cb.
+// Woken by flushCallback via semReady.
+// Does the entire slow EPD sequence outside the LVGL task:
+//   1. draw_bitmap  – writes pendingBuf to panel RAM via SPI
+//   2. refresh      – triggers EPD waveform, blocks on BUSY (~3 s)
+//   3. flush_ready  – tells LVGL the source buffer is free to reuse
 
 void Ssd1685Display::refreshTaskFunc(void* arg)
 {
@@ -99,7 +97,6 @@ void Ssd1685Display::refreshTaskFunc(void* arg)
         }
 
         if (self->panelHandle && self->pendingBuf) {
-            // Write pixel data to panel RAM – SPI, returns quickly
             esp_err_t err = esp_lcd_panel_draw_bitmap(
                 self->panelHandle,
                 0, 0,
@@ -110,7 +107,6 @@ void Ssd1685Display::refreshTaskFunc(void* arg)
             if (err != ESP_OK) {
                 LOG_E(TAG, "draw_bitmap failed: %s", esp_err_to_name(err));
             } else {
-                // Trigger EPD waveform – blocks until BUSY deasserts (~3 s)
                 err = esp_lcd_ssd1685_refresh(
                     self->panelHandle, self->config->refreshMode);
                 if (err != ESP_OK) {
@@ -119,8 +115,11 @@ void Ssd1685Display::refreshTaskFunc(void* arg)
             }
         }
 
-        // Unblock the wait_cb so LVGL can proceed with the next render
-        xSemaphoreGive(self->semDone);
+        // Signal LVGL that the buffer is free – called from outside LVGL task,
+        // which is explicitly supported by LVGL docs.
+        if (self->lvglDisplayForFlush) {
+            lv_display_flush_ready(self->lvglDisplayForFlush);
+        }
     }
 
     LOG_I(TAG, "refresh task exiting");
@@ -172,7 +171,7 @@ bool Ssd1685Display::start()
         .busy_timeout_ms      = config->busyTimeoutMs,
         .panel_width          = config->width,
         .panel_height         = config->height,
-        .non_copy_mode        = true,   // draw_bitmap writes RAM only, no auto-refresh
+        .non_copy_mode        = true,
         .default_refresh_mode = config->refreshMode,
         .custom_lut           = config->customLut,
         .custom_lut_size      = config->customLutSize,
@@ -205,7 +204,6 @@ bool Ssd1685Display::start()
     if (config->gapX != 0 || config->gapY != 0) {
         esp_lcd_panel_set_gap(panelHandle, config->gapX, config->gapY);
     }
-
     applyRotation();
 
     LOG_I(TAG, "Initial clear...");
@@ -223,11 +221,9 @@ bool Ssd1685Display::start()
 bool Ssd1685Display::stop()
 {
     if (!started) return true;
-
     if (lvglDisplay) stopLvgl();
 
     esp_lcd_ssd1685_sleep(panelHandle, SSD1685_DEEP_SLEEP_MODE1);
-
     if (panelHandle) { esp_lcd_panel_del(panelHandle);  panelHandle = nullptr; }
     if (ioHandle)    { esp_lcd_panel_io_del(ioHandle);  ioHandle    = nullptr; }
 
@@ -278,13 +274,10 @@ bool Ssd1685Display::startLvgl()
     memset(drawBuf2,   0xFF, drawBufSize);
     memset(pendingBuf, 0xFF, drawBufSize);
 
-    // semReady: starts empty – refresh task waits until flush_cb posts a frame
-    // semDone:  starts empty – wait_cb blocks until refresh task completes
+    // Binary semaphore: starts at 0 (refresh task waits for flush_cb to post)
     semReady = xSemaphoreCreateBinary();
-    semDone  = xSemaphoreCreateBinary();
-
-    if (!semReady || !semDone) {
-        LOG_E(TAG, "Semaphore creation failed");
+    if (!semReady) {
+        LOG_E(TAG, "Failed to create semaphore");
         goto fail_sem;
     }
 
@@ -304,6 +297,8 @@ bool Ssd1685Display::startLvgl()
         goto fail_lvgl;
     }
 
+    lvglDisplayForFlush = lvglDisplay;
+
     lv_display_set_color_format(lvglDisplay, LV_COLOR_FORMAT_I1);
     lv_display_set_buffers(
         lvglDisplay,
@@ -312,8 +307,8 @@ bool Ssd1685Display::startLvgl()
         LV_DISPLAY_RENDER_MODE_FULL);
 
     lv_display_set_flush_cb(lvglDisplay, flushCallback);
-    lv_display_set_flush_wait_cb(lvglDisplay, flushWaitCallback);
     lv_display_set_user_data(lvglDisplay, this);
+    // NO flush_wait_cb – flush_ready is called from the refresh task instead
 
     if (config->touch && config->touch->supportsLvgl()) {
         if (!config->touch->startLvgl(lvglDisplay)) {
@@ -321,7 +316,7 @@ bool Ssd1685Display::startLvgl()
         }
     }
 
-    LOG_I(TAG, "LVGL started  %dx%d  I1  async (flush_wait_cb)", w, h);
+    LOG_I(TAG, "LVGL started  %dx%d  I1  async (flush_ready from task)", w, h);
     return true;
 
 fail_lvgl:
@@ -329,10 +324,10 @@ fail_lvgl:
     xSemaphoreGive(semReady);
     vTaskDelay(pdMS_TO_TICKS(100));
     refreshTask = nullptr;
+    lvglDisplayForFlush = nullptr;
 
 fail_sem:
     if (semReady) { vSemaphoreDelete(semReady); semReady = nullptr; }
-    if (semDone)  { vSemaphoreDelete(semDone);  semDone  = nullptr; }
     heap_caps_free(drawBuf1);   drawBuf1   = nullptr;
     heap_caps_free(drawBuf2);   drawBuf2   = nullptr;
     heap_caps_free(pendingBuf); pendingBuf = nullptr;
@@ -345,6 +340,8 @@ bool Ssd1685Display::stopLvgl()
 {
     if (!lvglDisplay) return true;
 
+    lvglDisplayForFlush = nullptr;  // prevent refresh task calling flush_ready on deleted display
+
     if (config->touch) config->touch->stopLvgl();
 
     lv_display_delete(lvglDisplay);
@@ -352,14 +349,12 @@ bool Ssd1685Display::stopLvgl()
 
     if (refreshTask) {
         stopRefreshTask.store(true);
-        xSemaphoreGive(semReady);        // kick task out of wait
-        xSemaphoreGive(semDone);         // unblock wait_cb if it's waiting
+        xSemaphoreGive(semReady);
         vTaskDelay(pdMS_TO_TICKS(200));
         refreshTask = nullptr;
     }
 
     if (semReady) { vSemaphoreDelete(semReady); semReady = nullptr; }
-    if (semDone)  { vSemaphoreDelete(semDone);  semDone  = nullptr; }
 
     heap_caps_free(drawBuf1);   drawBuf1   = nullptr;
     heap_caps_free(drawBuf2);   drawBuf2   = nullptr;
@@ -372,64 +367,54 @@ bool Ssd1685Display::stopLvgl()
 
 // flushCallback  (static)
 //
-// Called by lv_timer_handler() inside the LVGL task.
-// Contract: must not block. Must NOT call lv_display_flush_ready() –
-// that is handled by LVGL after flushWaitCallback returns.
+// Called inside the LVGL task. MUST return immediately – zero blocking.
 //
-// 1. Check flush_is_last BEFORE any state changes (it reads internal flags).
-// 2. memcpy pixel data into pendingBuf (owned by us until semDone is given).
-// 3. Give semReady to wake the refresh task.
+// If the refresh task is idle (semReady empty):
+//   • Check flush_is_last (before any state changes)
+//   • memcpy pixel data into pendingBuf
+//   • give(semReady) – wake refresh task
+//   • return WITHOUT calling flush_ready (refresh task does that)
+//
+// If the refresh task is still busy (semReady already has a token):
+//   • Drop this frame: call flush_ready immediately so LVGL can proceed
 
 void Ssd1685Display::flushCallback(lv_display_t* disp,
                                     const lv_area_t* /*area*/,
                                     uint8_t* pixelMap)
 {
     auto* self = static_cast<Ssd1685Display*>(lv_display_get_user_data(disp));
-    if (!self || !self->pendingBuf) {
-        // Must call flush_ready if we're bailing early, otherwise LVGL hangs
+    if (!self || !self->pendingBuf || !self->semReady) {
         lv_display_flush_ready(disp);
         return;
     }
 
-    // Check BEFORE any state change – flush_ready would clear the flag
+    // Must check flush_is_last before calling flush_ready
     const bool isLast = lv_display_flush_is_last(disp);
 
-    if (isLast) {
-        // Safe copy: LVGL won't reuse pixelMap until flush_ready is called,
-        // which happens only after flushWaitCallback returns.
-        memcpy(self->pendingBuf, pixelMap, self->drawBufSize);
-        xSemaphoreGive(self->semReady);
-        // Do NOT call flush_ready here – flushWaitCallback does it implicitly
-        // by returning (LVGL calls flush_ready after wait_cb returns)
-    } else {
-        // Non-last chunk (shouldn't occur with RENDER_MODE_FULL, but be safe)
+    if (!isLast) {
+        // With RENDER_MODE_FULL this shouldn't happen, but handle gracefully
         lv_display_flush_ready(disp);
-    }
-}
-
-// flushWaitCallback  (static)
-//
-// Called by LVGL after flushCallback returns, to wait for the flush to
-// complete before allowing the next render cycle.
-//
-// LVGL calls flush_ready automatically when this returns, so we must NOT
-// call it ourselves.
-//
-// This function runs inside lv_timer_handler() and therefore inside the
-// LVGL task – but the WDT timeout (default 5 s) gives us enough headroom
-// for a full EPD refresh (~3 s).  If needed, increase via:
-//   CONFIG_ESP_TASK_WDT_TIMEOUT_S=15  in sdkconfig
-
-void Ssd1685Display::flushWaitCallback(lv_display_t* disp)
-{
-    auto* self = static_cast<Ssd1685Display*>(lv_display_get_user_data(disp));
-    if (!self || !self->semDone) {
         return;
     }
 
-    // Block until the refresh task signals completion.
-    // The refresh task gives semDone after wait_busy returns.
-    xSemaphoreTake(self->semDone, portMAX_DELAY);
+    // Try to post to the refresh task without blocking.
+    // Timeout = 0: if already full (previous frame still pending), drop this one.
+    if (xSemaphoreGive(self->semReady) == pdFALSE) {
+        // Semaphore already given (task still busy) – drop frame
+        LOG_D(TAG, "EPD busy, dropping frame");
+        lv_display_flush_ready(disp);
+        return;
+    }
+
+    // Copy pixel data BEFORE returning so LVGL can't overwrite pixelMap.
+    // (With double buffers, LVGL writes into the OTHER buffer after flush_cb
+    // returns, so pixelMap itself is stable until flush_ready is called –
+    // but we copy anyway for clarity and to allow future single-buffer use.)
+    memcpy(self->pendingBuf, pixelMap, self->drawBufSize);
+
+    // Do NOT call flush_ready here.
+    // The refresh task calls lv_display_flush_ready() after the EPD refresh
+    // completes, which tells LVGL this buffer slot is free again.
 }
 
 // Extended public ops
