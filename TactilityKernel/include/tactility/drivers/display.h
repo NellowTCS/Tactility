@@ -29,7 +29,13 @@ enum DisplayCapability {
      * it copies/converts into its own buffer first). Lets the LVGL bridge allocate this display's
      * draw buffer(s) from non-DMA-capable memory instead of forcing scarce internal RAM.
      */
-    DISPLAY_CAPABILITY_PREFER_EXTERNAL_RAM = 1 << 9
+    DISPLAY_CAPABILITY_PREFER_EXTERNAL_RAM = 1 << 9,
+    /**
+     * Requests the LVGL bridge to use a small draw buffer (see DISPLAY_MIN_BUFFER_HEIGHT). Set by
+     * slow partial-update panels (e.g. e-paper) that stream each flush tile straight into their own
+     * frame store and render in many small passes, where a tall draw buffer would only waste RAM.
+     */
+    DISPLAY_CAPABILITY_MINIMAL_BUFFER = 1 << 10
 };
 
 /**

@@ -1,0 +1,28 @@
+description: >
+  GoodDisplay GDEQ0426T82 (SSD1677 controller) 4.26" 800x480 SPI e-paper panel,
+  as used on the Xinyuan LilyGO Xteink X4. 4-grey full-frame refreshes: LVGL renders
+  monochrome (1bpp) and the driver maps it onto the controller's two-plane 4-grey LUT
+  (0x26/0x24) with a single full-screen refresh per draw. The BUSY pin is active-high.
+
+compatible: "gooddisplay,gdeq0426t82"
+
+bus: spi
+
+properties:
+  pin-dc:
+    type: phandles
+    required: true
+    description: Data/Command GPIO pin
+  pin-reset:
+    type: phandles
+    required: false
+    default: GPIO_PIN_SPEC_NONE
+    description: Reset GPIO pin
+  pin-busy:
+    type: phandles
+    required: true
+    description: BUSY GPIO pin (reads high while the panel is busy)
+  clock-speed-hz:
+    type: int
+    default: 10000000
+    description: SPI clock frequency in Hz

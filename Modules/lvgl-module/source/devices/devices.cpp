@@ -21,6 +21,10 @@ constexpr auto* TAG = "lvgl";
 // callbacks run under the device ledger lock, so devices are collected here and processed afterwards.
 constexpr auto LVGL_DEVICES_MAX_PER_TYPE = 8;
 
+// Default draw buffer height is vres/10; panels reporting DISPLAY_CAPABILITY_MINIMAL_BUFFER ask for
+// this instead so the per-tile draw buffer stays tiny (they stream each tile into their own store).
+constexpr auto DISPLAY_MIN_BUFFER_HEIGHT = 8;
+
 struct LvglDeviceList {
     struct Device* devices[LVGL_DEVICES_MAX_PER_TYPE];
     size_t count;
@@ -68,8 +72,9 @@ void lvgl_devices_attach() {
         bool can_hw_rotate = display_has_capability(kernel_display_device, DISPLAY_CAPABILITY_CAP_SWAP_XY) &&
             display_has_capability(kernel_display_device, DISPLAY_CAPABILITY_CAP_MIRROR);
         bool prefer_external_ram_buffer = display_has_capability(kernel_display_device, DISPLAY_CAPABILITY_PREFER_EXTERNAL_RAM);
+        bool minimal_buffer = display_has_capability(kernel_display_device, DISPLAY_CAPABILITY_MINIMAL_BUFFER);
         struct LvglDisplayConfig lvgl_display_config = {
-            .buffer_height = (uint16_t)(vres > 10 ? vres / 10 : vres),
+            .buffer_height = (uint16_t)(minimal_buffer ? DISPLAY_MIN_BUFFER_HEIGHT : (vres > 10 ? vres / 10 : vres)),
             .sw_rotate = !can_hw_rotate,
             .swap_bytes = swap_bytes,
             .force_full_frame = display_requires_full_frame,
